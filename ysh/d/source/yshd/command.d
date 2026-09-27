@@ -20,7 +20,7 @@ struct VarDecl {
 /// Semantic form of command.Mutation after parsing.
 struct Mutation {
     string[] targets;
-    AssignmentScope scope = AssignmentScope.local;
+    AssignmentScope assignmentScope = AssignmentScope.local;
     string rhsSource;
 }
 
@@ -86,7 +86,7 @@ void executeMutation(Mutation mutation, Memory mem) {
     // command AST will retain evaluated y_lvalue objects exactly as upstream
     // does before entering this loop.
     foreach (index, target; mutation.targets) {
-        assignPlace(target, values[index], mem, mutation.scope);
+        assignPlace(target, values[index], mem, mutation.assignmentScope);
     }
 }
 
