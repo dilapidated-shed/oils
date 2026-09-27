@@ -194,32 +194,32 @@ bool exactlyEqual(Value left, Value right) {
 }
 
 private string quoteString(string value) {
-    auto out = appender!string();
-    out.put('"');
+    auto buffer = appender!string();
+    buffer.put('"');
     foreach (char c; value) {
         switch (c) {
         case '"':
-            out.put("\\\"");
+            buffer.put("\\\"");
             break;
         case '\\':
-            out.put("\\\\");
+            buffer.put("\\\\");
             break;
         case '\n':
-            out.put("\\n");
+            buffer.put("\\n");
             break;
         case '\r':
-            out.put("\\r");
+            buffer.put("\\r");
             break;
         case '\t':
-            out.put("\\t");
+            buffer.put("\\t");
             break;
         default:
-            out.put(c);
+            buffer.put(c);
             break;
         }
     }
-    out.put('"');
-    return out.data;
+    buffer.put('"');
+    return buffer.data;
 }
 
 /// Stable diagnostic representation for this D port.  This is not yet YSH's
@@ -234,31 +234,31 @@ string repr(Value value) {
     case ValueKind.stringValue:
         return quoteString(value.stringValue);
     case ValueKind.list:
-        auto out = appender!string();
-        out.put("[");
+        auto buffer = appender!string();
+        buffer.put("[");
         foreach (index, item; value.listValue) {
             if (index != 0) {
-                out.put(", ");
+                buffer.put(", ");
             }
-            out.put(repr(item));
+            buffer.put(repr(item));
         }
-        out.put("]");
-        return out.data;
+        buffer.put("]");
+        return buffer.data;
     case ValueKind.dict:
-        auto out = appender!string();
-        out.put("{");
+        auto buffer = appender!string();
+        buffer.put("{");
         bool first = true;
         foreach (key, item; value.dictValue) {
             if (!first) {
-                out.put(", ");
+                buffer.put(", ");
             }
             first = false;
-            out.put(quoteString(key));
-            out.put(": ");
-            out.put(repr(item));
+            buffer.put(quoteString(key));
+            buffer.put(": ");
+            buffer.put(repr(item));
         }
-        out.put("}");
-        return out.data;
+        buffer.put("}");
+        return buffer.data;
     }
 }
 
