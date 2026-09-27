@@ -121,6 +121,12 @@ Current state:
 - [x] D package and executable test harness
 - [x] first data-value representation
 - [x] first expression evaluator slice
+- [x] shared D lexer foundation used by expression and command parsing
+- [x] frame/cell state with global, local, and lexical-enclosure lookup
+- [x] first command parser entry for var/const/setvar/setglobal
+- [x] VarDecl and ordinary Mutation evaluation, including destructuring/swaps
+- [x] scope-aware, two-phase variable/list/dict mutation places
+- [x] compatibility equality tokens normalize to semantic comparison operators
 - [ ] complete ASDL/data-model coverage
 - [ ] full YSH lexer
 - [ ] full YSH expression parser
