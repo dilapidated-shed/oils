@@ -40,6 +40,14 @@ enum TokenKind {
     percent,
     starStar,
     plusPlus,
+    amp,
+    pipe,
+    caret,
+    tilde,
+    shiftLeft,
+    shiftRight,
+    dotDotLess,
+    dotDotEqual,
 
     less,
     greater,
@@ -186,6 +194,22 @@ class Lexer {
             position_ += 2;
             return Token(TokenKind.plusPlus, "++", start);
         }
+        if (startsWith("..<")) {
+            position_ += 3;
+            return Token(TokenKind.dotDotLess, "..<", start);
+        }
+        if (startsWith("..=")) {
+            position_ += 3;
+            return Token(TokenKind.dotDotEqual, "..=", start);
+        }
+        if (startsWith("<<")) {
+            position_ += 2;
+            return Token(TokenKind.shiftLeft, "<<", start);
+        }
+        if (startsWith(">>")) {
+            position_ += 2;
+            return Token(TokenKind.shiftRight, ">>", start);
+        }
         if (startsWith("<=")) {
             position_ += 2;
             return Token(TokenKind.lessEqual, "<=", start);
@@ -207,6 +231,14 @@ class Lexer {
             return Token(TokenKind.slash, "/", start);
         case '%':
             return Token(TokenKind.percent, "%", start);
+        case '&':
+            return Token(TokenKind.amp, "&", start);
+        case '|':
+            return Token(TokenKind.pipe, "|", start);
+        case '^':
+            return Token(TokenKind.caret, "^", start);
+        case '~':
+            return Token(TokenKind.tilde, "~", start);
         case '<':
             return Token(TokenKind.less, "<", start);
         case '>':
