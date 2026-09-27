@@ -272,6 +272,17 @@ private class Lexer {
     }
 }
 
+private enum CompareOp {
+    less,
+    greater,
+    lessEqual,
+    greaterEqual,
+    exactEqual,
+    notExactEqual,
+    contains,
+    notContains,
+}
+
 private enum NumericKind {
     integer,
     floating,
@@ -792,10 +803,10 @@ private class BinaryExpr : Expr {
 
 private class CompareExpr : Expr {
     private Expr left_;
-    private string[] operators_;
+    private CompareOp[] operators_;
     private Expr[] comparators_;
 
-    this(Expr left, string[] operators, Expr[] comparators) {
+    this(Expr left, CompareOp[] operators, Expr[] comparators) {
         left_ = left;
         operators_ = operators;
         comparators_ = comparators;
@@ -806,20 +817,26 @@ private class CompareExpr : Expr {
         foreach (index, op; operators_) {
             Value right = comparators_[index].eval(mem);
             bool result;
-            switch (op) {
-            case "<":
-            case ">":
-            case "<=":
-            case ">=":
-                result = numericCompare(op, left, right);
+            final switch (op) {
+            case CompareOp.less:
+                result = numericCompare("<", left, right);
                 break;
-            case "===":
+            case CompareOp.greater:
+                result = numericCompare(">", left, right);
+                break;
+            case CompareOp.lessEqual:
+                result = numericCompare("<=", left, right);
+                break;
+            case CompareOp.greaterEqual:
+                result = numericCompare(">=", left, right);
+                break;
+            case CompareOp.exactEqual:
                 result = exactlyEqual(left, right);
                 break;
-            case "!==":
+            case CompareOp.notExactEqual:
                 result = !exactlyEqual(left, right);
                 break;
-            case "in":
+            case CompareOp.contains:
                 if (right.kind != ValueKind.dict) {
                     throw new YshTypeError("RHS of 'in' should be Dict");
                 }
@@ -828,7 +845,7 @@ private class CompareExpr : Expr {
                 }
                 result = (left.stringValue in right.dictValue) !is null;
                 break;
-            case "not in":
+            case CompareOp.notContains:
                 if (right.kind != ValueKind.dict) {
                     throw new YshTypeError("RHS of 'not in' should be Dict");
                 }
@@ -837,8 +854,6 @@ private class CompareExpr : Expr {
                 }
                 result = (left.stringValue in right.dictValue) is null;
                 break;
-            default:
-                assert(false, "unknown comparison operator");
             }
             if (!result) {
                 return Value.boolean(false);
@@ -901,7 +916,7 @@ private class Parser {
 
     private Expr parseComparison() {
         Expr left = parseAdditive();
-        string[] operators;
+        CompareOp[] operators;
         Expr[] comparators;
 
         while (isComparison(current_.kind)) {
@@ -910,10 +925,34 @@ private class Parser {
                 if (current_.kind != TokenKind.inKeyword) {
                     throw new ParseError(format("expected 'in' at byte %s", current_.offset));
                 }
-                operators ~= "not in";
+                operators ~= CompareOp.notContains;
                 advance();
             } else {
-                operators ~= current_.text;
+                final switch (current_.kind) {
+                case TokenKind.less:
+                    operators ~= CompareOp.less;
+                    break;
+                case TokenKind.greater:
+                    operators ~= CompareOp.greater;
+                    break;
+                case TokenKind.lessEqual:
+                    operators ~= CompareOp.lessEqual;
+                    break;
+                case TokenKind.greaterEqual:
+                    operators ~= CompareOp.greaterEqual;
+                    break;
+                case TokenKind.tripleEqual:
+                    operators ~= CompareOp.exactEqual;
+                    break;
+                case TokenKind.notDoubleEqual:
+                    operators ~= CompareOp.notExactEqual;
+                    break;
+                case TokenKind.inKeyword:
+                    operators ~= CompareOp.contains;
+                    break;
+                default:
+                    throw new ParseError("invalid comparison operator");
+                }
                 advance();
             }
             comparators ~= parseAdditive();
