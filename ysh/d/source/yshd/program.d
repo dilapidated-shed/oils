@@ -31,7 +31,7 @@ class ProgramParser {
         skipEndStatements();
 
         while (current_.kind != TokenKind.eof) {
-            final switch (current_.kind) {
+            switch (current_.kind) {
             case TokenKind.varKeyword:
                 parseDeclaration(mem, false);
                 break;
