@@ -141,6 +141,16 @@ unittest {
     // The container index was resolved while i was still 0.
     assert(repr(mem.get("indexed")) == "[99, 20]");
 
+    auto globalFrame = mem.currentFrame;
+    executeVarDecl(VarDecl(["globalRecord"], false, true, "{value: 1}"), mem);
+    mem.pushEnclosed(globalFrame);
+    executeVarDecl(VarDecl(["globalRecord"], false, true, "{value: 2}"), mem);
+    executeMutation(
+        Mutation(["globalRecord.value"], AssignmentScope.global, "3"), mem);
+    assert(repr(evaluate("globalRecord.value", mem)) == "2");
+    mem.popFrame();
+    assert(repr(evaluate("globalRecord.value", mem)) == "3");
+
     executeVarDecl(VarDecl(["constant"], true, true, "'fixed'"), mem);
     bool rejected;
     try {
