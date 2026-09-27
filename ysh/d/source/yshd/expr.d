@@ -844,7 +844,7 @@ private class Parser {
     }
 
     private Expr parseComparison() {
-        Expr left = parseAdditive();
+        Expr left = parseRange();
         CompareOp[] operators;
         Expr[] comparators;
 
@@ -884,7 +884,7 @@ private class Parser {
                 }
                 advance();
             }
-            comparators ~= parseAdditive();
+            comparators ~= parseRange();
         }
 
         if (operators.length == 0) {
@@ -907,6 +907,56 @@ private class Parser {
         default:
             return false;
         }
+    }
+
+    private Expr parseRange() {
+        Expr lower = parseBitOr();
+        if (current_.kind == TokenKind.dotDotLess ||
+                current_.kind == TokenKind.dotDotEqual) {
+            bool closed = current_.kind == TokenKind.dotDotEqual;
+            advance();
+            auto upper = parseBitOr();
+            return new RangeExpr(lower, upper, closed);
+        }
+        return lower;
+    }
+
+    private Expr parseBitOr() {
+        Expr left = parseBitXor();
+        while (current_.kind == TokenKind.pipe) {
+            advance();
+            left = new BinaryExpr("|", left, parseBitXor());
+        }
+        return left;
+    }
+
+    private Expr parseBitXor() {
+        Expr left = parseBitAnd();
+        while (current_.kind == TokenKind.caret) {
+            advance();
+            left = new BinaryExpr("^", left, parseBitAnd());
+        }
+        return left;
+    }
+
+    private Expr parseBitAnd() {
+        Expr left = parseShift();
+        while (current_.kind == TokenKind.amp) {
+            advance();
+            left = new BinaryExpr("&", left, parseShift());
+        }
+        return left;
+    }
+
+    private Expr parseShift() {
+        Expr left = parseAdditive();
+        while (current_.kind == TokenKind.shiftLeft ||
+                current_.kind == TokenKind.shiftRight) {
+            auto op = current_.text;
+            advance();
+            left = new BinaryExpr(op, left, parseAdditive());
+        }
+        return left;
     }
 
     private Expr parseAdditive() {
@@ -933,7 +983,9 @@ private class Parser {
 
     // Mirrors grammar.pgen2: factor -> ('+'|'-'|'~') factor | power.
     private Expr parseFactor() {
-        if (current_.kind == TokenKind.plus || current_.kind == TokenKind.minus) {
+        if (current_.kind == TokenKind.plus ||
+                current_.kind == TokenKind.minus ||
+                current_.kind == TokenKind.tilde) {
             auto op = current_.text;
             advance();
             return new UnaryExpr(op, parseFactor());
@@ -948,7 +1000,29 @@ private class Parser {
         while (current_.kind == TokenKind.leftBracket || current_.kind == TokenKind.dot) {
             if (current_.kind == TokenKind.leftBracket) {
                 advance();
-                auto index = parseOr();
+
+                Expr index;
+                if (current_.kind == TokenKind.colon) {
+                    advance();
+                    Expr upper;
+                    if (current_.kind != TokenKind.rightBracket) {
+                        upper = parseOr();
+                    }
+                    index = new SliceExpr(null, upper);
+                } else {
+                    auto first = parseOr();
+                    if (current_.kind == TokenKind.colon) {
+                        advance();
+                        Expr upper;
+                        if (current_.kind != TokenKind.rightBracket) {
+                            upper = parseOr();
+                        }
+                        index = new SliceExpr(first, upper);
+                    } else {
+                        index = first;
+                    }
+                }
+
                 require(TokenKind.rightBracket, "]");
                 left = new SubscriptExpr(left, index);
             } else {
@@ -1236,6 +1310,18 @@ unittest {
     assert(repr(evaluate("[10, 20, 30][1]", mem)) == "20");
     assert(repr(evaluate("'answer' in {answer: 42}", mem)) == "true");
     assert(repr(evaluate("'missing' not in {answer: 42}", mem)) == "true");
+
+    assert(repr(evaluate("1 | 2 ^ 3 & 1")) == "3");
+    assert(repr(evaluate("1 << 4")) == "16");
+    assert(repr(evaluate("16 >> 2")) == "4");
+    assert(repr(evaluate("~0")) == "-1");
+    assert(repr(evaluate("1 ..< 4")) == "1..<4");
+    assert(repr(evaluate("1 ..= 3")) == "1..<4");
+    assert(repr(evaluate("[0, 1, 2, 3][1:3]")) == "[1, 2]");
+    assert(repr(evaluate("[0, 1, 2, 3][:2]")) == "[0, 1]");
+    assert(repr(evaluate("[0, 1, 2, 3][2:]")) == "[2, 3]");
+    assert(repr(evaluate("'abcd'[1:3]")) == "\"bc\"");
+    assert(repr(evaluate("'abcd'[-1]")) == "\"d\"");
 
     mem.declareLocal("items", evaluate("[1, 2, 3]", mem));
     assignPlace("items[1]", Value.integer(42), mem);
