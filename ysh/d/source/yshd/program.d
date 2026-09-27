@@ -90,7 +90,7 @@ class ProgramParser {
             "untranslated declaration syntax at byte %s", current_.offset));
     }
 
-    private void parseMutation(Memory mem, AssignmentScope scope) {
+    private void parseMutation(Memory mem, AssignmentScope assignmentScope) {
         advance(); // setvar / setglobal
 
         string[] targets;
@@ -130,7 +130,7 @@ class ProgramParser {
         }
 
         auto rhs = collectRhs();
-        executeMutation(Mutation(targets, scope, rhs), mem);
+        executeMutation(Mutation(targets, assignmentScope, rhs), mem);
     }
 
     /// Collect one YSH testlist through the end of the command. Top-level
