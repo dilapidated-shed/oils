@@ -2,7 +2,7 @@ module yshd.command;
 
 import std.format : format;
 
-import yshd.expr : AssignmentScope, assignPlace, evaluate;
+import yshd.expr : AssignmentScope, ResolvedPlace, evaluate, resolvePlace;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError;
 
@@ -81,12 +81,16 @@ void executeMutation(Mutation mutation, Memory mem) {
     auto values = destructure(
         right, mutation.targets.length, "Destructuring assignment");
 
-    // Resolve the target syntax before modifying any value. Container indices
-    // are still evaluated by assignPlace at assignment time; the future full
-    // command AST will retain evaluated y_lvalue objects exactly as upstream
-    // does before entering this loop.
-    foreach (index, target; mutation.targets) {
-        assignPlace(target, values[index], mem, mutation.assignmentScope);
+    // Upstream evaluates every y_lvalue before applying the first mutation.
+    // This preserves index/object identity across swaps and other simultaneous
+    // assignments.
+    ResolvedPlace[] places;
+    foreach (target; mutation.targets) {
+        places ~= resolvePlace(target, mem, mutation.assignmentScope);
+    }
+
+    foreach (index, place; places) {
+        place.assign(values[index]);
     }
 }
 
@@ -127,6 +131,15 @@ unittest {
         mem);
     assert(repr(mem.get("items")) == "[42, 1, 3]");
     assert(repr(evaluate("record.int", mem)) == "2");
+
+    executeVarDecl(VarDecl(["i"], false, true, "0"), mem);
+    executeVarDecl(VarDecl(["indexed"], false, true, "[10, 20]"), mem);
+    executeMutation(
+        Mutation(["i", "indexed[i]"], AssignmentScope.local, "[1, 99]"),
+        mem);
+    assert(repr(mem.get("i")) == "1");
+    // The container index was resolved while i was still 0.
+    assert(repr(mem.get("indexed")) == "[99, 20]");
 
     executeVarDecl(VarDecl(["constant"], true, true, "'fixed'"), mem);
     bool rejected;
