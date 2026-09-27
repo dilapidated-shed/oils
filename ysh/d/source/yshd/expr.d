@@ -240,6 +240,28 @@ private Value intBinary(string op, Value left, Value right) {
         return Value.integer(a % b);
     case "**":
         return Value.integer(exponent(a, b));
+    case "&":
+        return Value.integer(a & b);
+    case "|":
+        return Value.integer(a | b);
+    case "^":
+        return Value.integer(a ^ b);
+    case "<<":
+    case ">>":
+        if (b < 0) {
+            throw new YshError(
+                op == "<<" ? "Can't left shift by negative number"
+                           : "Can't right shift by negative number");
+        }
+        long count;
+        try {
+            count = to!long(toDecimalString(b));
+        } catch (Exception error) {
+            throw new YshError("shift count is too large");
+        }
+        return Value.integer(
+            op == "<<" ? (a << cast(size_t)count)
+                       : (a >> cast(size_t)count));
     default:
         assert(false, "unknown integer operator");
     }
@@ -371,6 +393,147 @@ private string dictKey(Value index) {
     return index.stringValue;
 }
 
+
+private long bigIntToLong(BigInt integer, string description) {
+    try {
+        return to!long(toDecimalString(integer));
+    } catch (Exception error) {
+        throw new YshTypeError(description);
+    }
+}
+
+private long normalizeIndex(long index, size_t length) {
+    auto n = cast(long)length;
+    return index < 0 ? index + n : index;
+}
+
+private long normalizeSliceBound(long bound, size_t length) {
+    auto n = cast(long)length;
+    auto result = bound < 0 ? bound + n : bound;
+    if (result < 0) {
+        return 0;
+    }
+    if (result > n) {
+        return n;
+    }
+    return result;
+}
+
+private Value subscriptGet(Value object, Value index) {
+    final switch (object.kind) {
+    case ValueKind.stringValue:
+        if (index.kind == ValueKind.sliceValue) {
+            auto lower = index.sliceHasLower
+                ? normalizeSliceBound(index.sliceLower, object.stringValue.length)
+                : 0;
+            auto upper = index.sliceHasUpper
+                ? normalizeSliceBound(index.sliceUpper, object.stringValue.length)
+                : cast(long)object.stringValue.length;
+            if (upper < lower) {
+                upper = lower;
+            }
+            return Value.str(object.stringValue[
+                cast(size_t)lower .. cast(size_t)upper]);
+        }
+
+        auto i = normalizeIndex(
+            bigIntToLong(convertToInt(index), "Str index expected Int"),
+            object.stringValue.length);
+        if (i < 0 || i >= object.stringValue.length) {
+            throw new YshError("index out of range");
+        }
+        return Value.str(object.stringValue[
+            cast(size_t)i .. cast(size_t)i + 1]);
+
+    case ValueKind.list:
+        if (index.kind == ValueKind.sliceValue) {
+            auto lower = index.sliceHasLower
+                ? normalizeSliceBound(index.sliceLower, object.listValue.length)
+                : 0;
+            auto upper = index.sliceHasUpper
+                ? normalizeSliceBound(index.sliceUpper, object.listValue.length)
+                : cast(long)object.listValue.length;
+            if (upper < lower) {
+                upper = lower;
+            }
+            return Value.list(object.listValue[
+                cast(size_t)lower .. cast(size_t)upper].dup);
+        }
+
+        auto i = normalizeIndex(listIndex(index), object.listValue.length);
+        if (i < 0 || i >= object.listValue.length) {
+            throw new YshError("List index out of range");
+        }
+        return object.listValue[cast(size_t)i];
+
+    case ValueKind.dict:
+        auto key = dictKey(index);
+        auto found = key in object.dictValue;
+        if (found is null) {
+            throw new YshError(format("Dict key not found: '%s'", key));
+        }
+        return *found;
+
+    case ValueKind.nullValue:
+    case ValueKind.boolean:
+    case ValueKind.integer:
+    case ValueKind.floating:
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
+        throw new YshTypeError("obj[index] expected Str, List, or Dict");
+    }
+}
+
+private class SliceExpr : Expr {
+    private Expr lower_;
+    private Expr upper_;
+
+    this(Expr lower, Expr upper) {
+        lower_ = lower;
+        upper_ = upper;
+    }
+
+    override Value eval(Memory mem) {
+        bool hasLower = lower_ !is null;
+        bool hasUpper = upper_ !is null;
+        long lower;
+        long upper;
+
+        if (hasLower) {
+            lower = bigIntToLong(
+                convertToInt(lower_.eval(mem)), "Slice begin should be Int");
+        }
+        if (hasUpper) {
+            upper = bigIntToLong(
+                convertToInt(upper_.eval(mem)), "Slice end should be Int");
+        }
+        return Value.slice(hasLower, lower, hasUpper, upper);
+    }
+}
+
+private class RangeExpr : Expr {
+    private Expr lower_;
+    private Expr upper_;
+    private bool closed_;
+
+    this(Expr lower, Expr upper, bool closed) {
+        lower_ = lower;
+        upper_ = upper;
+        closed_ = closed;
+    }
+
+    override Value eval(Memory mem) {
+        auto lower = bigIntToLong(
+            convertToInt(lower_.eval(mem)), "Range begin should be Int");
+        auto upper = bigIntToLong(
+            convertToInt(upper_.eval(mem)), "Range end should be Int");
+        if (closed_) {
+            ++upper;
+        }
+        return Value.range(lower, upper);
+    }
+}
+
 private class SubscriptExpr : Expr {
     private Expr object_;
     private Expr index_;
@@ -381,35 +544,7 @@ private class SubscriptExpr : Expr {
     }
 
     override Value eval(Memory mem) {
-        auto object = object_.eval(mem);
-        auto index = index_.eval(mem);
-
-        final switch (object.kind) {
-        case ValueKind.list:
-            auto i = listIndex(index);
-            if (i < 0) {
-                i += cast(long)object.listValue.length;
-            }
-            if (i < 0 || i >= object.listValue.length) {
-                throw new YshError("List index out of range");
-            }
-            return object.listValue[cast(size_t)i];
-        case ValueKind.dict:
-            auto key = dictKey(index);
-            auto found = key in object.dictValue;
-            if (found is null) {
-                throw new YshError(format("Dict key not found: '%s'", key));
-            }
-            return *found;
-        case ValueKind.nullValue:
-        case ValueKind.boolean:
-        case ValueKind.integer:
-        case ValueKind.floating:
-        case ValueKind.stringValue:
-        case ValueKind.sliceValue:
-        case ValueKind.rangeValue:
-            throw new YshTypeError("obj[index] expected List or Dict");
-        }
+        return subscriptGet(object_.eval(mem), index_.eval(mem));
     }
 
     void assign(Memory mem, Value value) {
@@ -482,33 +617,7 @@ private Value evalLeftObject(Expr expression, Memory mem,
     if (auto subscript = cast(SubscriptExpr)expression) {
         auto object = evalLeftObject(subscript.object_, mem, assignmentScope);
         auto index = subscript.index_.eval(mem);
-
-        final switch (object.kind) {
-        case ValueKind.list:
-            auto i = listIndex(index);
-            if (i < 0) {
-                i += cast(long)object.listValue.length;
-            }
-            if (i < 0 || i >= object.listValue.length) {
-                throw new YshError("List index out of range");
-            }
-            return object.listValue[cast(size_t)i];
-        case ValueKind.dict:
-            auto key = dictKey(index);
-            auto found = key in object.dictValue;
-            if (found is null) {
-                throw new YshError(format("Dict key not found: '%s'", key));
-            }
-            return *found;
-        case ValueKind.nullValue:
-        case ValueKind.boolean:
-        case ValueKind.integer:
-        case ValueKind.floating:
-        case ValueKind.stringValue:
-        case ValueKind.sliceValue:
-        case ValueKind.rangeValue:
-            throw new YshTypeError("obj[index] expected List or Dict");
-        }
+        return subscriptGet(object, index);
     }
 
     if (auto attribute = cast(AttributeExpr)expression) {
@@ -567,6 +676,9 @@ private class UnaryExpr : Expr {
                 : Value.floating(-number.floatValue);
         case "not":
             return Value.boolean(!toBool(value));
+        case "~":
+            // Infinite-precision two's-complement identity.
+            return Value.integer(-convertToInt(value) - 1);
         default:
             assert(false, "unknown unary operator");
         }
@@ -604,6 +716,11 @@ private class BinaryExpr : Expr {
         case "//":
         case "%":
         case "**":
+        case "&":
+        case "|":
+        case "^":
+        case "<<":
+        case ">>":
             return intBinary(op_, left, right);
         case "++":
             return concat(left, right);
