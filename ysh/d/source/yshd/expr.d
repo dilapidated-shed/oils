@@ -731,6 +731,24 @@ private class BinaryExpr : Expr {
     }
 }
 
+private class IfExpr : Expr {
+    private Expr test_;
+    private Expr body_;
+    private Expr alternative_;
+
+    this(Expr test, Expr body, Expr alternative) {
+        test_ = test;
+        body_ = body;
+        alternative_ = alternative;
+    }
+
+    override Value eval(Memory mem) {
+        return toBool(test_.eval(mem))
+            ? body_.eval(mem)
+            : alternative_.eval(mem);
+    }
+}
+
 private class CompareExpr : Expr {
     private Expr left_;
     private CompareOp[] operators_;
@@ -804,7 +822,7 @@ private class Parser {
     }
 
     Expr parse() {
-        Expr result = parseOr();
+        Expr result = parseTest();
         if (current_.kind != TokenKind.eof) {
             throw new ParseError(format("unexpected '%s' at byte %s", current_.text, current_.offset));
         }
@@ -813,6 +831,18 @@ private class Parser {
 
     private void advance() {
         current_ = lexer_.next();
+    }
+
+    private Expr parseTest() {
+        Expr body = parseOr();
+        if (current_.kind == TokenKind.ifKeyword) {
+            advance();
+            auto condition = parseOr();
+            require(TokenKind.elseKeyword, "else");
+            auto alternative = parseTest();
+            return new IfExpr(condition, body, alternative);
+        }
+        return body;
     }
 
     private Expr parseOr() {
@@ -1071,9 +1101,27 @@ private class Parser {
             return new VariableExpr(token.text);
         case TokenKind.leftParen:
             advance();
-            Expr inside = parseOr();
+            if (current_.kind == TokenKind.rightParen) {
+                advance();
+                return new ListExpr([]);
+            }
+
+            Expr first = parseTest();
+            if (current_.kind != TokenKind.comma) {
+                require(TokenKind.rightParen, ")");
+                return first;
+            }
+
+            Expr[] items = [first];
+            while (current_.kind == TokenKind.comma) {
+                advance();
+                if (current_.kind == TokenKind.rightParen) {
+                    break;
+                }
+                items ~= parseTest();
+            }
             require(TokenKind.rightParen, ")");
-            return inside;
+            return new ListExpr(items);
         case TokenKind.leftBracket:
             return parseList();
         case TokenKind.leftBrace:
@@ -1088,7 +1136,7 @@ private class Parser {
         Expr[] items;
         if (current_.kind != TokenKind.rightBracket) {
             while (true) {
-                items ~= parseOr();
+                items ~= parseTest();
                 if (current_.kind != TokenKind.comma) {
                     break;
                 }
@@ -1118,7 +1166,7 @@ private class Parser {
                     advance();
                     if (current_.kind == TokenKind.colon) {
                         advance();
-                        value = parseOr();
+                        value = parseTest();
                     } else {
                         value = new VariableExpr(name);
                     }
@@ -1126,13 +1174,13 @@ private class Parser {
                     key = new LiteralExpr(Value.str(current_.text));
                     advance();
                     require(TokenKind.colon, ":");
-                    value = parseOr();
+                    value = parseTest();
                 } else if (current_.kind == TokenKind.leftBracket) {
                     advance();
-                    key = parseOr();
+                    key = parseTest();
                     require(TokenKind.rightBracket, "]");
                     require(TokenKind.colon, ":");
-                    value = parseOr();
+                    value = parseTest();
                 } else {
                     throw new ParseError(format(
                         "expected Dict key at byte %s", current_.offset));
@@ -1284,6 +1332,11 @@ unittest {
     assert(repr(evaluate("1 and 42")) == "42");
     assert(repr(evaluate("not []")) == "true");
     assert(repr(evaluate("1 < 2 < 3")) == "true");
+    assert(repr(evaluate("10 if true else 20")) == "10");
+    assert(repr(evaluate("10 if false else 20")) == "20");
+    assert(repr(evaluate("1 if false else 2 if false else 3")) == "3");
+    assert(repr(evaluate("(1, 2, 3)")) == "[1, 2, 3]");
+    assert(repr(evaluate("()")) == "[]");
     assert(repr(evaluate("1 === 1")) == "true");
     assert(repr(evaluate("1 !== '1'")) == "true");
     assert(repr(evaluate("'40' + 2")) == "42");
