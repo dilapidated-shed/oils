@@ -671,7 +671,7 @@ private class Parser {
                 operators ~= CompareOp.notContains;
                 advance();
             } else {
-                final switch (current_.kind) {
+                switch (current_.kind) {
                 case TokenKind.less:
                     operators ~= CompareOp.less;
                     break;
