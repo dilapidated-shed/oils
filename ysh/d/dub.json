@@ -1,0 +1,8 @@
+{
+  "name": "ysh-d",
+  "description": "Independent D translation of YSH",
+  "license": "Apache-2.0",
+  "targetType": "executable",
+  "sourcePaths": ["source"],
+  "mainSourceFile": "source/app.d"
+}
