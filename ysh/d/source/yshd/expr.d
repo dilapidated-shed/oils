@@ -5,6 +5,7 @@ import std.conv : to;
 import std.format : format;
 import std.string : replace, strip;
 
+import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, YshTypeError, exactlyEqual, toBool;
 
 class ParseError : YshError {
@@ -18,12 +19,14 @@ private enum TokenKind {
     integer,
     floating,
     stringValue,
+    name,
     nullKeyword,
     trueKeyword,
     falseKeyword,
     andKeyword,
     orKeyword,
     notKeyword,
+    inKeyword,
     plus,
     minus,
     star,
@@ -42,6 +45,10 @@ private enum TokenKind {
     rightParen,
     leftBracket,
     rightBracket,
+    leftBrace,
+    rightBrace,
+    dot,
+    colon,
     comma,
 }
 
@@ -107,8 +114,10 @@ private class Lexer {
                 return Token(TokenKind.orKeyword, text, start);
             case "not":
                 return Token(TokenKind.notKeyword, text, start);
+            case "in":
+                return Token(TokenKind.inKeyword, text, start);
             default:
-                throw new ParseError(format("unsupported name '%s' at byte %s", text, start));
+                return Token(TokenKind.name, text, start);
             }
         }
 
@@ -179,6 +188,14 @@ private class Lexer {
             return Token(TokenKind.leftBracket, "[", start);
         case ']':
             return Token(TokenKind.rightBracket, "]", start);
+        case '{':
+            return Token(TokenKind.leftBrace, "{", start);
+        case '}':
+            return Token(TokenKind.rightBrace, "}", start);
+        case '.':
+            return Token(TokenKind.dot, ".", start);
+        case ':':
+            return Token(TokenKind.colon, ":", start);
         case ',':
             return Token(TokenKind.comma, ",", start);
         default:
@@ -528,7 +545,7 @@ private bool numericCompare(string op, Value left, Value right) {
 }
 
 abstract class Expr {
-    abstract Value eval();
+    abstract Value eval(Memory mem);
 }
 
 private class LiteralExpr : Expr {
@@ -538,8 +555,152 @@ private class LiteralExpr : Expr {
         value_ = value;
     }
 
-    override Value eval() {
+    override Value eval(Memory mem) {
         return value_;
+    }
+}
+
+
+private class VariableExpr : Expr {
+    private string name_;
+
+    this(string name) {
+        name_ = name;
+    }
+
+    override Value eval(Memory mem) {
+        return mem.get(name_);
+    }
+}
+
+private class DictExpr : Expr {
+    private string[] keys_;
+    private Expr[] values_;
+
+    this(string[] keys, Expr[] values) {
+        keys_ = keys;
+        values_ = values;
+    }
+
+    override Value eval(Memory mem) {
+        Value[string] fields;
+        foreach (index, key; keys_) {
+            fields[key] = values_[index].eval(mem);
+        }
+        return Value.dict(fields);
+    }
+}
+
+private long listIndex(Value index) {
+    auto integer = convertToInt(index);
+    try {
+        return to!long(toDecimalString(integer));
+    } catch (Exception error) {
+        throw new YshTypeError("List index should fit in an Int");
+    }
+}
+
+private string dictKey(Value index) {
+    if (index.kind != ValueKind.stringValue) {
+        throw new YshTypeError("Dict index should be Str");
+    }
+    return index.stringValue;
+}
+
+private class SubscriptExpr : Expr {
+    private Expr object_;
+    private Expr index_;
+
+    this(Expr object, Expr index) {
+        object_ = object;
+        index_ = index;
+    }
+
+    override Value eval(Memory mem) {
+        auto object = object_.eval(mem);
+        auto index = index_.eval(mem);
+
+        final switch (object.kind) {
+        case ValueKind.list:
+            auto i = listIndex(index);
+            if (i < 0) {
+                i += cast(long)object.listValue.length;
+            }
+            if (i < 0 || i >= object.listValue.length) {
+                throw new YshError("List index out of range");
+            }
+            return object.listValue[cast(size_t)i];
+        case ValueKind.dict:
+            auto key = dictKey(index);
+            auto found = key in object.dictValue;
+            if (found is null) {
+                throw new YshError(format("Dict key not found: '%s'", key));
+            }
+            return *found;
+        case ValueKind.nullValue:
+        case ValueKind.boolean:
+        case ValueKind.integer:
+        case ValueKind.floating:
+        case ValueKind.stringValue:
+            throw new YshTypeError("obj[index] expected List or Dict");
+        }
+    }
+
+    void assign(Memory mem, Value value) {
+        auto object = object_.eval(mem);
+        auto index = index_.eval(mem);
+
+        final switch (object.kind) {
+        case ValueKind.list:
+            auto i = listIndex(index);
+            if (i < 0) {
+                i += cast(long)object.listValue.length;
+            }
+            if (i < 0 || i >= object.listValue.length) {
+                throw new YshError("index out of range");
+            }
+            object.listValue[cast(size_t)i] = value;
+            return;
+        case ValueKind.dict:
+            object.dictValue[dictKey(index)] = value;
+            return;
+        case ValueKind.nullValue:
+        case ValueKind.boolean:
+        case ValueKind.integer:
+        case ValueKind.floating:
+        case ValueKind.stringValue:
+            throw new YshTypeError("obj[index] expected List or Dict");
+        }
+    }
+}
+
+private class AttributeExpr : Expr {
+    private Expr object_;
+    private string name_;
+
+    this(Expr object, string name) {
+        object_ = object;
+        name_ = name;
+    }
+
+    override Value eval(Memory mem) {
+        auto object = object_.eval(mem);
+        if (object.kind != ValueKind.dict) {
+            throw new YshTypeError("attribute lookup expected Dict in this translated slice");
+        }
+        auto found = name_ in object.dictValue;
+        if (found is null) {
+            throw new YshError(format("Dict key not found: '%s'", name_));
+        }
+        return *found;
+    }
+
+    void assign(Memory mem, Value value) {
+        auto object = object_.eval(mem);
+        if (object.kind != ValueKind.dict) {
+            throw new YshTypeError("attribute assignment expected Dict in this translated slice");
+        }
+        object.dictValue[name_] = value;
     }
 }
 
@@ -550,10 +711,10 @@ private class ListExpr : Expr {
         items_ = items;
     }
 
-    override Value eval() {
+    override Value eval(Memory mem) {
         Value[] values;
         foreach (item; items_) {
-            values ~= item.eval();
+            values ~= item.eval(mem);
         }
         return Value.list(values);
     }
@@ -568,8 +729,8 @@ private class UnaryExpr : Expr {
         child_ = child;
     }
 
-    override Value eval() {
-        auto value = child_.eval();
+    override Value eval(Memory mem) {
+        auto value = child_.eval(mem);
         switch (op_) {
         case "+":
             auto number = convertToNumber(value);
@@ -600,17 +761,17 @@ private class BinaryExpr : Expr {
         right_ = right;
     }
 
-    override Value eval() {
-        auto left = left_.eval();
+    override Value eval(Memory mem) {
+        auto left = left_.eval(mem);
 
         if (op_ == "and") {
-            return toBool(left) ? right_.eval() : left;
+            return toBool(left) ? right_.eval(mem) : left;
         }
         if (op_ == "or") {
-            return toBool(left) ? left : right_.eval();
+            return toBool(left) ? left : right_.eval(mem);
         }
 
-        auto right = right_.eval();
+        auto right = right_.eval(mem);
         switch (op_) {
         case "+":
         case "-":
@@ -640,10 +801,10 @@ private class CompareExpr : Expr {
         comparators_ = comparators;
     }
 
-    override Value eval() {
-        Value left = left_.eval();
+    override Value eval(Memory mem) {
+        Value left = left_.eval(mem);
         foreach (index, op; operators_) {
-            Value right = comparators_[index].eval();
+            Value right = comparators_[index].eval(mem);
             bool result;
             switch (op) {
             case "<":
@@ -657,6 +818,24 @@ private class CompareExpr : Expr {
                 break;
             case "!==":
                 result = !exactlyEqual(left, right);
+                break;
+            case "in":
+                if (right.kind != ValueKind.dict) {
+                    throw new YshTypeError("RHS of 'in' should be Dict");
+                }
+                if (left.kind != ValueKind.stringValue) {
+                    throw new YshTypeError("LHS of 'in' should be Str");
+                }
+                result = (left.stringValue in right.dictValue) !is null;
+                break;
+            case "not in":
+                if (right.kind != ValueKind.dict) {
+                    throw new YshTypeError("RHS of 'not in' should be Dict");
+                }
+                if (left.kind != ValueKind.stringValue) {
+                    throw new YshTypeError("LHS of 'not in' should be Str");
+                }
+                result = (left.stringValue in right.dictValue) is null;
                 break;
             default:
                 assert(false, "unknown comparison operator");
@@ -726,8 +905,17 @@ private class Parser {
         Expr[] comparators;
 
         while (isComparison(current_.kind)) {
-            operators ~= current_.text;
-            advance();
+            if (current_.kind == TokenKind.notKeyword) {
+                advance();
+                if (current_.kind != TokenKind.inKeyword) {
+                    throw new ParseError(format("expected 'in' at byte %s", current_.offset));
+                }
+                operators ~= "not in";
+                advance();
+            } else {
+                operators ~= current_.text;
+                advance();
+            }
             comparators ~= parseAdditive();
         }
 
@@ -745,6 +933,8 @@ private class Parser {
         case TokenKind.greaterEqual:
         case TokenKind.tripleEqual:
         case TokenKind.notDoubleEqual:
+        case TokenKind.inKeyword:
+        case TokenKind.notKeyword:
             return true;
         default:
             return false;
@@ -786,6 +976,24 @@ private class Parser {
     // Mirrors grammar.pgen2: power -> atom trailer* ['**' factor].
     private Expr parsePower() {
         Expr left = parseAtom();
+
+        while (current_.kind == TokenKind.leftBracket || current_.kind == TokenKind.dot) {
+            if (current_.kind == TokenKind.leftBracket) {
+                advance();
+                auto index = parseOr();
+                require(TokenKind.rightBracket, "]");
+                left = new SubscriptExpr(left, index);
+            } else {
+                advance();
+                if (current_.kind != TokenKind.name) {
+                    throw new ParseError(format("expected attribute name at byte %s", current_.offset));
+                }
+                auto name = current_.text;
+                advance();
+                left = new AttributeExpr(left, name);
+            }
+        }
+
         if (current_.kind == TokenKind.starStar) {
             auto op = current_.text;
             advance();
@@ -815,6 +1023,9 @@ private class Parser {
         case TokenKind.stringValue:
             advance();
             return new LiteralExpr(Value.str(token.text));
+        case TokenKind.name:
+            advance();
+            return new VariableExpr(token.text);
         case TokenKind.leftParen:
             advance();
             Expr inside = parseOr();
@@ -822,6 +1033,8 @@ private class Parser {
             return inside;
         case TokenKind.leftBracket:
             return parseList();
+        case TokenKind.leftBrace:
+            return parseDict();
         default:
             throw new ParseError(format("expected expression at byte %s, got '%s'", token.offset, token.text));
         }
@@ -846,6 +1059,52 @@ private class Parser {
         return new ListExpr(items);
     }
 
+    private Expr parseDict() {
+        require(TokenKind.leftBrace, "{");
+        string[] keys;
+        Expr[] values;
+
+        if (current_.kind != TokenKind.rightBrace) {
+            while (true) {
+                string key;
+                Expr value;
+
+                if (current_.kind == TokenKind.name) {
+                    key = current_.text;
+                    advance();
+                    if (current_.kind == TokenKind.colon) {
+                        advance();
+                        value = parseOr();
+                    } else {
+                        value = new VariableExpr(key);
+                    }
+                } else if (current_.kind == TokenKind.stringValue) {
+                    key = current_.text;
+                    advance();
+                    require(TokenKind.colon, ":");
+                    value = parseOr();
+                } else {
+                    throw new ParseError(format(
+                        "expected Dict key at byte %s", current_.offset));
+                }
+
+                keys ~= key;
+                values ~= value;
+
+                if (current_.kind != TokenKind.comma) {
+                    break;
+                }
+                advance();
+                if (current_.kind == TokenKind.rightBrace) {
+                    break;
+                }
+            }
+        }
+
+        require(TokenKind.rightBrace, "}");
+        return new DictExpr(keys, values);
+    }
+
     private void require(TokenKind kind, string spelling) {
         if (current_.kind != kind) {
             throw new ParseError(format("expected '%s' at byte %s", spelling, current_.offset));
@@ -855,8 +1114,12 @@ private class Parser {
 }
 
 Value evaluate(string source) {
+    return evaluate(source, new Memory());
+}
+
+Value evaluate(string source, Memory mem) {
     auto parser = new Parser(source);
-    return parser.parse().eval();
+    return parser.parse().eval(mem);
 }
 
 unittest {
@@ -897,4 +1160,16 @@ unittest {
         rejectedNegativeDivisor = true;
     }
     assert(rejectedNegativeDivisor);
+
+    auto mem = new Memory();
+    mem.declareLocal("x", Value.integer(40));
+    assert(repr(evaluate("x + 2", mem)) == "42");
+
+    mem.declareLocal("name", Value.str("foo"));
+    assert(repr(evaluate("{name, other: 2}", mem)) == "{\"name\": \"foo\", \"other\": 2}" ||
+           repr(evaluate("{name, other: 2}", mem)) == "{\"other\": 2, \"name\": \"foo\"}");
+    assert(repr(evaluate("{answer: 42}.answer", mem)) == "42");
+    assert(repr(evaluate("[10, 20, 30][1]", mem)) == "20");
+    assert(repr(evaluate("'answer' in {answer: 42}", mem)) == "true");
+    assert(repr(evaluate("'missing' not in {answer: 42}", mem)) == "true");
 }
