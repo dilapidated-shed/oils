@@ -1113,6 +1113,45 @@ private class Parser {
     }
 }
 
+enum AssignmentScope {
+    local,
+    global,
+}
+
+void assignPlace(string source, Value value, Memory mem,
+        AssignmentScope scope = AssignmentScope.local) {
+    auto parser = new Parser(source);
+    auto target = parser.parse();
+
+    if (auto variable = cast(VariableExpr)target) {
+        if (scope == AssignmentScope.global) {
+            mem.setGlobal(variable.name_, value);
+        } else {
+            mem.setVar(variable.name_, value);
+        }
+        return;
+    }
+
+    if (scope == AssignmentScope.global) {
+        // Upstream resolves the base object with GlobalOnly for setglobal.
+        // Keep this fail-closed until that lookup mode is represented in the
+        // D expression evaluator rather than mutating a possibly shadowed name.
+        throw new YshError("setglobal container assignment is not translated yet");
+    }
+
+    if (auto subscript = cast(SubscriptExpr)target) {
+        subscript.assign(mem, value);
+        return;
+    }
+
+    if (auto attribute = cast(AttributeExpr)target) {
+        attribute.assign(mem, value);
+        return;
+    }
+
+    throw new YshError("assignment target must be a variable, subscript, or attribute");
+}
+
 Value evaluate(string source) {
     return evaluate(source, new Memory());
 }
@@ -1172,4 +1211,15 @@ unittest {
     assert(repr(evaluate("[10, 20, 30][1]", mem)) == "20");
     assert(repr(evaluate("'answer' in {answer: 42}", mem)) == "true");
     assert(repr(evaluate("'missing' not in {answer: 42}", mem)) == "true");
+
+    mem.declareLocal("items", evaluate("[1, 2, 3]", mem));
+    assignPlace("items[1]", Value.integer(42), mem);
+    assert(repr(mem.get("items")) == "[1, 42, 3]");
+
+    mem.declareLocal("record", evaluate("{old: 1}", mem));
+    assignPlace("record.new", Value.integer(2), mem);
+    assert(repr(evaluate("record.new", mem)) == "2");
+
+    assignPlace("x", Value.integer(99), mem);
+    assert(repr(evaluate("x", mem)) == "99");
 }
