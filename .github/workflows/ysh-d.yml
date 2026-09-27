@@ -33,8 +33,9 @@ jobs:
         working-directory: ysh/d
         run: dub test --compiler=ldc2
 
-      - name: Smoke test expression CLI
+      - name: Smoke test D YSH executable
         working-directory: ysh/d
         run: |
           actual=$(dub run --quiet --compiler=ldc2 -- '1 + 2 * 3')
           test "$actual" = 7
+          dub run --quiet --compiler=ldc2 -- -c 'var x = 1; setvar x = 42'
