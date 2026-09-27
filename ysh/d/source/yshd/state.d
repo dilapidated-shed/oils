@@ -78,6 +78,24 @@ class Memory {
         return lookupLocalOrGlobal(name, ignored);
     }
 
+    Value getLocal(string name) {
+        Frame ignored;
+        auto cell = lookupFrame(currentFrame, name, false, ignored);
+        if (cell is null) {
+            throw new YshError(format("Undefined local variable '%s'", name));
+        }
+        return cell.value;
+    }
+
+    Value getGlobal(string name) {
+        Frame ignored;
+        auto cell = lookupFrame(globalFrame, name, false, ignored);
+        if (cell is null) {
+            throw new YshError(format("Undefined global variable '%s'", name));
+        }
+        return cell.value;
+    }
+
     void declareLocal(string name, Value value, bool readOnly = false) {
         Frame foundFrame;
         auto cell = lookupFrame(currentFrame, name, true, foundFrame);
