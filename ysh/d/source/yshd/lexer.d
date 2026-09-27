@@ -26,6 +26,8 @@ enum TokenKind {
     orKeyword,
     notKeyword,
     inKeyword,
+    ifKeyword,
+    elseKeyword,
 
     varKeyword,
     constKeyword,
@@ -146,6 +148,10 @@ class Lexer {
                 return Token(TokenKind.notKeyword, text, start);
             case "in":
                 return Token(TokenKind.inKeyword, text, start);
+            case "if":
+                return Token(TokenKind.ifKeyword, text, start);
+            case "else":
+                return Token(TokenKind.elseKeyword, text, start);
             case "var":
                 return Token(TokenKind.varKeyword, text, start);
             case "const":
