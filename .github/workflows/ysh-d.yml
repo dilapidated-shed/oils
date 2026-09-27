@@ -1,0 +1,40 @@
+name: ysh-d
+
+on:
+  pull_request:
+    paths:
+      - 'ysh/d/**'
+      - '.github/workflows/ysh-d.yml'
+  push:
+    branches: ['d/ysh-first-slice']
+    paths:
+      - 'ysh/d/**'
+      - '.github/workflows/ysh-d.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install D compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ldc dub
+
+      - name: Run D unit tests
+        working-directory: ysh/d
+        run: dub test --compiler=ldc2
+
+      - name: Smoke test expression CLI
+        working-directory: ysh/d
+        run: |
+          actual=$(dub run --quiet --compiler=ldc2 -- '1 + 2 * 3')
+          test "$actual" = 7
