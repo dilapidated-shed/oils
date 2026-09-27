@@ -272,19 +272,19 @@ private Value concat(Value left, Value right) {
         return Value.str(left.stringValue ~ right.stringValue);
     }
     if (left.kind == ValueKind.list && right.kind == ValueKind.list) {
-        Value[] items = left.listValue.dup;
-        items ~= right.listValue;
+        Value[] items = left.listValue.items.dup;
+        items ~= right.listValue.items;
         return Value.list(items);
     }
     if (left.kind == ValueKind.dict && right.kind == ValueKind.dict) {
-        Value[string] fields;
+        auto result = Value.dict();
         foreach (key, value; left.dictValue) {
-            fields[key] = value;
+            result.dictValue.set(key, value);
         }
         foreach (key, value; right.dictValue) {
-            fields[key] = value;
+            result.dictValue.set(key, value);
         }
-        return Value.dict(fields);
+        return result;
     }
     throw new YshTypeError("Expected Str ++ Str, List ++ List, or Dict ++ Dict");
 }
@@ -369,12 +369,12 @@ private class DictExpr : Expr {
     }
 
     override Value eval(Memory mem) {
-        Value[string] fields;
+        auto result = Value.dict();
         foreach (index, keyExpr; keys_) {
             auto key = dictKey(keyExpr.eval(mem));
-            fields[key] = values_[index].eval(mem);
+            result.dictValue.set(key, values_[index].eval(mem));
         }
-        return Value.dict(fields);
+        return result;
     }
 }
 
@@ -457,7 +457,7 @@ private Value subscriptGet(Value object, Value index) {
             if (upper < lower) {
                 upper = lower;
             }
-            return Value.list(object.listValue[
+            return Value.list(object.listValue.items[
                 cast(size_t)lower .. cast(size_t)upper].dup);
         }
 
@@ -465,11 +465,11 @@ private Value subscriptGet(Value object, Value index) {
         if (i < 0 || i >= object.listValue.length) {
             throw new YshError("List index out of range");
         }
-        return object.listValue[cast(size_t)i];
+        return object.listValue.items[cast(size_t)i];
 
     case ValueKind.dict:
         auto key = dictKey(index);
-        auto found = key in object.dictValue;
+        auto found = object.dictValue.find(key);
         if (found is null) {
             throw new YshError(format("Dict key not found: '%s'", key));
         }
@@ -561,10 +561,10 @@ private class SubscriptExpr : Expr {
             if (i < 0 || i >= object.listValue.length) {
                 throw new YshError("index out of range");
             }
-            object.listValue[cast(size_t)i] = value;
+            object.listValue.items[cast(size_t)i] = value;
             return;
         case ValueKind.dict:
-            object.dictValue[dictKey(index)] = value;
+            object.dictValue.set(dictKey(index), value);
             return;
         case ValueKind.nullValue:
         case ValueKind.boolean:
@@ -592,7 +592,7 @@ private class AttributeExpr : Expr {
         if (object.kind != ValueKind.dict) {
             throw new YshTypeError("attribute lookup expected Dict in this translated slice");
         }
-        auto found = name_ in object.dictValue;
+        auto found = object.dictValue.find(name_);
         if (found is null) {
             throw new YshError(format("Dict key not found: '%s'", name_));
         }
@@ -604,7 +604,7 @@ private class AttributeExpr : Expr {
         if (object.kind != ValueKind.dict) {
             throw new YshTypeError("attribute assignment expected Dict in this translated slice");
         }
-        object.dictValue[name_] = value;
+        object.dictValue.set(name_, value);
     }
 }
 
@@ -626,7 +626,7 @@ private Value evalLeftObject(Expr expression, Memory mem,
         if (object.kind != ValueKind.dict) {
             throw new YshTypeError("attribute lookup expected Dict");
         }
-        auto found = attribute.name_ in object.dictValue;
+        auto found = object.dictValue.find(attribute.name_);
         if (found is null) {
             throw new YshError(format(
                 "Dict key not found: '%s'", attribute.name_));
@@ -791,7 +791,7 @@ private class CompareExpr : Expr {
                 if (left.kind != ValueKind.stringValue) {
                     throw new YshTypeError("LHS of 'in' should be Str");
                 }
-                result = (left.stringValue in right.dictValue) !is null;
+                result = right.dictValue.contains(left.stringValue);
                 break;
             case CompareOp.notContains:
                 if (right.kind != ValueKind.dict) {
@@ -800,7 +800,7 @@ private class CompareExpr : Expr {
                 if (left.kind != ValueKind.stringValue) {
                     throw new YshTypeError("LHS of 'not in' should be Str");
                 }
-                result = (left.stringValue in right.dictValue) is null;
+                result = !right.dictValue.contains(left.stringValue);
                 break;
             }
             if (!result) {
@@ -1259,10 +1259,10 @@ private class ContainerResolvedPlace : ResolvedPlace {
             if (i < 0 || i >= object_.listValue.length) {
                 throw new YshError("index out of range");
             }
-            object_.listValue[cast(size_t)i] = value;
+            object_.listValue.items[cast(size_t)i] = value;
             return;
         case ValueKind.dict:
-            object_.dictValue[dictKey(index_)] = value;
+            object_.dictValue.set(dictKey(index_), value);
             return;
         case ValueKind.nullValue:
         case ValueKind.boolean:
