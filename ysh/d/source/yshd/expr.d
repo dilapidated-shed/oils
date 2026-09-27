@@ -128,6 +128,8 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.boolean:
     case ValueKind.list:
     case ValueKind.dict:
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -146,6 +148,8 @@ private BigInt convertToInt(Value value) {
     case ValueKind.floating:
     case ValueKind.list:
     case ValueKind.dict:
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -402,6 +406,8 @@ private class SubscriptExpr : Expr {
         case ValueKind.integer:
         case ValueKind.floating:
         case ValueKind.stringValue:
+        case ValueKind.sliceValue:
+        case ValueKind.rangeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -429,6 +435,8 @@ private class SubscriptExpr : Expr {
         case ValueKind.integer:
         case ValueKind.floating:
         case ValueKind.stringValue:
+        case ValueKind.sliceValue:
+        case ValueKind.rangeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -497,6 +505,8 @@ private Value evalLeftObject(Expr expression, Memory mem,
         case ValueKind.integer:
         case ValueKind.floating:
         case ValueKind.stringValue:
+        case ValueKind.sliceValue:
+        case ValueKind.rangeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -1012,6 +1022,8 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.integer:
         case ValueKind.floating:
         case ValueKind.stringValue:
+        case ValueKind.sliceValue:
+        case ValueKind.rangeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
