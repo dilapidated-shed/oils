@@ -360,17 +360,18 @@ private class VariableExpr : Expr {
 }
 
 private class DictExpr : Expr {
-    private string[] keys_;
+    private Expr[] keys_;
     private Expr[] values_;
 
-    this(string[] keys, Expr[] values) {
+    this(Expr[] keys, Expr[] values) {
         keys_ = keys;
         values_ = values;
     }
 
     override Value eval(Memory mem) {
         Value[string] fields;
-        foreach (index, key; keys_) {
+        foreach (index, keyExpr; keys_) {
+            auto key = dictKey(keyExpr.eval(mem));
             fields[key] = values_[index].eval(mem);
         }
         return Value.dict(fields);
@@ -1103,26 +1104,33 @@ private class Parser {
 
     private Expr parseDict() {
         require(TokenKind.leftBrace, "{");
-        string[] keys;
+        Expr[] keys;
         Expr[] values;
 
         if (current_.kind != TokenKind.rightBrace) {
             while (true) {
-                string key;
+                Expr key;
                 Expr value;
 
                 if (current_.kind == TokenKind.name) {
-                    key = current_.text;
+                    auto name = current_.text;
+                    key = new LiteralExpr(Value.str(name));
                     advance();
                     if (current_.kind == TokenKind.colon) {
                         advance();
                         value = parseOr();
                     } else {
-                        value = new VariableExpr(key);
+                        value = new VariableExpr(name);
                     }
                 } else if (current_.kind == TokenKind.stringValue) {
-                    key = current_.text;
+                    key = new LiteralExpr(Value.str(current_.text));
                     advance();
+                    require(TokenKind.colon, ":");
+                    value = parseOr();
+                } else if (current_.kind == TokenKind.leftBracket) {
+                    advance();
+                    key = parseOr();
+                    require(TokenKind.rightBracket, "]");
                     require(TokenKind.colon, ":");
                     value = parseOr();
                 } else {
@@ -1307,6 +1315,8 @@ unittest {
     assert(repr(evaluate("{name, other: 2}", mem)) == "{\"name\": \"foo\", \"other\": 2}" ||
            repr(evaluate("{name, other: 2}", mem)) == "{\"other\": 2, \"name\": \"foo\"}");
     assert(repr(evaluate("{answer: 42}.answer", mem)) == "42");
+    mem.declareLocal("key", Value.str("computed"));
+    assert(repr(evaluate("{[key]: 7}['computed']", mem)) == "7");
     assert(repr(evaluate("[10, 20, 30][1]", mem)) == "20");
     assert(repr(evaluate("'answer' in {answer: 42}", mem)) == "true");
     assert(repr(evaluate("'missing' not in {answer: 42}", mem)) == "true");
