@@ -4,7 +4,125 @@ import std.array : appender;
 import std.bigint : BigInt, toDecimalString;
 import std.format : format;
 
-/// The first D slice mirrors the user-visible YSH data model in core/value.asdl.
+/// Mutable YSH List identity.
+///
+/// Keeping the payload behind a class reference is important: a copied Value
+/// must still observe append/erase/mutation of the same List object.
+class YshList {
+    Value[] items;
+
+    this(Value[] items = []) {
+        this.items = items;
+    }
+
+    @property size_t length() const {
+        return items.length;
+    }
+
+    void append(Value value) {
+        items ~= value;
+    }
+}
+
+/// Mutable, insertion-ordered YSH Dict identity.
+///
+/// D associative arrays alone are not sufficient because YSH exposes stable
+/// key/value iteration order.  The fields table handles lookup while order
+/// records first insertion.
+class YshDict {
+    private Value[string] fields;
+    private string[] order;
+
+    @property size_t length() const {
+        return fields.length;
+    }
+
+    bool contains(string key) const {
+        return (key in fields) !is null;
+    }
+
+    Value* find(string key) {
+        return key in fields;
+    }
+
+    const(Value)* find(string key) const {
+        return key in fields;
+    }
+
+    Value get(string key) const {
+        auto found = key in fields;
+        if (found is null) {
+            throw new YshError(format("Dict key not found: '%s'", key));
+        }
+        return *found;
+    }
+
+    Value getOr(string key, Value fallback) const {
+        auto found = key in fields;
+        return found is null ? fallback : *found;
+    }
+
+    void set(string key, Value value) {
+        if ((key in fields) is null) {
+            order ~= key;
+        }
+        fields[key] = value;
+    }
+
+    void erase(string key) {
+        if ((key in fields) is null) {
+            return;
+        }
+        fields.remove(key);
+        foreach (index, existing; order) {
+            if (existing == key) {
+                order = order[0 .. index] ~ order[index + 1 .. $];
+                return;
+            }
+        }
+    }
+
+    void clear() {
+        fields = null;
+        order.length = 0;
+    }
+
+    string[] keys() const {
+        return order.dup;
+    }
+
+    Value[] values() const {
+        Value[] result;
+        result.reserve(order.length);
+        foreach (key; order) {
+            result ~= fields[key];
+        }
+        return result;
+    }
+
+    YshDict shallowCopy() const {
+        auto result = new YshDict();
+        foreach (key; order) {
+            result.set(key, fields[key]);
+        }
+        return result;
+    }
+
+    int opApply(scope int delegate(string, Value) dg) {
+        foreach (key; order) {
+            auto status = dg(key, fields[key]);
+            if (status != 0) {
+                return status;
+            }
+        }
+        return 0;
+    }
+}
+
+/// Runtime values translated from core/value.asdl.
+///
+/// More variants will be added until the complete ASDL surface reachable by
+/// YSH is represented here.
 enum ValueKind {
     nullValue,
     boolean,
@@ -35,8 +153,8 @@ struct Value {
     BigInt integerValue;
     double floatValue;
     string stringValue;
-    Value[] listValue;
-    Value[string] dictValue;
+    YshList listValue;
+    YshDict dictValue;
     bool sliceHasLower;
     long sliceLower;
     bool sliceHasUpper;
@@ -82,17 +200,25 @@ struct Value {
         return result;
     }
 
-    static Value list(Value[] value) {
+    static Value list(Value[] items) {
+        return listRef(new YshList(items));
+    }
+
+    static Value listRef(YshList items) {
         Value result;
         result.kind = ValueKind.list;
-        result.listValue = value;
+        result.listValue = items;
         return result;
     }
 
-    static Value dict(Value[string] value) {
+    static Value dict() {
+        return dictRef(new YshDict());
+    }
+
+    static Value dictRef(YshDict dictionary) {
         Value result;
         result.kind = ValueKind.dict;
-        result.dictValue = value;
+        result.dictValue = dictionary;
         return result;
     }
 
@@ -139,7 +265,6 @@ string kindName(Value value) {
     }
 }
 
-/// Mirrors ysh/val_ops.py:ToBool for the YSH data types translated so far.
 bool toBool(Value value) {
     final switch (value.kind) {
     case ValueKind.nullValue:
@@ -162,7 +287,6 @@ bool toBool(Value value) {
     }
 }
 
-/// Mirrors ysh/val_ops.py:Stringify for the scalar data types in this slice.
 string stringify(Value value) {
     final switch (value.kind) {
     case ValueKind.nullValue:
@@ -178,7 +302,8 @@ string stringify(Value value) {
     case ValueKind.list:
         throw new YshTypeError("got a List, which can't be stringified");
     case ValueKind.dict:
-        throw new YshTypeError("expected one of (Null Bool Int Float Str Eggex), got Dict");
+        throw new YshTypeError(
+            "expected one of (Null Bool Int Float Str Eggex), got Dict");
     case ValueKind.sliceValue:
         throw new YshTypeError("can't stringify Slice");
     case ValueKind.rangeValue:
@@ -186,10 +311,11 @@ string stringify(Value value) {
     }
 }
 
-/// Mirrors ysh/val_ops.py:ExactlyEqual for translated data types.
+/// Mirrors ysh/val_ops.py:ExactlyEqual for the translated data types.
 bool exactlyEqual(Value left, Value right) {
     if (left.kind == ValueKind.floating || right.kind == ValueKind.floating) {
-        throw new YshTypeError("Equality isn't defined on Float values (OILS-ERR-202)");
+        throw new YshTypeError(
+            "Equality isn't defined on Float values (OILS-ERR-202)");
     }
 
     if (left.kind != right.kind) {
@@ -211,8 +337,8 @@ bool exactlyEqual(Value left, Value right) {
         if (left.listValue.length != right.listValue.length) {
             return false;
         }
-        foreach (index, item; left.listValue) {
-            if (!exactlyEqual(item, right.listValue[index])) {
+        foreach (index, item; left.listValue.items) {
+            if (!exactlyEqual(item, right.listValue.items[index])) {
                 return false;
             }
         }
@@ -222,7 +348,7 @@ bool exactlyEqual(Value left, Value right) {
             return false;
         }
         foreach (key, item; left.dictValue) {
-            auto other = key in right.dictValue;
+            auto other = right.dictValue.find(key);
             if (other is null || !exactlyEqual(item, *other)) {
                 return false;
             }
@@ -264,9 +390,7 @@ private string quoteString(string value) {
     return buffer.data;
 }
 
-/// Stable diagnostic representation for this D port.  This is not yet YSH's
-/// full J8 pretty-printer.
-string repr(Value value) {
+private string reprWithActive(Value value, ref bool[Object] active) {
     final switch (value.kind) {
     case ValueKind.nullValue:
     case ValueKind.boolean:
@@ -276,17 +400,32 @@ string repr(Value value) {
     case ValueKind.stringValue:
         return quoteString(value.stringValue);
     case ValueKind.list:
+        Object identity = value.listValue;
+        if (identity in active) {
+            return "[...]";
+        }
+        active[identity] = true;
+        scope (exit) active.remove(identity);
+
         auto buffer = appender!string();
         buffer.put("[");
-        foreach (index, item; value.listValue) {
+        foreach (index, item; value.listValue.items) {
             if (index != 0) {
                 buffer.put(", ");
             }
-            buffer.put(repr(item));
+            buffer.put(reprWithActive(item, active));
         }
         buffer.put("]");
         return buffer.data;
+
     case ValueKind.dict:
+        Object identity = value.dictValue;
+        if (identity in active) {
+            return "{...}";
+        }
+        active[identity] = true;
+        scope (exit) active.remove(identity);
+
         auto buffer = appender!string();
         buffer.put("{");
         bool first = true;
@@ -297,10 +436,11 @@ string repr(Value value) {
             first = false;
             buffer.put(quoteString(key));
             buffer.put(": ");
-            buffer.put(repr(item));
+            buffer.put(reprWithActive(item, active));
         }
         buffer.put("}");
         return buffer.data;
+
     case ValueKind.sliceValue:
         auto lower = value.sliceHasLower ? format("%s", value.sliceLower) : "";
         auto upper = value.sliceHasUpper ? format("%s", value.sliceUpper) : "";
@@ -308,6 +448,13 @@ string repr(Value value) {
     case ValueKind.rangeValue:
         return format("%s..<%s", value.rangeLower, value.rangeUpper);
     }
+}
+
+/// Stable diagnostic representation for the D port. This remains separate from
+/// the full J8/display translation, but already handles recursive containers.
+string repr(Value value) {
+    bool[Object] active;
+    return reprWithActive(value, active);
 }
 
 unittest {
@@ -324,4 +471,19 @@ unittest {
     assert(exactlyEqual(
         Value.list([Value.integer(1), Value.str("x")]),
         Value.list([Value.integer(1), Value.str("x")])));
+
+    auto dictionary = Value.dict();
+    dictionary.dictValue.set("b", Value.integer(2));
+    dictionary.dictValue.set("a", Value.integer(1));
+    dictionary.dictValue.set("b", Value.integer(3));
+    assert(dictionary.dictValue.keys() == ["b", "a"]);
+    assert(repr(dictionary) == "{\"b\": 3, \"a\": 1}");
+
+    auto recursiveList = Value.list([]);
+    recursiveList.listValue.append(recursiveList);
+    assert(repr(recursiveList) == "[[...]]");
+
+    auto recursiveDict = Value.dict();
+    recursiveDict.dictValue.set("self", recursiveDict);
+    assert(repr(recursiveDict) == "{\"self\": {...}}");
 }
