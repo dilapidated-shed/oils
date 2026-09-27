@@ -5,11 +5,6 @@ on:
     paths:
       - 'ysh/d/**'
       - '.github/workflows/ysh-d.yml'
-  push:
-    branches: ['d/ysh-first-slice']
-    paths:
-      - 'ysh/d/**'
-      - '.github/workflows/ysh-d.yml'
 
 permissions:
   contents: read
