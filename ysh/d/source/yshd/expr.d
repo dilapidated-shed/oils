@@ -881,4 +881,20 @@ unittest {
     assert(repr(evaluate("+'3_000'")) == "3000");
     assert(repr(evaluate("0 and (1 / 0)")) == "0");
     assert(repr(evaluate("1 or (1 / 0)")) == "1");
+
+    bool rejectedFloatEquality;
+    try {
+        evaluate("1.0 === 1.0");
+    } catch (YshTypeError error) {
+        rejectedFloatEquality = true;
+    }
+    assert(rejectedFloatEquality);
+
+    bool rejectedNegativeDivisor;
+    try {
+        evaluate("7 % -2");
+    } catch (YshError error) {
+        rejectedNegativeDivisor = true;
+    }
+    assert(rejectedNegativeDivisor);
 }
