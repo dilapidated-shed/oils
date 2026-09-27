@@ -325,6 +325,12 @@ private class VariableExpr : Expr {
     override Value eval(Memory mem) {
         return mem.get(name_);
     }
+
+    Value evalLeft(Memory mem, AssignmentScope assignmentScope) {
+        return assignmentScope == AssignmentScope.global
+            ? mem.getGlobal(name_)
+            : mem.getLocal(name_);
+    }
 }
 
 private class DictExpr : Expr {
@@ -456,6 +462,59 @@ private class AttributeExpr : Expr {
         }
         object.dictValue[name_] = value;
     }
+}
+
+
+private Value evalLeftObject(Expr expression, Memory mem,
+        AssignmentScope assignmentScope) {
+    if (auto variable = cast(VariableExpr)expression) {
+        return variable.evalLeft(mem, assignmentScope);
+    }
+
+    if (auto subscript = cast(SubscriptExpr)expression) {
+        auto object = evalLeftObject(subscript.object_, mem, assignmentScope);
+        auto index = subscript.index_.eval(mem);
+
+        final switch (object.kind) {
+        case ValueKind.list:
+            auto i = listIndex(index);
+            if (i < 0) {
+                i += cast(long)object.listValue.length;
+            }
+            if (i < 0 || i >= object.listValue.length) {
+                throw new YshError("List index out of range");
+            }
+            return object.listValue[cast(size_t)i];
+        case ValueKind.dict:
+            auto key = dictKey(index);
+            auto found = key in object.dictValue;
+            if (found is null) {
+                throw new YshError(format("Dict key not found: '%s'", key));
+            }
+            return *found;
+        case ValueKind.nullValue:
+        case ValueKind.boolean:
+        case ValueKind.integer:
+        case ValueKind.floating:
+        case ValueKind.stringValue:
+            throw new YshTypeError("obj[index] expected List or Dict");
+        }
+    }
+
+    if (auto attribute = cast(AttributeExpr)expression) {
+        auto object = evalLeftObject(attribute.object_, mem, assignmentScope);
+        if (object.kind != ValueKind.dict) {
+            throw new YshTypeError("attribute lookup expected Dict");
+        }
+        auto found = attribute.name_ in object.dictValue;
+        if (found is null) {
+            throw new YshError(format(
+                "Dict key not found: '%s'", attribute.name_));
+        }
+        return *found;
+    }
+
+    throw new YshError("invalid left side for setvar/setglobal");
 }
 
 private class ListExpr : Expr {
@@ -900,38 +959,93 @@ enum AssignmentScope {
     global,
 }
 
-void assignPlace(string source, Value value, Memory mem,
+abstract class ResolvedPlace {
+    abstract void assign(Value value);
+}
+
+private class NameResolvedPlace : ResolvedPlace {
+    private Memory mem_;
+    private string name_;
+    private AssignmentScope assignmentScope_;
+
+    this(Memory mem, string name, AssignmentScope assignmentScope) {
+        mem_ = mem;
+        name_ = name;
+        assignmentScope_ = assignmentScope;
+    }
+
+    override void assign(Value value) {
+        if (assignmentScope_ == AssignmentScope.global) {
+            mem_.setGlobal(name_, value);
+        } else {
+            mem_.setVar(name_, value);
+        }
+    }
+}
+
+private class ContainerResolvedPlace : ResolvedPlace {
+    private Value object_;
+    private Value index_;
+
+    this(Value object, Value index) {
+        object_ = object;
+        index_ = index;
+    }
+
+    override void assign(Value value) {
+        final switch (object_.kind) {
+        case ValueKind.list:
+            auto i = listIndex(index_);
+            if (i < 0) {
+                i += cast(long)object_.listValue.length;
+            }
+            if (i < 0 || i >= object_.listValue.length) {
+                throw new YshError("index out of range");
+            }
+            object_.listValue[cast(size_t)i] = value;
+            return;
+        case ValueKind.dict:
+            object_.dictValue[dictKey(index_)] = value;
+            return;
+        case ValueKind.nullValue:
+        case ValueKind.boolean:
+        case ValueKind.integer:
+        case ValueKind.floating:
+        case ValueKind.stringValue:
+            throw new YshTypeError("obj[index] expected List or Dict");
+        }
+    }
+}
+
+ResolvedPlace resolvePlace(string source, Memory mem,
         AssignmentScope assignmentScope = AssignmentScope.local) {
     auto parser = new Parser(source);
     auto target = parser.parse();
 
     if (auto variable = cast(VariableExpr)target) {
-        if (assignmentScope == AssignmentScope.global) {
-            mem.setGlobal(variable.name_, value);
-        } else {
-            mem.setVar(variable.name_, value);
-        }
-        return;
-    }
-
-    if (assignmentScope == AssignmentScope.global) {
-        // Upstream resolves the base object with GlobalOnly for setglobal.
-        // Keep this fail-closed until that lookup mode is represented in the
-        // D expression evaluator rather than mutating a possibly shadowed name.
-        throw new YshError("setglobal container assignment is not translated yet");
+        return new NameResolvedPlace(mem, variable.name_, assignmentScope);
     }
 
     if (auto subscript = cast(SubscriptExpr)target) {
-        subscript.assign(mem, value);
-        return;
+        auto object = evalLeftObject(
+            subscript.object_, mem, assignmentScope);
+        auto index = subscript.index_.eval(mem);
+        return new ContainerResolvedPlace(object, index);
     }
 
     if (auto attribute = cast(AttributeExpr)target) {
-        attribute.assign(mem, value);
-        return;
+        auto object = evalLeftObject(
+            attribute.object_, mem, assignmentScope);
+        return new ContainerResolvedPlace(object, Value.str(attribute.name_));
     }
 
-    throw new YshError("assignment target must be a variable, subscript, or attribute");
+    throw new YshError(
+        "assignment target must be a variable, subscript, or attribute");
+}
+
+void assignPlace(string source, Value value, Memory mem,
+        AssignmentScope assignmentScope = AssignmentScope.local) {
+    resolvePlace(source, mem, assignmentScope).assign(value);
 }
 
 Value evaluate(string source) {
