@@ -13,6 +13,8 @@ enum ValueKind {
     stringValue,
     list,
     dict,
+    sliceValue,
+    rangeValue,
 }
 
 class YshError : Exception {
@@ -35,6 +37,12 @@ struct Value {
     string stringValue;
     Value[] listValue;
     Value[string] dictValue;
+    bool sliceHasLower;
+    long sliceLower;
+    bool sliceHasUpper;
+    long sliceUpper;
+    long rangeLower;
+    long rangeUpper;
 
     static Value nullValue() {
         Value result;
@@ -87,6 +95,25 @@ struct Value {
         result.dictValue = value;
         return result;
     }
+
+    static Value slice(bool hasLower, long lower, bool hasUpper, long upper) {
+        Value result;
+        result.kind = ValueKind.sliceValue;
+        result.sliceHasLower = hasLower;
+        result.sliceLower = lower;
+        result.sliceHasUpper = hasUpper;
+        result.sliceUpper = upper;
+        return result;
+    }
+
+    /// Upper is exclusive, matching core/value.asdl Range and expr_eval.py.
+    static Value range(long lower, long upper) {
+        Value result;
+        result.kind = ValueKind.rangeValue;
+        result.rangeLower = lower;
+        result.rangeUpper = upper;
+        return result;
+    }
 }
 
 string kindName(Value value) {
@@ -105,6 +132,10 @@ string kindName(Value value) {
         return "List";
     case ValueKind.dict:
         return "Dict";
+    case ValueKind.sliceValue:
+        return "Slice";
+    case ValueKind.rangeValue:
+        return "Range";
     }
 }
 
@@ -125,6 +156,9 @@ bool toBool(Value value) {
         return value.listValue.length != 0;
     case ValueKind.dict:
         return value.dictValue.length != 0;
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
+        return true;
     }
 }
 
@@ -145,6 +179,10 @@ string stringify(Value value) {
         throw new YshTypeError("got a List, which can't be stringified");
     case ValueKind.dict:
         throw new YshTypeError("expected one of (Null Bool Int Float Str Eggex), got Dict");
+    case ValueKind.sliceValue:
+        throw new YshTypeError("can't stringify Slice");
+    case ValueKind.rangeValue:
+        throw new YshTypeError("can't stringify Range");
     }
 }
 
@@ -190,6 +228,10 @@ bool exactlyEqual(Value left, Value right) {
             }
         }
         return true;
+    case ValueKind.sliceValue:
+        throw new YshTypeError("Equality isn't defined on Slice values");
+    case ValueKind.rangeValue:
+        throw new YshTypeError("Equality isn't defined on Range values");
     }
 }
 
@@ -259,6 +301,12 @@ string repr(Value value) {
         }
         buffer.put("}");
         return buffer.data;
+    case ValueKind.sliceValue:
+        auto lower = value.sliceHasLower ? format("%s", value.sliceLower) : "";
+        auto upper = value.sliceHasUpper ? format("%s", value.sliceUpper) : "";
+        return lower ~ ":" ~ upper;
+    case ValueKind.rangeValue:
+        return format("%s..<%s", value.rangeLower, value.rangeUpper);
     }
 }
 
