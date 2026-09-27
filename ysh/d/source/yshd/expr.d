@@ -901,12 +901,12 @@ enum AssignmentScope {
 }
 
 void assignPlace(string source, Value value, Memory mem,
-        AssignmentScope scope = AssignmentScope.local) {
+        AssignmentScope assignmentScope = AssignmentScope.local) {
     auto parser = new Parser(source);
     auto target = parser.parse();
 
     if (auto variable = cast(VariableExpr)target) {
-        if (scope == AssignmentScope.global) {
+        if (assignmentScope == AssignmentScope.global) {
             mem.setGlobal(variable.name_, value);
         } else {
             mem.setVar(variable.name_, value);
@@ -914,7 +914,7 @@ void assignPlace(string source, Value value, Memory mem,
         return;
     }
 
-    if (scope == AssignmentScope.global) {
+    if (assignmentScope == AssignmentScope.global) {
         // Upstream resolves the base object with GlobalOnly for setglobal.
         // Keep this fail-closed until that lookup mode is represented in the
         // D expression evaluator rather than mutating a possibly shadowed name.
