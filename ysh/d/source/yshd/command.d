@@ -38,7 +38,7 @@ private Value[] destructure(Value right, size_t count, string description) {
             count, right.listValue.length));
     }
 
-    return right.listValue.dup;
+    return right.listValue.items.dup;
 }
 
 /// Translate osh/cmd_eval.py:_DoVarDecl semantics.
