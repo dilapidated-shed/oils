@@ -57,6 +57,7 @@ class Memory {
     Frame globalFrame;
     Frame currentFrame;
     private Frame[] frameStack;
+    private size_t loopDepth;
 
     this() {
         globalFrame = new Frame();
@@ -154,6 +155,21 @@ class Memory {
         }
         frameStack.length = frameStack.length - 1;
         currentFrame = frameStack[$ - 1];
+    }
+
+    void enterLoop() {
+        ++loopDepth;
+    }
+
+    void leaveLoop() {
+        if (loopDepth == 0) {
+            throw new YshError("can't leave a loop that is not active");
+        }
+        --loopDepth;
+    }
+
+    bool insideLoop() const {
+        return loopDepth != 0;
     }
 
     private Cell lookupLocalOrGlobal(string name, ref Frame foundFrame) {

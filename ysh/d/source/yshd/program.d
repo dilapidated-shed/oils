@@ -18,12 +18,22 @@ private class IfCommand {
     bool hasElse;
 }
 
+private class LoopControl : Exception {
+    bool shouldBreak;
+
+    this(bool shouldBreak) {
+        super(shouldBreak ? "YSH break" : "YSH continue");
+        this.shouldBreak = shouldBreak;
+    }
+}
+
 /// First command-language parser layer for the D translation.
 ///
 /// Oils already has a split between command parsing and YSH expression
 /// parsing. This parser recognizes translated declaration, mutation,
-/// function, return, and conditional command forms, while expression text is
-/// handed to the expression parser. Unsupported command forms fail closed.
+/// function, return, conditional, and while-loop command forms, while
+/// expression text is handed to the expression parser. Unsupported command
+/// forms fail closed.
 class ProgramParser {
     private string source_;
     private Lexer lexer_;
@@ -60,6 +70,15 @@ class ProgramParser {
                 break;
             case TokenKind.ifKeyword:
                 parseIf(mem);
+                break;
+            case TokenKind.whileKeyword:
+                parseWhile(mem);
+                break;
+            case TokenKind.breakKeyword:
+                parseLoopControl(mem, true);
+                break;
+            case TokenKind.continueKeyword:
+                parseLoopControl(mem, false);
                 break;
             default:
                 throw new YshError(format(
@@ -284,6 +303,62 @@ class ProgramParser {
         return command;
     }
 
+    private void parseWhile(Memory mem) {
+        advance(); // while
+        auto conditionSource = current_.kind == TokenKind.leftParen
+            ? collectParenthesizedExpression()
+            : collectConditionThroughBlock();
+        auto bodySource = collectBlock();
+
+        while (toBool(evaluate(conditionSource, mem))) {
+            mem.enterLoop();
+            scope (exit) mem.leaveLoop();
+            try {
+                executeProgram(bodySource, mem);
+            } catch (LoopControl control) {
+                if (control.shouldBreak) {
+                    break;
+                }
+            }
+        }
+    }
+
+    private string collectConditionThroughBlock() {
+        auto start = current_.offset;
+        auto end = start;
+        int depth;
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0 && current_.kind == TokenKind.leftBrace) {
+                end = current_.offset;
+                break;
+            }
+            if (depth == 0 && isEndStatement(current_.kind)) {
+                throw new YshError("expected '{' after while condition");
+            }
+            end = current_.offset + current_.text.length;
+            adjustDepth(depth, current_.kind);
+            advance();
+        }
+        auto condition = strip(source_[start .. end]);
+        if (condition.length == 0) {
+            throw new YshError("while condition cannot be empty");
+        }
+        return condition;
+    }
+
+    private void parseLoopControl(Memory mem, bool shouldBreak) {
+        advance();
+        if (!mem.insideLoop()) {
+            throw new YshError(shouldBreak
+                ? "break is only valid inside a loop"
+                : "continue is only valid inside a loop");
+        }
+        if (!isEndStatement(current_.kind)) {
+            throw new YshError("break and continue arguments are not translated yet");
+        }
+        throw new LoopControl(shouldBreak);
+    }
+
     private string collectParenthesizedExpression() {
         require(TokenKind.leftParen, "(");
         auto start = current_.offset;
@@ -473,6 +548,39 @@ unittest {
     assert(repr(mem.get("negative")) == "-1");
     assert(repr(mem.get("zero")) == "0");
     assert(repr(mem.get("positive")) == "1");
+
+    executeProgram(
+        "func factorial(number) {\n" ~
+        "  if (number <= 1) { return (1) }\n" ~
+        "  return (number * factorial(number - 1))\n" ~
+        "}\n" ~
+        "var factorial_of_six = factorial(6)\n",
+        mem);
+    assert(repr(mem.get("factorial_of_six")) == "720");
+
+    executeProgram(
+        "var iteration = 0\n" ~
+        "var visits = 0\n" ~
+        "while (iteration < 5) {\n" ~
+        "  setvar iteration = iteration + 1\n" ~
+        "  if (iteration === 2) { continue }\n" ~
+        "  if (iteration === 4) { break }\n" ~
+        "  setvar visits = visits + 1\n" ~
+        "}\n" ~
+        "var once = 0\n" ~
+        "while true { setvar once = once + 1; break }\n",
+        mem);
+    assert(repr(mem.get("iteration")) == "4");
+    assert(repr(mem.get("visits")) == "2");
+    assert(repr(mem.get("once")) == "1");
+
+    bool rejectedBreakOutsideLoop;
+    try {
+        executeProgram("break\n", mem);
+    } catch (YshError error) {
+        rejectedBreakOutsideLoop = true;
+    }
+    assert(rejectedBreakOutsideLoop);
 
     assert(repr(mem.get("items")) == "[42, 1, 3]");
     assert(repr(evaluate("record.int", mem)) == "2");

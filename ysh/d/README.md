@@ -30,10 +30,11 @@ The implementation currently follows these sources on the Oils/Grease line:
 - YSH's rule that exact equality is not defined on \`Float\`
 - positional user functions with definition-time immutable defaults, lexical capture, and \`return (expr)\`
 - nested \`if\` / \`else if\` / \`else\` command blocks, including return flow from selected branches
+- parenthesized or bare-expression \`while\` blocks with \`break\` and \`continue\`
 
 ## Deliberately not in this slice
 
-The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, and initial conditional command blocks. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. Procs, loops, regexes, word evaluation, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
+The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, conditional command blocks, and a first \`while\`/loop-control path. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. Procs, \`for\` loops, regexes, word evaluation, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
 
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 

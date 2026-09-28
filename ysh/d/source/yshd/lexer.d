@@ -35,6 +35,9 @@ enum TokenKind {
     setglobalKeyword,
     funcKeyword,
     returnKeyword,
+    whileKeyword,
+    breakKeyword,
+    continueKeyword,
 
     plus,
     minus,
@@ -166,6 +169,12 @@ class Lexer {
                 return Token(TokenKind.funcKeyword, text, start);
             case "return":
                 return Token(TokenKind.returnKeyword, text, start);
+            case "while":
+                return Token(TokenKind.whileKeyword, text, start);
+            case "break":
+                return Token(TokenKind.breakKeyword, text, start);
+            case "continue":
+                return Token(TokenKind.continueKeyword, text, start);
             default:
                 return Token(TokenKind.name, text, start);
             }
