@@ -36,6 +36,7 @@ enum TokenKind {
     funcKeyword,
     returnKeyword,
     whileKeyword,
+    forKeyword,
     breakKeyword,
     continueKeyword,
 
@@ -171,6 +172,8 @@ class Lexer {
                 return Token(TokenKind.returnKeyword, text, start);
             case "while":
                 return Token(TokenKind.whileKeyword, text, start);
+            case "for":
+                return Token(TokenKind.forKeyword, text, start);
             case "break":
                 return Token(TokenKind.breakKeyword, text, start);
             case "continue":

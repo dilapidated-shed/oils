@@ -130,6 +130,7 @@ Current state:
 - [x] first user-function path: declaration, positional/default binding, lexical capture, calls, and `return (expr)`
 - [x] first branching command path: `if`, `else if`, `else`, nested blocks, and returned values
 - [x] first loop-control path: `while`, `break`, and `continue` with nested command blocks
+- [x] first expression-iterator path: `for` over List, Dict, and Range values with index/key/value bindings
 - [ ] complete ASDL/data-model coverage
 - [ ] full YSH lexer
 - [ ] full YSH expression parser
@@ -156,6 +157,8 @@ The checked user-function item is an executable first slice, not completion of
 the unchecked functions/procs/closures surface. It does not yet cover named or
 variadic parameters, typed signatures, proc word arguments, block closures,
 named/variadic parameters, typed signatures, proc word arguments, block
-closures, `for` loops, exceptions, loop levels, or general function-body
+closures, exceptions, loop levels, or general function-body
 command evaluation. The checked branch/loop paths cover only `if`/`else if`/
-`else` and `while`/`break`/`continue` on the D command parser.
+`else`, `while`, and expression `for` over List/Dict/Range. Shell-word, glob,
+and stdin iteration are not translated yet. Mutation-sensitive collection
+iteration still needs differential coverage against the YSH specs.

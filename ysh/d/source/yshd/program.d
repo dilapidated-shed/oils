@@ -8,7 +8,7 @@ import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
-import yshd.value : Value, YshError, toBool;
+import yshd.value : Value, ValueKind, YshError, toBool;
 
 private class IfCommand {
     string conditionSource;
@@ -73,6 +73,9 @@ class ProgramParser {
                 break;
             case TokenKind.whileKeyword:
                 parseWhile(mem);
+                break;
+            case TokenKind.forKeyword:
+                parseFor(mem);
                 break;
             case TokenKind.breakKeyword:
                 parseLoopControl(mem, true);
@@ -320,6 +323,108 @@ class ProgramParser {
                     break;
                 }
             }
+        }
+    }
+
+    /// First expression-iterator form of YSH `for`. Shell word expansion,
+    /// stdin, and glob iteration remain separate frontend/runtime work.
+    private void parseFor(Memory mem) {
+        advance(); // for
+        string[] names;
+        while (true) {
+            if (current_.kind != TokenKind.name) {
+                throw new YshError(format("expected loop variable at byte %s", current_.offset));
+            }
+            names ~= current_.text;
+            advance();
+            if (current_.kind != TokenKind.comma) {
+                break;
+            }
+            advance();
+        }
+        if (names.length > 3) {
+            throw new YshError("for loops support at most three loop variables");
+        }
+        require(TokenKind.inKeyword, "in");
+        auto iterableSource = collectParenthesizedExpression();
+        auto bodySource = collectBlock();
+        auto iterable = evaluate(iterableSource, mem);
+
+        mem.enterLoop();
+        scope (exit) mem.leaveLoop();
+        switch (iterable.kind) {
+        case ValueKind.list:
+            // YSH List iteration observes its changing length as the loop
+            // runs, so appends extend the loop and removals shorten it.
+            size_t index;
+            while (index < iterable.listValue.length) {
+                auto item = iterable.listValue.items[index];
+                Value[] bindings;
+                if (names.length == 1) {
+                    bindings = [item];
+                } else if (names.length == 2) {
+                    bindings = [Value.integer(cast(long) index), item];
+                } else {
+                    throw new YshError("List for loop accepts one or two variables");
+                }
+                bindLoopVariables(names, bindings, mem);
+                try {
+                    executeProgram(bodySource, mem);
+                } catch (LoopControl control) {
+                    if (control.shouldBreak) {
+                        break;
+                    }
+                }
+                ++index;
+            }
+            break;
+        case ValueKind.dict:
+            // Dict iteration is over a stable key/value snapshot: mutations
+            // during the body do not change which entries this loop visits.
+            auto keys = iterable.dictValue.keys();
+            auto values = iterable.dictValue.values();
+            foreach (index, key; keys) {
+                Value[] bindings;
+                if (names.length == 1) {
+                    bindings = [Value.str(key)];
+                } else if (names.length == 2) {
+                    bindings = [Value.str(key), values[index]];
+                } else {
+                    bindings = [Value.integer(cast(long) index), Value.str(key), values[index]];
+                }
+                bindLoopVariables(names, bindings, mem);
+                try {
+                    executeProgram(bodySource, mem);
+                } catch (LoopControl control) {
+                    if (control.shouldBreak) {
+                        break;
+                    }
+                }
+            }
+            break;
+        case ValueKind.rangeValue:
+            if (names.length != 1) {
+                throw new YshError("Range for loop accepts one variable");
+            }
+            for (auto item = iterable.rangeLower; item < iterable.rangeUpper; ++item) {
+                bindLoopVariables(names, [Value.integer(item)], mem);
+                try {
+                    executeProgram(bodySource, mem);
+                } catch (LoopControl control) {
+                    if (control.shouldBreak) {
+                        break;
+                    }
+                }
+            }
+            break;
+        default:
+            throw new YshError(format("Object of type %s is not iterable", iterable.kind));
+        }
+    }
+
+    private static void bindLoopVariables(string[] names, Value[] values, Memory mem) {
+        foreach (index, name; names) {
+            mem.declareLocal(name, values[index]);
         }
     }
 
@@ -573,6 +678,48 @@ unittest {
     assert(repr(mem.get("iteration")) == "4");
     assert(repr(mem.get("visits")) == "2");
     assert(repr(mem.get("once")) == "1");
+
+    executeProgram(
+        "var list_total = 0\n" ~
+        "for item in ([1, 2, 3]) { setvar list_total = list_total + item }\n" ~
+        "var indexed = 0\n" ~
+        "for index, item in ([10, 20, 30]) {\n" ~
+        "  setvar indexed = indexed + index + item\n" ~
+        "}\n" ~
+        "var range_total = 0\n" ~
+        "for item in (0 ..< 4) { setvar range_total = range_total + item }\n" ~
+        "var dict_total = 0\n" ~
+        "for index, key, value in ({first: 5, second: 7}) {\n" ~
+        "  setvar dict_total = dict_total + index + value\n" ~
+        "}\n" ~
+        "var loop_skips = 0\n" ~
+        "for item in ([1, 2, 3, 4]) {\n" ~
+        "  if (item === 2) { continue }\n" ~
+        "  if (item === 4) { break }\n" ~
+        "  setvar loop_skips = loop_skips + item\n" ~
+        "}\n",
+        mem);
+    assert(repr(mem.get("list_total")) == "6");
+    assert(repr(mem.get("indexed")) == "63");
+    assert(repr(mem.get("range_total")) == "6");
+    assert(repr(mem.get("dict_total")) == "13");
+    assert(repr(mem.get("loop_skips")) == "4");
+
+    bool rejectedNonIterable;
+    try {
+        executeProgram("for item in (42) { setvar item = 1 }\n", mem);
+    } catch (YshError error) {
+        rejectedNonIterable = true;
+    }
+    assert(rejectedNonIterable);
+
+    bool rejectedThreeVariableList;
+    try {
+        executeProgram("for i, item, extra in ([1, 2]) {}\n", mem);
+    } catch (YshError error) {
+        rejectedThreeVariableList = true;
+    }
+    assert(rejectedThreeVariableList);
 
     bool rejectedBreakOutsideLoop;
     try {
