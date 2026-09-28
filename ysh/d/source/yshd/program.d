@@ -8,15 +8,22 @@ import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
-import yshd.value : Value, YshError;
+import yshd.value : Value, YshError, toBool;
+
+private class IfCommand {
+    string conditionSource;
+    string thenSource;
+    string elseSource;
+    IfCommand elseIf;
+    bool hasElse;
+}
 
 /// First command-language parser layer for the D translation.
 ///
 /// Oils already has a split between command parsing and YSH expression
-/// parsing. This parser recognizes the translated VarDecl/Mutation command
-/// forms, while RHS expression text is handed to the expression parser. As the
-/// rest of command.Command moves to D, this module becomes the command parser
-/// entry point rather than growing a separate mini-language.
+/// parsing. This parser recognizes translated declaration, mutation,
+/// function, return, and conditional command forms, while expression text is
+/// handed to the expression parser. Unsupported command forms fail closed.
 class ProgramParser {
     private string source_;
     private Lexer lexer_;
@@ -50,6 +57,9 @@ class ProgramParser {
                 break;
             case TokenKind.returnKeyword:
                 parseReturn(mem);
+                break;
+            case TokenKind.ifKeyword:
+                parseIf(mem);
                 break;
             default:
                 throw new YshError(format(
@@ -236,6 +246,87 @@ class ProgramParser {
         throw new FunctionReturn(evaluate(collectRhs(), mem));
     }
 
+    private void parseIf(Memory mem) {
+        auto command = parseIfCommand();
+        while (command !is null) {
+            if (toBool(evaluate(command.conditionSource, mem))) {
+                executeProgram(command.thenSource, mem);
+                return;
+            }
+            if (command.elseIf !is null) {
+                command = command.elseIf;
+                continue;
+            }
+            if (command.hasElse) {
+                executeProgram(command.elseSource, mem);
+            }
+            return;
+        }
+    }
+
+    private IfCommand parseIfCommand() {
+        require(TokenKind.ifKeyword, "if");
+        auto command = new IfCommand();
+        command.conditionSource = collectParenthesizedExpression();
+        command.thenSource = collectBlock();
+
+        // `else` may follow the closing brace on the same or next line.
+        skipEndStatements();
+        if (current_.kind == TokenKind.elseKeyword) {
+            advance();
+            command.hasElse = true;
+            if (current_.kind == TokenKind.ifKeyword) {
+                command.elseIf = parseIfCommand();
+            } else {
+                command.elseSource = collectBlock();
+            }
+        }
+        return command;
+    }
+
+    private string collectParenthesizedExpression() {
+        require(TokenKind.leftParen, "(");
+        auto start = current_.offset;
+        auto end = start;
+        int depth;
+
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0 && current_.kind == TokenKind.rightParen) {
+                end = current_.offset;
+                advance();
+                auto expression = strip(source_[start .. end]);
+                if (expression.length == 0) {
+                    throw new YshError("if condition cannot be empty");
+                }
+                return expression;
+            }
+            end = current_.offset + current_.text.length;
+            adjustDepth(depth, current_.kind);
+            advance();
+        }
+        throw new YshError("unterminated if condition");
+    }
+
+    private string collectBlock() {
+        require(TokenKind.leftBrace, "{");
+        auto start = current_.offset;
+        int depth = 1;
+        while (current_.kind != TokenKind.eof && depth != 0) {
+            if (current_.kind == TokenKind.leftBrace) {
+                ++depth;
+            } else if (current_.kind == TokenKind.rightBrace) {
+                --depth;
+                if (depth == 0) {
+                    auto body = source_[start .. current_.offset];
+                    advance();
+                    return body;
+                }
+            }
+            advance();
+        }
+        throw new YshError("unterminated command block");
+    }
+
     private void require(TokenKind kind, string spelling) {
         if (current_.kind != kind) {
             throw new YshError(format("expected '%s' at byte %s", spelling, current_.offset));
@@ -364,6 +455,24 @@ unittest {
         mem);
     assert(repr(mem.get("answer")) == "42");
     assert(repr(mem.get("explicit_answer")) == "44");
+
+    executeProgram(
+        "func classify(number) {\n" ~
+        "  if (number < 0) {\n" ~
+        "    return (-1)\n" ~
+        "  } else if (number === 0) {\n" ~
+        "    return (0)\n" ~
+        "  } else {\n" ~
+        "    return (1)\n" ~
+        "  }\n" ~
+        "}\n" ~
+        "var negative = classify(-2)\n" ~
+        "var zero = classify(0)\n" ~
+        "var positive = classify(3)\n",
+        mem);
+    assert(repr(mem.get("negative")) == "-1");
+    assert(repr(mem.get("zero")) == "0");
+    assert(repr(mem.get("positive")) == "1");
 
     assert(repr(mem.get("items")) == "[42, 1, 3]");
     assert(repr(evaluate("record.int", mem)) == "2");
