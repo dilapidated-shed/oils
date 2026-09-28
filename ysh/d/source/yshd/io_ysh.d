@@ -29,11 +29,29 @@ string renderWrite(string[] arguments, string separator = "\n",
     return result ~ ending;
 }
 
+/// Render the common YSH-visible OSH `echo` behavior from builtin/io_osh.py.
+string renderEcho(string[] arguments, bool noNewline = false) {
+    string result;
+    foreach (index, argument; arguments) {
+        if (index != 0) {
+            result ~= " ";
+        }
+        result ~= argument;
+    }
+    if (!noNewline) {
+        result ~= "\n";
+    }
+    return result;
+}
+
 unittest {
     assert(renderWrite(["a", "b"]) == "a\nb\n");
     assert(renderWrite(["a", "b"], "_", " END") == "a_b END");
     assert(renderWrite(["x"], "\n", "") == "x");
     assert(renderWrite([]) == "\n");
+    assert(renderEcho(["hello", "world"]) == "hello world\n");
+    assert(renderEcho(["joined"], true) == "joined");
+    assert(renderEcho([]) == "\n");
     assert(spliceArray(Value.list([
         Value.str("a b"), Value.integer(42), Value.boolean(false),
     ])) == ["a b", "42", "false"]);

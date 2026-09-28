@@ -122,6 +122,6 @@ jobs:
           actual=$(ysh/d/.build/ysh-d '1 + 2 * 3')
           test "$actual" = 7
           ysh/d/.build/ysh-d -c 'var x = 1; setvar x = 42'
-          actual=$(ysh/d/.build/ysh-d -c "var items = ['a b', 'c d']; var answer = 42; write @items; write \$answer \$[6 * 7] @[['x', 'y']]; write one two; write --sep '_' --end ' END' -- alpha beta; write -n x; write y")
-          expected=$(printf 'a b\nc d\n42\n42\nx\ny\none\ntwo\nalpha_beta ENDxy\ny\n')
+          actual=$(ysh/d/.build/ysh-d -c "var items = ['a b', 'c d']; var answer = 42; write @items; write \$answer \$[6 * 7] @[['x', 'y']]; echo hello world; echo -n joined; write one two; write --sep '_' --end ' END' -- alpha beta; write -n x; write y")
+          expected=$(printf 'a b\nc d\n42\n42\nx\ny\nhello world\njoinedone\ntwo\nalpha_beta ENDxy\ny\n')
           test "$actual" = "$expected"

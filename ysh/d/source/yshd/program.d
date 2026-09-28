@@ -7,7 +7,7 @@ import std.stdio : write;
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
-import yshd.io_ysh : renderWrite, spliceArray;
+import yshd.io_ysh : renderEcho, renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, stringify, toBool;
@@ -88,6 +88,10 @@ class ProgramParser {
             case TokenKind.name:
                 if (current_.text == "write") {
                     parseWrite(mem);
+                    break;
+                }
+                if (current_.text == "echo") {
+                    parseEcho(mem);
                     break;
                 }
                 throw new YshError(format(
@@ -475,6 +479,29 @@ class ProgramParser {
             ending = "";
         }
         write(renderWrite(arguments, separator, ending));
+    }
+
+    /// Common echo word and -n behavior from builtin/io_osh.py. The optional
+    /// -e escape decoder and shell option simple_echo still need translation.
+    private void parseEcho(Memory mem) {
+        advance(); // echo
+        bool noNewline;
+        string[] arguments;
+        bool parsingFlags = true;
+
+        while (!isEndStatement(current_.kind)) {
+            if (parsingFlags && atRawWord("-n")) {
+                consumeRawWord("-n");
+                noNewline = true;
+                continue;
+            }
+            if (parsingFlags && atRawWord("-e")) {
+                throw new YshError("echo -e escape processing is not translated yet");
+            }
+            parsingFlags = false;
+            arguments ~= readWriteWord(mem);
+        }
+        write(renderEcho(arguments, noNewline));
     }
 
     private string[] readWriteWord(Memory mem) {
