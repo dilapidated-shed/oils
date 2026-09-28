@@ -13,6 +13,7 @@ The implementation currently follows these sources on the Oils/Grease line:
 - \`ysh/expr_eval.py\` — numeric coercion, arithmetic, \`++\`, lazy \`and\`/\`or\`, comparisons
 - \`ysh/func_proc.py\` — initial D user-function declaration, call, default, and lexical-frame path
 - \`builtin/io_ysh.py:Write\` and \`spec/ysh-builtins.test.sh\` — scalar output arguments and basic output options
+- \`builtin/io_osh.py:Echo\` and \`spec/ysh-builtins.test.sh\` — ordinary output words and the \`-n\` option
 - \`ysh/grammar.pgen2\` — literal syntax and operator precedence
 - \`frontend/lexer_def.py\` — decimal integer/float spelling used for numeric string coercion
 
@@ -39,7 +40,7 @@ The implementation currently follows these sources on the Oils/Grease line:
 
 ## Deliberately not in this slice
 
-The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, conditional command blocks, \`while\`, expression \`for\` over List/Dict/Range values, scalar substitutions/list splices through \`write\`, common \`echo\` output, and concatenated/double-quoted scalar substitutions. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. General compound word parsing, word splitting, the \`echo -e\` escape mode, JSON/J8 output, shell-word/glob/stdin loop forms, procs, regexes, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
+The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, conditional command blocks, \`while\`, expression and literal shell-word \`for\` loops, scalar substitutions/list splices through \`write\`, common \`echo\` output, and concatenated/double-quoted scalar substitutions. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. Dynamic shell word expansion, glob/stdin loop forms, general compound word parsing, word splitting, the \`echo -e\` escape mode, JSON/J8 output, procs, regexes, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
 
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 

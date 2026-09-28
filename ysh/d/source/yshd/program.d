@@ -340,8 +340,8 @@ class ProgramParser {
         }
     }
 
-    /// First expression-iterator form of YSH `for`. Shell word expansion,
-    /// stdin, and glob iteration remain separate frontend/runtime work.
+    /// First expression-iterator and literal shell-word forms of YSH `for`.
+    /// Full shell expansion, stdin, and glob iteration remain separate work.
     private void parseFor(Memory mem) {
         advance(); // for
         string[] names;
@@ -360,6 +360,36 @@ class ProgramParser {
             throw new YshError("for loops support at most three loop variables");
         }
         require(TokenKind.inKeyword, "in");
+        if (current_.kind != TokenKind.leftParen) {
+            if (names.length > 2) {
+                throw new YshError("Shell-word for loops accept at most two variables");
+            }
+            string[] words;
+            while (current_.kind != TokenKind.leftBrace) {
+                if (isEndStatement(current_.kind)) {
+                    throw new YshError("expected '{' after for-loop words");
+                }
+                words ~= readCommandWord(mem);
+            }
+            auto bodySource = collectBlock();
+            mem.enterLoop();
+            scope (exit) mem.leaveLoop();
+            foreach (index, word; words) {
+                Value[] bindings = names.length == 1
+                    ? [Value.str(word)]
+                    : [Value.integer(cast(long) index), Value.str(word)];
+                bindLoopVariables(names, bindings, mem);
+                try {
+                    executeProgram(bodySource, mem);
+                } catch (LoopControl control) {
+                    if (control.shouldBreak) {
+                        break;
+                    }
+                }
+            }
+            return;
+        }
+
         auto iterableSource = collectParenthesizedExpression();
         auto bodySource = collectBlock();
         auto iterable = evaluate(iterableSource, mem);
@@ -1036,6 +1066,17 @@ unittest {
     assert(repr(mem.get("range_total")) == "6");
     assert(repr(mem.get("dict_total")) == "13");
     assert(repr(mem.get("loop_skips")) == "4");
+
+    executeProgram(
+        "var word_index_total = 0\n" ~
+        "var final_word = ''\n" ~
+        "for index, word in red green blue {\n" ~
+        "  setvar word_index_total = word_index_total + index\n" ~
+        "  setvar final_word = word\n" ~
+        "}\n",
+        mem);
+    assert(repr(mem.get("word_index_total")) == "3");
+    assert(repr(mem.get("final_word")) == "\"blue\"");
 
     bool rejectedNonIterable;
     try {
