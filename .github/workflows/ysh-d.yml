@@ -23,18 +23,42 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install D compiler
+      - name: Install DMD bootstrap and package runner
         run: |
           sudo apt-get update
-          sudo apt-get install -y ldc dub
+          sudo apt-get install -y build-essential ldc dub
 
-      - name: Run D unit tests
-        working-directory: ysh/d
-        run: dub test --compiler=ldc2
+      - name: Check out exact Icky DMD
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: dilapidated-shed/ick
+          ref: dmd
+          path: .icky-dmd
+          persist-credentials: false
 
-      - name: Smoke test D YSH executable
+      - name: Build Icky DMD
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd .icky-dmd/dmd/compiler/src
+          ldmd2 -run ./build.d dmd HOST_DMD="$(command -v ldmd2)"
+          dmd_bin=$(find ../../generated -type f -name dmd -perm -u+x -print -quit)
+          test -n "$dmd_bin"
+          dmd_bin=$(realpath "$dmd_bin")
+          "$dmd_bin" --version
+          mkdir -p "$GITHUB_WORKSPACE/.icky-bin"
+          ln -s "$dmd_bin" "$GITHUB_WORKSPACE/.icky-bin/dmd"
+
+      - name: Run D unit tests with Icky DMD
         working-directory: ysh/d
         run: |
-          actual=$(dub run --quiet --compiler=ldc2 -- '1 + 2 * 3')
+          export PATH="$GITHUB_WORKSPACE/.icky-bin:$PATH"
+          dub test --compiler=dmd
+
+      - name: Smoke test D YSH executable with Icky DMD
+        working-directory: ysh/d
+        run: |
+          export PATH="$GITHUB_WORKSPACE/.icky-bin:$PATH"
+          actual=$(dub run --quiet --compiler=dmd -- '1 + 2 * 3')
           test "$actual" = 7
-          dub run --quiet --compiler=ldc2 -- -c 'var x = 1; setvar x = 42'
+          dub run --quiet --compiler=dmd -- -c 'var x = 1; setvar x = 42'
