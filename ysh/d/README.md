@@ -36,20 +36,15 @@ The omission is intentional: each of those should enter with its corresponding Y
 
 ## Build and run
 
-From any checkout root:
+The acceptance compiler is the Mars/Icky-DMD line in \`dilapidated-shed/ick\`, with its matching pinned druntime and Phobos. The workflow in \`.github/workflows/ysh-d.yml\` reconstructs that toolchain from exact commits, compiles all translated modules directly with Icky DMD, runs their unittests, and then runs the CLI smoke cases.
 
-\`\`\`sh
-cd ysh/d
-dub test --compiler=ldc2
-dub run --compiler=ldc2 -- "1 + 2 * 3"
-\`\`\`
+LDC remains a bootstrap compiler for building Icky DMD; it is not the compiler used to accept the translated YSH source.
 
-The second command prints:
+A successful CLI smoke prints:
 
 \`\`\`text
 7
 \`\`\`
-
 The command-line printer is only a stable diagnostic representation for the D port. It is not yet the full YSH/J8 display layer.
 
 ## Integer representation
