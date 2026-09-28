@@ -133,6 +133,7 @@ enum ValueKind {
     dict,
     sliceValue,
     rangeValue,
+    functionValue,
 }
 
 class YshError : Exception {
@@ -161,6 +162,7 @@ struct Value {
     long sliceUpper;
     long rangeLower;
     long rangeUpper;
+    Object callableValue;
 
     static Value nullValue() {
         Value result;
@@ -240,6 +242,13 @@ struct Value {
         result.rangeUpper = upper;
         return result;
     }
+
+    static Value callable(Object callable) {
+        Value result;
+        result.kind = ValueKind.functionValue;
+        result.callableValue = callable;
+        return result;
+    }
 }
 
 string kindName(Value value) {
@@ -262,6 +271,8 @@ string kindName(Value value) {
         return "Slice";
     case ValueKind.rangeValue:
         return "Range";
+    case ValueKind.functionValue:
+        return "Func";
     }
 }
 
@@ -283,6 +294,8 @@ bool toBool(Value value) {
         return value.dictValue.length != 0;
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
+        return true;
+    case ValueKind.functionValue:
         return true;
     }
 }
@@ -308,6 +321,8 @@ string stringify(Value value) {
         throw new YshTypeError("can't stringify Slice");
     case ValueKind.rangeValue:
         throw new YshTypeError("can't stringify Range");
+    case ValueKind.functionValue:
+        throw new YshTypeError("can't stringify Func");
     }
 }
 
@@ -358,6 +373,8 @@ bool exactlyEqual(Value left, Value right) {
         throw new YshTypeError("Equality isn't defined on Slice values");
     case ValueKind.rangeValue:
         throw new YshTypeError("Equality isn't defined on Range values");
+    case ValueKind.functionValue:
+        return left.callableValue is right.callableValue;
     }
 }
 
@@ -447,6 +464,8 @@ private string reprWithActive(Value value, ref bool[Object] active) {
         return lower ~ ":" ~ upper;
     case ValueKind.rangeValue:
         return format("%s..<%s", value.rangeLower, value.rangeUpper);
+    case ValueKind.functionValue:
+        return "<func>";
     }
 }
 

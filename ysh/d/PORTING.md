@@ -127,6 +127,7 @@ Current state:
 - [x] VarDecl and ordinary Mutation evaluation, including destructuring/swaps
 - [x] scope-aware, two-phase variable/list/dict mutation places
 - [x] compatibility equality tokens normalize to semantic comparison operators
+- [x] first user-function path: declaration, positional/default binding, lexical capture, calls, and `return (expr)`
 - [ ] complete ASDL/data-model coverage
 - [ ] full YSH lexer
 - [ ] full YSH expression parser
@@ -148,3 +149,8 @@ Current state:
 - [ ] zero Python/C++ fallback on the YSH execution path
 
 Only the final item closes the whole-hog translation.
+
+The checked user-function item is an executable first slice, not completion of
+the unchecked functions/procs/closures surface. It does not yet cover named or
+variadic parameters, typed signatures, proc word arguments, block closures,
+control-flow statements, or general function-body command evaluation.

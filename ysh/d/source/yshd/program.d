@@ -4,10 +4,11 @@ import std.format : format;
 import std.string : strip;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
-import yshd.expr : AssignmentScope;
+import yshd.expr : AssignmentScope, evaluate;
+import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
-import yshd.value : YshError;
+import yshd.value : Value, YshError;
 
 /// First command-language parser layer for the D translation.
 ///
@@ -43,6 +44,12 @@ class ProgramParser {
                 break;
             case TokenKind.setglobalKeyword:
                 parseMutation(mem, AssignmentScope.global);
+                break;
+            case TokenKind.funcKeyword:
+                parseFunction(mem);
+                break;
+            case TokenKind.returnKeyword:
+                parseReturn(mem);
                 break;
             default:
                 throw new YshError(format(
@@ -131,6 +138,109 @@ class ProgramParser {
 
         auto rhs = collectRhs();
         executeMutation(Mutation(targets, assignmentScope, rhs), mem);
+    }
+
+    private void parseFunction(Memory mem) {
+        advance(); // func
+        if (current_.kind != TokenKind.name) {
+            throw new YshError(format("expected function name at byte %s", current_.offset));
+        }
+        auto name = current_.text;
+        advance();
+        require(TokenKind.leftParen, "(");
+        FunctionParameter[] parameters;
+        bool sawDefault;
+
+        if (current_.kind != TokenKind.rightParen) {
+            while (true) {
+                if (current_.kind != TokenKind.name) {
+                    throw new YshError(format("expected parameter name at byte %s", current_.offset));
+                }
+                auto parameterName = current_.text;
+                advance();
+                string defaultSource;
+
+                if (current_.kind == TokenKind.equal) {
+                    sawDefault = true;
+                    advance();
+                    defaultSource = collectParameterDefault();
+                    if (defaultSource.length == 0) {
+                        throw new YshError("expected parameter default expression");
+                    }
+                } else if (sawDefault) {
+                    throw new YshError("required parameter follows a default parameter");
+                }
+                parameters ~= FunctionParameter(parameterName, defaultSource);
+
+                if (current_.kind != TokenKind.comma) {
+                    break;
+                }
+                advance();
+                if (current_.kind == TokenKind.rightParen) {
+                    break;
+                }
+            }
+        }
+        require(TokenKind.rightParen, ")");
+        require(TokenKind.leftBrace, "{");
+
+        auto bodyStart = current_.offset;
+        int braceDepth = 1;
+        while (current_.kind != TokenKind.eof && braceDepth != 0) {
+            if (current_.kind == TokenKind.leftBrace) {
+                ++braceDepth;
+            } else if (current_.kind == TokenKind.rightBrace) {
+                --braceDepth;
+                if (braceDepth == 0) {
+                    break;
+                }
+            }
+            advance();
+        }
+        if (braceDepth != 0) {
+            throw new YshError("unterminated function body");
+        }
+        auto bodyEnd = current_.offset;
+        auto body = source_[bodyStart .. bodyEnd];
+        advance(); // closing brace
+
+        auto userFunction = new YshFunction(name, parameters, body, mem);
+        mem.declareLocal(name, Value.callable(userFunction));
+    }
+
+    private string collectParameterDefault() {
+        auto start = current_.offset;
+        auto end = start;
+        int depth;
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0 && (current_.kind == TokenKind.comma ||
+                    current_.kind == TokenKind.rightParen)) {
+                end = current_.offset;
+                break;
+            }
+            end = current_.offset + current_.text.length;
+            adjustDepth(depth, current_.kind);
+            advance();
+        }
+        return strip(source_[start .. end]);
+    }
+
+    private void parseReturn(Memory mem) {
+        advance(); // return
+        if (mem.currentFrame.enclosed is null) {
+            throw new YshError("return is only valid inside a function");
+        }
+        if (isEndStatement(current_.kind)) {
+            throw new YshError("return requires a value expression");
+        }
+        throw new FunctionReturn(evaluate(collectRhs(), mem));
+    }
+
+    private void require(TokenKind kind, string spelling) {
+        if (current_.kind != kind) {
+            throw new YshError(format("expected '%s' at byte %s", spelling, current_.offset));
+        }
+        advance();
     }
 
     /// Collect one YSH testlist through the end of the command. Top-level
@@ -240,6 +350,20 @@ unittest {
         "var record = {int: 42}\n" ~
         "setvar items[0], record.int = record.int, items[0]\n",
         mem);
+
+    executeProgram(
+        "var captured = 40\n" ~
+        "var default_value = 2\n" ~
+        "func add(amount, extra = default_value) {\n" ~
+        "  var result = captured + amount + extra\n" ~
+        "  return (result)\n" ~
+        "}\n" ~
+        "var answer = add(0)\n" ~
+        "setvar default_value = 99\n" ~
+        "var explicit_answer = add(1, 3)\n",
+        mem);
+    assert(repr(mem.get("answer")) == "42");
+    assert(repr(mem.get("explicit_answer")) == "44");
 
     assert(repr(mem.get("items")) == "[42, 1, 3]");
     assert(repr(evaluate("record.int", mem)) == "2");

@@ -33,6 +33,8 @@ enum TokenKind {
     constKeyword,
     setvarKeyword,
     setglobalKeyword,
+    funcKeyword,
+    returnKeyword,
 
     plus,
     minus,
@@ -160,6 +162,10 @@ class Lexer {
                 return Token(TokenKind.setvarKeyword, text, start);
             case "setglobal":
                 return Token(TokenKind.setglobalKeyword, text, start);
+            case "func":
+                return Token(TokenKind.funcKeyword, text, start);
+            case "return":
+                return Token(TokenKind.returnKeyword, text, start);
             default:
                 return Token(TokenKind.name, text, start);
             }

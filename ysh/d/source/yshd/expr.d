@@ -6,6 +6,7 @@ import std.format : format;
 import std.string : replace, strip;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
+import yshd.func_proc : YshFunction;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, YshTypeError, exactlyEqual, toBool;
 
@@ -130,6 +131,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.dict:
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
+    case ValueKind.functionValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -150,6 +152,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.dict:
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
+    case ValueKind.functionValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -481,6 +484,7 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.floating:
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
+    case ValueKind.functionValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -573,6 +577,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.stringValue:
         case ValueKind.sliceValue:
         case ValueKind.rangeValue:
+        case ValueKind.functionValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -605,6 +610,32 @@ private class AttributeExpr : Expr {
             throw new YshTypeError("attribute assignment expected Dict in this translated slice");
         }
         object.dictValue.set(name_, value);
+    }
+}
+
+private class CallExpr : Expr {
+    private Expr callee_;
+    private Expr[] arguments_;
+
+    this(Expr callee, Expr[] arguments) {
+        callee_ = callee;
+        arguments_ = arguments;
+    }
+
+    override Value eval(Memory mem) {
+        auto callee = callee_.eval(mem);
+        if (callee.kind != ValueKind.functionValue) {
+            throw new YshTypeError("YSH expression call requires Func");
+        }
+        auto userFunction = cast(YshFunction)callee.callableValue;
+        if (userFunction is null) {
+            throw new YshTypeError("unknown callable value");
+        }
+        Value[] arguments;
+        foreach (argument; arguments_) {
+            arguments ~= argument.eval(mem);
+        }
+        return userFunction.invoke(arguments);
     }
 }
 
@@ -1028,7 +1059,9 @@ private class Parser {
     private Expr parsePower() {
         Expr left = parseAtom();
 
-        while (current_.kind == TokenKind.leftBracket || current_.kind == TokenKind.dot) {
+        while (current_.kind == TokenKind.leftBracket ||
+                current_.kind == TokenKind.leftParen ||
+                current_.kind == TokenKind.dot) {
             if (current_.kind == TokenKind.leftBracket) {
                 advance();
 
@@ -1056,6 +1089,20 @@ private class Parser {
 
                 require(TokenKind.rightBracket, "]");
                 left = new SubscriptExpr(left, index);
+            } else if (current_.kind == TokenKind.leftParen) {
+                advance();
+                Expr[] arguments;
+                if (current_.kind != TokenKind.rightParen) {
+                    while (true) {
+                        arguments ~= parseTest();
+                        if (current_.kind != TokenKind.comma) {
+                            break;
+                        }
+                        advance();
+                    }
+                }
+                require(TokenKind.rightParen, ")");
+                left = new CallExpr(left, arguments);
             } else {
                 advance();
                 if (current_.kind != TokenKind.name) {
@@ -1271,6 +1318,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.stringValue:
         case ValueKind.sliceValue:
         case ValueKind.rangeValue:
+        case ValueKind.functionValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }

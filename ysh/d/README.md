@@ -11,6 +11,7 @@ The implementation currently follows these sources on the Oils/Grease line:
 - \`core/value.asdl\` — YSH data values: \`Null\`, \`Bool\`, \`Int\`, \`Float\`, \`Str\`, \`List\`, \`Dict\`
 - \`ysh/val_ops.py\` — truthiness, scalar stringification, exact equality
 - \`ysh/expr_eval.py\` — numeric coercion, arithmetic, \`++\`, lazy \`and\`/\`or\`, comparisons
+- \`ysh/func_proc.py\` — initial D user-function declaration, call, default, and lexical-frame path
 - \`ysh/grammar.pgen2\` — literal syntax and operator precedence
 - \`frontend/lexer_def.py\` — decimal integer/float spelling used for numeric string coercion
 
@@ -27,12 +28,13 @@ The implementation currently follows these sources on the Oils/Grease line:
 - YSH precedence for power: \`-2 ** 2\` is \`-(2 ** 2)\`
 - YSH integer division/remainder rules: \`//\` truncates toward zero; \`%\` rejects a negative divisor
 - YSH's rule that exact equality is not defined on \`Float\`
+- positional user functions with definition-time immutable defaults, lexical capture, and \`return (expr)\`
 
 ## Deliberately not in this slice
 
-Variables, assignments, dictionary literal syntax, bitwise operators, shifts, ranges, calls, attributes, subscripts, functions, procs, regexes, command syntax, word evaluation, redirections, processes, and OSH compatibility machinery are still outside the translated boundary.
+The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, and positional user functions. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. Procs, regexes, word evaluation, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
 
-The omission is intentional: each of those should enter with its corresponding YSH tests rather than as guessed scaffolding.
+Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 
 ## Build and run
 
