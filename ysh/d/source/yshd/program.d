@@ -7,10 +7,10 @@ import std.stdio : write;
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
-import yshd.io_ysh : renderWrite;
+import yshd.io_ysh : renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshError, toBool;
+import yshd.value : Value, ValueKind, YshError, stringify, toBool;
 
 private class IfCommand {
     string conditionSource;
@@ -87,7 +87,7 @@ class ProgramParser {
                 break;
             case TokenKind.name:
                 if (current_.text == "write") {
-                    parseWrite();
+                    parseWrite(mem);
                     break;
                 }
                 throw new YshError(format(
@@ -439,9 +439,10 @@ class ProgramParser {
     }
 
     /// Translate the scalar-word and basic output-option path of the YSH
-    /// `write` builtin. Expansion forms such as @array, $var, and $[expr]
-    /// remain in the word evaluator's ledger item.
-    private void parseWrite() {
+    /// `write` builtin. The supported word forms are literals, scalar
+    /// substitutions, and list splices; compound quoting and word splitting
+    /// remain in the full word evaluator's ledger item.
+    private void parseWrite(Memory mem) {
         advance(); // write
         string separator = "\n";
         string ending = "\n";
@@ -466,7 +467,7 @@ class ProgramParser {
                 throw new YshError(format(
                     "untranslated write option beginning at byte %s", current_.offset));
             } else {
-                arguments ~= readLiteralWord("write expects scalar words");
+                arguments ~= readWriteWord(mem);
             }
         }
 
@@ -474,6 +475,70 @@ class ProgramParser {
             ending = "";
         }
         write(renderWrite(arguments, separator, ending));
+    }
+
+    private string[] readWriteWord(Memory mem) {
+        if (current_.kind == TokenKind.at) {
+            return parseArraySplice(mem);
+        }
+        if (current_.kind == TokenKind.dollar) {
+            return [parseScalarSubstitution(mem)];
+        }
+        return [readLiteralWord("write expects scalar words")];
+    }
+
+    private string[] parseArraySplice(Memory mem) {
+        auto atOffset = current_.offset;
+        advance();
+        if (current_.offset != atOffset + 1) {
+            throw new YshError("@ splice expression must follow '@' without whitespace");
+        }
+        if (current_.kind == TokenKind.leftBracket) {
+            auto expression = collectBracketedExpression("@ splice");
+            return spliceArray(evaluate(expression, mem));
+        }
+        if (current_.kind != TokenKind.name) {
+            throw new YshError("@ splice expects a variable name or [expression]");
+        }
+        auto value = mem.get(current_.text);
+        advance();
+        return spliceArray(value);
+    }
+
+    private string parseScalarSubstitution(Memory mem) {
+        auto dollarOffset = current_.offset;
+        advance();
+        if (current_.offset != dollarOffset + 1) {
+            throw new YshError("$ substitution must follow '$' without whitespace");
+        }
+        if (current_.kind == TokenKind.leftBracket) {
+            return stringify(evaluate(collectBracketedExpression("$ expression"), mem));
+        }
+        if (current_.kind != TokenKind.name) {
+            throw new YshError("$ substitution expects a variable name or [expression]");
+        }
+        auto value = mem.get(current_.text);
+        advance();
+        return stringify(value);
+    }
+
+    private string collectBracketedExpression(string description) {
+        require(TokenKind.leftBracket, "[");
+        auto start = current_.offset;
+        int depth;
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0 && current_.kind == TokenKind.rightBracket) {
+                auto expression = strip(source_[start .. current_.offset]);
+                advance();
+                if (expression.length == 0) {
+                    throw new YshError(description ~ " cannot be empty");
+                }
+                return expression;
+            }
+            adjustDepth(depth, current_.kind);
+            advance();
+        }
+        throw new YshError("unterminated " ~ description);
     }
 
     private string readLiteralWord(string errorMessage) {

@@ -74,6 +74,8 @@ enum TokenKind {
     dot,
     colon,
     comma,
+    at,
+    dollar,
     semicolon,
 }
 
@@ -287,6 +289,10 @@ class Lexer {
             return Token(TokenKind.colon, ":", start);
         case ',':
             return Token(TokenKind.comma, ",", start);
+        case '@':
+            return Token(TokenKind.at, "@", start);
+        case '$':
+            return Token(TokenKind.dollar, "$", start);
         case ';':
             return Token(TokenKind.semicolon, ";", start);
         default:
