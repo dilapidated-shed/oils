@@ -17,6 +17,7 @@ enum TokenKind {
     integer,
     floating,
     stringValue,
+    doubleQuoted,
     name,
 
     nullKeyword,
@@ -125,6 +126,10 @@ class Lexer {
 
         auto start = position_;
         auto c = input_[position_];
+
+        if (c == '"') {
+            return doubleQuotedToken();
+        }
 
         if (c == '\n') {
             ++position_;
@@ -387,6 +392,28 @@ class Lexer {
 
         auto text = input_[start .. position_];
         return Token(isFloat ? TokenKind.floating : TokenKind.integer, text, start);
+    }
+
+    private Token doubleQuotedToken() {
+        auto start = position_;
+        ++position_;
+        auto contentStart = position_;
+        while (position_ < input_.length) {
+            if (input_[position_] == '"') {
+                auto text = input_[contentStart .. position_];
+                ++position_;
+                return Token(TokenKind.doubleQuoted, text, start);
+            }
+            if (input_[position_] == '\\') {
+                if (position_ + 1 == input_.length) {
+                    break;
+                }
+                position_ += 2;
+            } else {
+                ++position_;
+            }
+        }
+        throw new LexError(format("unterminated double-quoted string at byte %s", start));
     }
 }
 

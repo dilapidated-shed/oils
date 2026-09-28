@@ -35,10 +35,11 @@ The implementation currently follows these sources on the Oils/Grease line:
 - expression \`for\` loops over Lists, Dicts, and Ranges, including index/key/value bindings
 - scalar words, \`$var\`/\`$[expr]\`, and \`@List\`/\`@[expr]\` through \`write\`, with \`--sep\`, \`--end\`, and \`-n\`
 - common \`echo\` output with scalar substitutions and \`-n\`
+- concatenated literal/\`$var\` words and simple double-quoted variable substitution
 
 ## Deliberately not in this slice
 
-The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, conditional command blocks, \`while\`, expression \`for\` over List/Dict/Range values, scalar substitutions/list splices through \`write\`, and common \`echo\` output. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. Compound word parsing, word splitting, the \`echo -e\` escape mode, JSON/J8 output, shell-word/glob/stdin loop forms, procs, regexes, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
+The expression slice above was the original boundary. Later parser/runtime slices now include variable declarations and mutation, dictionaries, bitwise operators and ranges, calls, positional user functions, conditional command blocks, \`while\`, expression \`for\` over List/Dict/Range values, scalar substitutions/list splices through \`write\`, common \`echo\` output, and concatenated/double-quoted scalar substitutions. The function path does not yet claim full \`ysh/func_proc.py\` parity or general function-body command support. General compound word parsing, word splitting, the \`echo -e\` escape mode, JSON/J8 output, shell-word/glob/stdin loop forms, procs, regexes, redirections, processes, and OSH compatibility machinery remain outside the translated boundary.
 
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 

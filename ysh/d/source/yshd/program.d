@@ -471,7 +471,7 @@ class ProgramParser {
                 throw new YshError(format(
                     "untranslated write option beginning at byte %s", current_.offset));
             } else {
-                arguments ~= readWriteWord(mem);
+                arguments ~= readCommandWord(mem);
             }
         }
 
@@ -499,19 +499,108 @@ class ProgramParser {
                 throw new YshError("echo -e escape processing is not translated yet");
             }
             parsingFlags = false;
-            arguments ~= readWriteWord(mem);
+            arguments ~= readCommandWord(mem);
         }
         write(renderEcho(arguments, noNewline));
     }
 
-    private string[] readWriteWord(Memory mem) {
+    private string[] readCommandWord(Memory mem) {
         if (current_.kind == TokenKind.at) {
             return parseArraySplice(mem);
         }
-        if (current_.kind == TokenKind.dollar) {
-            return [parseScalarSubstitution(mem)];
+
+        auto end = current_.offset;
+        string result;
+        bool consumed;
+        while (current_.offset == end && isCommandWordToken(current_.kind)) {
+            if (current_.kind == TokenKind.stringValue) {
+                result ~= current_.text;
+                end = quotedTokenEnd(current_.offset, '\'');
+                consumed = true;
+                advance();
+            } else if (current_.kind == TokenKind.doubleQuoted) {
+                result ~= evaluateDoubleQuoted(current_.text, mem);
+                end = quotedTokenEnd(current_.offset, '"');
+                consumed = true;
+                advance();
+            } else if (current_.kind == TokenKind.dollar) {
+                size_t substitutionEnd;
+                result ~= parseScalarSubstitution(mem, substitutionEnd);
+                end = substitutionEnd;
+                consumed = true;
+            } else {
+                end += literalTokenLength(current_);
+                result ~= source_[current_.offset .. end];
+                consumed = true;
+                advance();
+            }
         }
-        return [readLiteralWord("write expects scalar words")];
+        if (!consumed) {
+            throw new YshError("command argument is not a translated word form");
+        }
+        return [result];
+    }
+
+    private size_t quotedTokenEnd(size_t start, char quote) const {
+        auto position = start + 1;
+        while (position < source_.length) {
+            if (quote == '"' && source_[position] == '\\') {
+                position += 2;
+                continue;
+            }
+            if (source_[position] == quote) {
+                return position + 1;
+            }
+            ++position;
+        }
+        throw new YshError("unterminated quoted command word");
+    }
+
+    private string evaluateDoubleQuoted(string content, Memory mem) {
+        string result;
+        size_t position;
+        while (position < content.length) {
+            auto c = content[position];
+            if (c == '\\' && position + 1 < content.length) {
+                auto next = content[position + 1];
+                if (next == '$' || next == '`' || next == '"' || next == '\\') {
+                    result ~= next;
+                    position += 2;
+                    continue;
+                }
+                result ~= c;
+                ++position;
+                continue;
+            }
+            if (c == '$' && position + 1 < content.length &&
+                    asciiIdentifierStart(content[position + 1])) {
+                auto nameStart = position + 1;
+                auto nameEnd = nameStart + 1;
+                while (nameEnd < content.length && asciiIdentifierContinue(content[nameEnd])) {
+                    ++nameEnd;
+                }
+                result ~= stringify(mem.get(content[nameStart .. nameEnd]));
+                position = nameEnd;
+                continue;
+            }
+            result ~= c;
+            ++position;
+        }
+        return result;
+    }
+
+    private static bool asciiIdentifierStart(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    }
+
+    private static bool asciiIdentifierContinue(char c) {
+        return asciiIdentifierStart(c) || (c >= '0' && c <= '9');
+    }
+
+    private static bool isCommandWordToken(TokenKind kind) {
+        return isLiteralWordToken(kind) || kind == TokenKind.equal ||
+            kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
+            kind == TokenKind.dollar;
     }
 
     private string[] parseArraySplice(Memory mem) {
@@ -532,30 +621,38 @@ class ProgramParser {
         return spliceArray(value);
     }
 
-    private string parseScalarSubstitution(Memory mem) {
+    private string parseScalarSubstitution(Memory mem, ref size_t endOffset) {
         auto dollarOffset = current_.offset;
         advance();
         if (current_.offset != dollarOffset + 1) {
             throw new YshError("$ substitution must follow '$' without whitespace");
         }
         if (current_.kind == TokenKind.leftBracket) {
-            return stringify(evaluate(collectBracketedExpression("$ expression"), mem));
+            auto expression = collectBracketedExpression("$ expression", endOffset);
+            return stringify(evaluate(expression, mem));
         }
         if (current_.kind != TokenKind.name) {
             throw new YshError("$ substitution expects a variable name or [expression]");
         }
         auto value = mem.get(current_.text);
+        endOffset = current_.offset + current_.text.length;
         advance();
         return stringify(value);
     }
 
     private string collectBracketedExpression(string description) {
+        size_t ignored;
+        return collectBracketedExpression(description, ignored);
+    }
+
+    private string collectBracketedExpression(string description, ref size_t endOffset) {
         require(TokenKind.leftBracket, "[");
         auto start = current_.offset;
         int depth;
         while (current_.kind != TokenKind.eof) {
             if (depth == 0 && current_.kind == TokenKind.rightBracket) {
                 auto expression = strip(source_[start .. current_.offset]);
+                endOffset = current_.offset + current_.text.length;
                 advance();
                 if (expression.length == 0) {
                     throw new YshError(description ~ " cannot be empty");
@@ -570,6 +667,11 @@ class ProgramParser {
 
     private string readLiteralWord(string errorMessage) {
         if (current_.kind == TokenKind.stringValue) {
+            auto value = current_.text;
+            advance();
+            return value;
+        }
+        if (current_.kind == TokenKind.doubleQuoted) {
             auto value = current_.text;
             advance();
             return value;
@@ -651,6 +753,7 @@ class ProgramParser {
         case TokenKind.plus:
         case TokenKind.dot:
         case TokenKind.slash:
+        case TokenKind.equal:
             return 1;
         default:
             return token.text.length;

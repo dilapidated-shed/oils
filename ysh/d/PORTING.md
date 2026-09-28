@@ -133,6 +133,7 @@ Current state:
 - [x] first expression-iterator path: `for` over List, Dict, and Range values with index/key/value bindings
 - [x] first builtin output path: scalar `write` words, `$var`/`$[expr]`, `@List`/`@[expr]`, `--sep`, `--end`, and `-n`
 - [x] common `echo` output path with scalar words and `-n`
+- [x] concatenated literal/scalar-substitution words and simple double-quoted `$var` substitution
 - [ ] complete ASDL/data-model coverage
 - [ ] full YSH lexer
 - [ ] full YSH expression parser
@@ -161,9 +162,10 @@ variadic parameters, typed signatures, proc word arguments, block closures,
 exceptions, loop levels, or general function-body command evaluation. The
 checked branch/loop paths cover only `if`/`else if`/`else`, `while`, and
 expression `for` over List/Dict/Range. The `write` path accepts scalar literal
-words, scalar substitutions, list splices, and three output options; compound
-word parsing, word splitting, JSON/J8, and the rest of the YSH word language
-remain untranslated. `echo -e`, the `simple_echo` option, shell word splitting,
+words, scalar substitutions, list splices, concatenation, simple double quotes,
+and three output options; general compound word parsing, word splitting,
+JSON/J8, and the rest of the YSH word language remain untranslated.
+`echo -e`, the `simple_echo` option, shell word splitting,
 glob expansion, and stdin iteration are not translated yet.
 Mutation-sensitive collection iteration still needs differential coverage
 against the YSH specs.
