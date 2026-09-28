@@ -15,24 +15,27 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - name: Check out exact source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check out exact YSH translation
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install DMD bootstrap and package runner
+      - name: Install Icky DMD bootstrap dependencies
+        shell: bash
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential ldc dub
+          sudo apt-get install -y build-essential ldc
 
-      - name: Check out exact Icky DMD
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check out qualified Icky DMD
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: dilapidated-shed/ick
-          ref: dmd
+          ref: ccf61ab82659b9eadee2d05b489fb195956cef88
           path: .icky-dmd
           persist-credentials: false
 
@@ -46,19 +49,65 @@ jobs:
           test -n "$dmd_bin"
           dmd_bin=$(realpath "$dmd_bin")
           "$dmd_bin" --version
-          mkdir -p "$GITHUB_WORKSPACE/.icky-bin"
-          ln -s "$dmd_bin" "$GITHUB_WORKSPACE/.icky-bin/dmd"
+          printf '%s\n' "$dmd_bin" > "$GITHUB_WORKSPACE/.icky-dmd-bin"
 
-      - name: Run D unit tests with Icky DMD
-        working-directory: ysh/d
-        run: |
-          export PATH="$GITHUB_WORKSPACE/.icky-bin:$PATH"
-          dub test --compiler=dmd
+      - name: Check out matching druntime source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dlang/dmd
+          ref: 74917954b53f7f35b13e61b4438c7253834929ed
+          path: .runtime-dmd
+          persist-credentials: false
 
-      - name: Smoke test D YSH executable with Icky DMD
-        working-directory: ysh/d
+      - name: Check out matching Phobos source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dlang/phobos
+          ref: 7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+          path: .runtime-phobos
+          persist-credentials: false
+
+      - name: Build matching runtime and Phobos
+        shell: bash
         run: |
-          export PATH="$GITHUB_WORKSPACE/.icky-bin:$PATH"
-          actual=$(dub run --quiet --compiler=dmd -- '1 + 2 * 3')
+          set -euxo pipefail
+          dmd_bin=$(cat .icky-dmd-bin)
+          mkdir -p .runtime-dmd/generated/linux/release/64
+          cp "$dmd_bin" .runtime-dmd/generated/linux/release/64/dmd
+          chmod +x .runtime-dmd/generated/linux/release/64/dmd
+          runtime_dmd="$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd"
+
+          make -C .runtime-dmd/druntime -j"$(nproc)" \
+            MODEL=64 OS=linux BUILD=release SHARED=0 DMD="$runtime_dmd"
+
+          make -C .runtime-phobos -j"$(nproc)" \
+            MODEL=64 OS=linux BUILD=release SHARED=0 USE_IMPORTC=1 \
+            DMD_DIR="$GITHUB_WORKSPACE/.runtime-dmd" DMD="$runtime_dmd"
+
+          test -f .runtime-dmd/druntime/import/object.d
+          test -f .runtime-phobos/generated/linux/release/64/libphobos2.a
+
+      - name: Compile translated YSH with Icky DMD
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p ysh/d/.build
+          runtime_dmd="$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd"
+          mapfile -t sources < <(find ysh/d/source -type f -name '*.d' -print | LC_ALL=C sort)
+          test "${#sources[@]}" -gt 0
+          "$runtime_dmd" -conf= -fPIC -unittest -w \
+            -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import" \
+            -I"$GITHUB_WORKSPACE/.runtime-phobos" \
+            "${sources[@]}" \
+            "$GITHUB_WORKSPACE/.runtime-phobos/generated/linux/release/64/libphobos2.a" \
+            -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl \
+            -of=ysh/d/.build/ysh-d
+          test -x ysh/d/.build/ysh-d
+
+      - name: Run translated YSH tests and smoke cases
+        shell: bash
+        run: |
+          set -euxo pipefail
+          actual=$(ysh/d/.build/ysh-d '1 + 2 * 3')
           test "$actual" = 7
-          dub run --quiet --compiler=dmd -- -c 'var x = 1; setvar x = 42'
+          ysh/d/.build/ysh-d -c 'var x = 1; setvar x = 42'
