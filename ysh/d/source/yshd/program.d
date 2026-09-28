@@ -2,10 +2,12 @@ module yshd.program;
 
 import std.format : format;
 import std.string : strip;
+import std.stdio : write;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
+import yshd.io_ysh : renderWrite;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, toBool;
@@ -83,6 +85,14 @@ class ProgramParser {
             case TokenKind.continueKeyword:
                 parseLoopControl(mem, false);
                 break;
+            case TokenKind.name:
+                if (current_.text == "write") {
+                    parseWrite();
+                    break;
+                }
+                throw new YshError(format(
+                    "D YSH command parser has not translated command beginning with '%s' at byte %s",
+                    current_.text, current_.offset));
             default:
                 throw new YshError(format(
                     "D YSH command parser has not translated command beginning with '%s' at byte %s",
@@ -425,6 +435,133 @@ class ProgramParser {
     private static void bindLoopVariables(string[] names, Value[] values, Memory mem) {
         foreach (index, name; names) {
             mem.declareLocal(name, values[index]);
+        }
+    }
+
+    /// Translate the scalar-word and basic output-option path of the YSH
+    /// `write` builtin. Expansion forms such as @array, $var, and $[expr]
+    /// remain in the word evaluator's ledger item.
+    private void parseWrite() {
+        advance(); // write
+        string separator = "\n";
+        string ending = "\n";
+        bool noNewline;
+        bool options = true;
+        string[] arguments;
+
+        while (!isEndStatement(current_.kind)) {
+            if (options && atRawWord("--sep")) {
+                consumeRawWord("--sep");
+                separator = readLiteralWord("--sep requires a separator word");
+            } else if (options && atRawWord("--end")) {
+                consumeRawWord("--end");
+                ending = readLiteralWord("--end requires an ending word");
+            } else if (options && atRawWord("-n")) {
+                consumeRawWord("-n");
+                noNewline = true;
+            } else if (options && atRawWord("--")) {
+                consumeRawWord("--");
+                options = false;
+            } else if (options && current_.kind == TokenKind.minus) {
+                throw new YshError(format(
+                    "untranslated write option beginning at byte %s", current_.offset));
+            } else {
+                arguments ~= readLiteralWord("write expects scalar words");
+            }
+        }
+
+        if (noNewline) {
+            ending = "";
+        }
+        write(renderWrite(arguments, separator, ending));
+    }
+
+    private string readLiteralWord(string errorMessage) {
+        if (current_.kind == TokenKind.stringValue) {
+            auto value = current_.text;
+            advance();
+            return value;
+        }
+
+        if (!isLiteralWordToken(current_.kind)) {
+            throw new YshError(errorMessage);
+        }
+
+        auto start = current_.offset;
+        auto end = start;
+        while (isLiteralWordToken(current_.kind) && current_.offset == end) {
+            end += literalTokenLength(current_);
+            advance();
+        }
+        return source_[start .. end];
+    }
+
+    private bool atRawWord(string spelling) const {
+        if (current_.offset + spelling.length > source_.length ||
+                source_[current_.offset .. current_.offset + spelling.length] != spelling) {
+            return false;
+        }
+        auto end = current_.offset + spelling.length;
+        return end == source_.length || isCommandWhitespace(source_[end]);
+    }
+
+    private void consumeRawWord(string spelling) {
+        auto end = current_.offset + spelling.length;
+        while (current_.kind != TokenKind.eof && current_.offset < end) {
+            advance();
+        }
+        if (current_.offset < end) {
+            throw new YshError(format("malformed '%s' write option", spelling));
+        }
+    }
+
+    private static bool isCommandWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == ';';
+    }
+
+    private static bool isLiteralWordToken(TokenKind kind) {
+        switch (kind) {
+        case TokenKind.name:
+        case TokenKind.integer:
+        case TokenKind.floating:
+        case TokenKind.nullKeyword:
+        case TokenKind.trueKeyword:
+        case TokenKind.falseKeyword:
+        case TokenKind.andKeyword:
+        case TokenKind.orKeyword:
+        case TokenKind.notKeyword:
+        case TokenKind.inKeyword:
+        case TokenKind.ifKeyword:
+        case TokenKind.elseKeyword:
+        case TokenKind.varKeyword:
+        case TokenKind.constKeyword:
+        case TokenKind.setvarKeyword:
+        case TokenKind.setglobalKeyword:
+        case TokenKind.funcKeyword:
+        case TokenKind.returnKeyword:
+        case TokenKind.whileKeyword:
+        case TokenKind.forKeyword:
+        case TokenKind.breakKeyword:
+        case TokenKind.continueKeyword:
+        case TokenKind.minus:
+        case TokenKind.plus:
+        case TokenKind.dot:
+        case TokenKind.slash:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    private static size_t literalTokenLength(Token token) {
+        switch (token.kind) {
+        case TokenKind.minus:
+        case TokenKind.plus:
+        case TokenKind.dot:
+        case TokenKind.slash:
+            return 1;
+        default:
+            return token.text.length;
         }
     }
 

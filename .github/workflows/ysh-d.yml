@@ -122,3 +122,6 @@ jobs:
           actual=$(ysh/d/.build/ysh-d '1 + 2 * 3')
           test "$actual" = 7
           ysh/d/.build/ysh-d -c 'var x = 1; setvar x = 42'
+          actual=$(ysh/d/.build/ysh-d -c "write one two; write --sep '_' --end ' END' -- alpha beta; write -n x; write y")
+          expected=$(printf 'one\ntwo\nalpha_beta ENDxy\ny\n')
+          test "$actual" = "$expected"
