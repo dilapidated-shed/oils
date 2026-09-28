@@ -93,21 +93,32 @@ jobs:
           set -euxo pipefail
           mkdir -p ysh/d/.build
           runtime_dmd="$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd"
-          mapfile -t sources < <(find ysh/d/source -type f -name '*.d' -print | LC_ALL=C sort)
-          test "${#sources[@]}" -gt 0
-          "$runtime_dmd" -conf= -fPIC -unittest -w \
-            -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import" \
-            -I"$GITHUB_WORKSPACE/.runtime-phobos" \
-            "${sources[@]}" \
-            "$GITHUB_WORKSPACE/.runtime-phobos/generated/linux/release/64/libphobos2.a" \
-            -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl \
-            -of=ysh/d/.build/ysh-d
+          phobos="$GITHUB_WORKSPACE/.runtime-phobos/generated/linux/release/64/libphobos2.a"
+          common_flags=(
+            -conf= -fPIC -w
+            -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import"
+            -I"$GITHUB_WORKSPACE/.runtime-phobos"
+            "$phobos"
+            -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl
+          )
+
+          mapfile -t library_sources < <(
+            find ysh/d/source/yshd -type f -name '*.d' -print | LC_ALL=C sort
+          )
+          test "${#library_sources[@]}" -gt 0
+
+          "$runtime_dmd" -unittest -main             "${common_flags[@]}" "${library_sources[@]}"             -of=ysh/d/.build/ysh-d-unittests
+
+          "$runtime_dmd"             "${common_flags[@]}"             ysh/d/source/app.d "${library_sources[@]}"             -of=ysh/d/.build/ysh-d
+
+          test -x ysh/d/.build/ysh-d-unittests
           test -x ysh/d/.build/ysh-d
 
       - name: Run translated YSH tests and smoke cases
         shell: bash
         run: |
           set -euxo pipefail
+          ysh/d/.build/ysh-d-unittests
           actual=$(ysh/d/.build/ysh-d '1 + 2 * 3')
           test "$actual" = 7
           ysh/d/.build/ysh-d -c 'var x = 1; setvar x = 42'
