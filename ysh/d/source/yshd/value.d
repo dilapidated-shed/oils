@@ -49,7 +49,7 @@ class YshDict {
         return key in fields;
     }
 
-    Value get(string key) const {
+    Value get(string key) {
         auto found = key in fields;
         if (found is null) {
             throw new YshError(format("Dict key not found: '%s'", key));
@@ -57,7 +57,7 @@ class YshDict {
         return *found;
     }
 
-    Value getOr(string key, Value fallback) const {
+    Value getOr(string key, Value fallback) {
         auto found = key in fields;
         return found is null ? fallback : *found;
     }
@@ -91,7 +91,7 @@ class YshDict {
         return order.dup;
     }
 
-    Value[] values() const {
+    Value[] values() {
         Value[] result;
         result.reserve(order.length);
         foreach (key; order) {
@@ -100,7 +100,7 @@ class YshDict {
         return result;
     }
 
-    YshDict shallowCopy() const {
+    YshDict shallowCopy() {
         auto result = new YshDict();
         foreach (key; order) {
             result.set(key, fields[key]);
