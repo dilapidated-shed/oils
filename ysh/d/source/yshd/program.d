@@ -608,7 +608,12 @@ class ProgramParser {
         string result;
         bool consumed;
         while (current_.offset == end && isCommandWordToken(current_.kind)) {
-            if (current_.kind == TokenKind.stringValue) {
+            if (current_.kind == TokenKind.charValue) {
+                result ~= current_.text;
+                end = characterEscapeEnd(current_.offset);
+                consumed = true;
+                advance();
+            } else if (current_.kind == TokenKind.stringValue) {
                 result ~= current_.text;
                 end = quotedTokenEnd(current_.offset, '\'');
                 consumed = true;
@@ -634,6 +639,29 @@ class ProgramParser {
             throw new YshError("command argument is not a translated word form");
         }
         return [result];
+    }
+
+    private size_t characterEscapeEnd(size_t start) const {
+        if (start + 1 >= source_.length || source_[start] != '\\') {
+            throw new YshError("invalid character escape span");
+        }
+
+        auto escape = source_[start + 1];
+        if (escape == 'y') {
+            return start + 4;
+        }
+        if (escape == 'u' && start + 2 < source_.length &&
+                source_[start + 2] == '{') {
+            auto position = start + 3;
+            while (position < source_.length && source_[position] != '}') {
+                ++position;
+            }
+            if (position >= source_.length) {
+                throw new YshError("unterminated \\u{...} escape");
+            }
+            return position + 1;
+        }
+        return start + 2;
     }
 
     private size_t quotedTokenEnd(size_t start, char quote) const {
@@ -705,7 +733,7 @@ class ProgramParser {
     private static bool isCommandWordToken(TokenKind kind) {
         return isLiteralWordToken(kind) || kind == TokenKind.equal ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
-            kind == TokenKind.dollar;
+            kind == TokenKind.charValue || kind == TokenKind.dollar;
     }
 
     private string[] parseArraySplice(Memory mem) {
