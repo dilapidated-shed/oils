@@ -455,9 +455,9 @@ class Lexer {
                 throw new LexError(format(
                     "\\y requires exactly two hex digits at byte %s", start));
             }
-            auto byte = (hexValue(input_[position_]) << 4) |
+            auto byteValue = (hexValue(input_[position_]) << 4) |
                 hexValue(input_[position_ + 1]);
-            text ~= cast(char)byte;
+            text ~= cast(char)byteValue;
             position_ += 2;
             break;
         case 'u':
@@ -624,9 +624,9 @@ class Lexer {
                         "\\y requires exactly two hex digits at byte %s",
                         position_));
                 }
-                auto byte = (hexValue(input_[position_ + 2]) << 4) |
+                auto byteValue = (hexValue(input_[position_ + 2]) << 4) |
                     hexValue(input_[position_ + 3]);
-                text ~= cast(char)byte;
+                text ~= cast(char)byteValue;
                 position_ += 4;
                 break;
             default:
