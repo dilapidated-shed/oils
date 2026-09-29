@@ -7,7 +7,7 @@ import std.stdio : write;
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
-import yshd.io_ysh : renderEcho, renderWrite, spliceArray;
+import yshd.io_ysh : WriteEncoding, renderEcho, renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, stringify, toBool;
@@ -472,15 +472,15 @@ class ProgramParser {
         }
     }
 
-    /// Translate the scalar-word and basic output-option path of the YSH
-    /// `write` builtin. The supported word forms are literals, scalar
-    /// substitutions, and list splices; compound quoting and word splitting
-    /// remain in the full word evaluator's ledger item.
+    /// Translate builtin/io_ysh.py:Write for the already-translated word
+    /// forms. JSON/J8 string encoding follows data_lang/j8.py.
     private void parseWrite(Memory mem) {
         advance(); // write
         string separator = "\n";
         string ending = "\n";
         bool noNewline;
+        bool jsonEncoding;
+        bool j8Encoding;
         bool options = true;
         string[] arguments;
 
@@ -491,6 +491,12 @@ class ProgramParser {
             } else if (options && atRawWord("--end")) {
                 consumeRawWord("--end");
                 ending = readLiteralWord("--end requires an ending word");
+            } else if (options && atRawWord("--json")) {
+                consumeRawWord("--json");
+                jsonEncoding = true;
+            } else if (options && atRawWord("--j8")) {
+                consumeRawWord("--j8");
+                j8Encoding = true;
             } else if (options && atRawWord("-n")) {
                 consumeRawWord("-n");
                 noNewline = true;
@@ -499,7 +505,7 @@ class ProgramParser {
                 options = false;
             } else if (options && current_.kind == TokenKind.minus) {
                 throw new YshError(format(
-                    "untranslated write option beginning at byte %s", current_.offset));
+                    "invalid write option beginning at byte %s", current_.offset));
             } else {
                 arguments ~= readCommandWord(mem);
             }
@@ -508,30 +514,67 @@ class ProgramParser {
         if (noNewline) {
             ending = "";
         }
-        write(renderWrite(arguments, separator, ending));
+
+        // builtin/io_ysh.py tests json before j8 when both flags are present.
+        auto encoding = jsonEncoding
+            ? WriteEncoding.json
+            : (j8Encoding ? WriteEncoding.j8 : WriteEncoding.plain);
+        write(renderWrite(arguments, separator, ending, encoding));
     }
 
-    /// Common echo word and -n behavior from builtin/io_osh.py. The optional
-    /// -e escape decoder and shell option simple_echo still need translation.
+    /// Translate builtin/io_osh.py:Echo for the command-word forms currently
+    /// handled by the D word evaluator. ParseLikeEcho accepts any leading
+    /// combination of -e and -n; the first non-flag word ends flag parsing.
     private void parseEcho(Memory mem) {
         advance(); // echo
         bool noNewline;
+        bool interpretEscapes;
         string[] arguments;
         bool parsingFlags = true;
 
         while (!isEndStatement(current_.kind)) {
-            if (parsingFlags && atRawWord("-n")) {
-                consumeRawWord("-n");
-                noNewline = true;
+            if (parsingFlags &&
+                    consumeEchoFlags(noNewline, interpretEscapes)) {
                 continue;
-            }
-            if (parsingFlags && atRawWord("-e")) {
-                throw new YshError("echo -e escape processing is not translated yet");
             }
             parsingFlags = false;
             arguments ~= readCommandWord(mem);
         }
-        write(renderEcho(arguments, noNewline));
+        write(renderEcho(arguments, noNewline, interpretEscapes));
+    }
+
+    private bool consumeEchoFlags(ref bool noNewline,
+            ref bool interpretEscapes) {
+        if (current_.kind != TokenKind.minus) {
+            return false;
+        }
+
+        auto start = current_.offset;
+        auto end = start;
+        while (end < source_.length && !isCommandWhitespace(source_[end])) {
+            ++end;
+        }
+
+        auto word = source_[start .. end];
+        if (word.length < 2 || word[0] != '-') {
+            return false;
+        }
+
+        foreach (flag; word[1 .. $]) {
+            if (flag != 'e' && flag != 'n') {
+                return false;
+            }
+        }
+
+        foreach (flag; word[1 .. $]) {
+            if (flag == 'e') {
+                interpretEscapes = true;
+            } else {
+                noNewline = true;
+            }
+        }
+        consumeRawWord(word);
+        return true;
     }
 
     private string[] readCommandWord(Memory mem) {
