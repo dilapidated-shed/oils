@@ -37,6 +37,7 @@ enum TokenKind {
     setvarKeyword,
     setglobalKeyword,
     funcKeyword,
+    procKeyword,
     returnKeyword,
     whileKeyword,
     forKeyword,
@@ -196,6 +197,8 @@ class Lexer {
                 return Token(TokenKind.setglobalKeyword, text, start);
             case "func":
                 return Token(TokenKind.funcKeyword, text, start);
+            case "proc":
+                return Token(TokenKind.procKeyword, text, start);
             case "return":
                 return Token(TokenKind.returnKeyword, text, start);
             case "while":
