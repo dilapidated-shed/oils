@@ -1,0 +1,99 @@
+name: ysh-d NetBSD amd64
+
+on:
+  push:
+    branches: [build/netbsd-amd64-ysh-d]
+  pull_request:
+    paths:
+      - 'ysh/d/**'
+      - '.github/workflows/ysh-d-netbsd.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  netbsd-9_3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact YSH D slice
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Compile and smoke-test D slice in NetBSD 9.3
+        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92
+        with:
+          release: "9.3"
+          arch: x86_64
+          sync: rsync
+          prepare: |
+            set -eu
+            /usr/sbin/pkg_add -I gcc9
+          run: |
+            set -eux
+            uname -a
+            /sbin/sysctl hw.model hw.ncpu || true
+
+            gdc=
+            for candidate in /usr/pkg/gcc9/bin/gdc /usr/pkg/bin/gdc gdc; do
+              if command -v "$candidate" >/dev/null 2>&1; then
+                gdc=$(command -v "$candidate")
+                break
+              fi
+              if [ -x "$candidate" ]; then
+                gdc=$candidate
+                break
+              fi
+            done
+            if [ -z "$gdc" ]; then
+              /usr/sbin/pkg_info -L gcc9 | grep -E '/gdc[^/]*$' || true
+              printf '%s\n' 'gcc9 installed but no GDC executable was found' >&2
+              exit 1
+            fi
+            "$gdc" --version
+
+            mkdir -p "$GITHUB_WORKSPACE/_/netbsd-ysh-d"
+            sources=$(find "$GITHUB_WORKSPACE/ysh/d/source/yshd" -type f -name '*.d' -print | LC_ALL=C sort)
+
+            build_one() {
+              name=$1
+              shift
+              output="$GITHUB_WORKSPACE/_/netbsd-ysh-d/$name"
+              "$gdc" \
+                -O3 -frelease -flto -static-libphobos \
+                "$@" \
+                "$GITHUB_WORKSPACE/ysh/d/source/app.d" \
+                $sources \
+                -o "$output"
+              /usr/bin/strip "$output"
+              test "$("$output" '1 + 2 * 3')" = 7
+              "$output" -c 'var x = 1; setvar x = 42'
+              test "$("$output" -c "var items = ['a', 'b']; write @items")" = "$(printf 'a\nb')"
+              /usr/bin/file "$output"
+              /usr/bin/ldd "$output" || true
+              /usr/bin/size "$output" || true
+              /usr/bin/cksum -a SHA256 "$output"
+            }
+
+            build_one ysh-d-netbsd-9.3-amd64-generic -march=x86-64
+            build_one ysh-d-netbsd-9.3-amd64-x5460 -march=core2 -mtune=core2 -msse4.1
+
+            {
+              printf 'source_revision=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}'
+              printf 'translation_status=partial-ysh-d-slice\n'
+              printf 'target=NetBSD 9.3 amd64\n'
+              printf 'generic_flags=%s\n' '-O3 -frelease -flto -static-libphobos -march=x86-64'
+              printf 'x5460_flags=%s\n' '-O3 -frelease -flto -static-libphobos -march=core2 -mtune=core2 -msse4.1'
+              printf 'compiler=%s\n' "$gdc"
+              "$gdc" --version | head -n 1
+            } > "$GITHUB_WORKSPACE/_/netbsd-ysh-d/receipt.txt"
+
+      - name: Upload NetBSD D slice binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ysh-d-netbsd-9.3-amd64-${{ github.sha }}
+          path: _/netbsd-ysh-d/
+          if-no-files-found: error
+          retention-days: 7
