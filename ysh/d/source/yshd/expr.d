@@ -132,6 +132,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
+    case ValueKind.procValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -153,6 +154,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
+    case ValueKind.procValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -485,6 +487,7 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.sliceValue:
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
+    case ValueKind.procValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
