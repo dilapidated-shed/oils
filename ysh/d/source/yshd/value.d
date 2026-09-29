@@ -134,6 +134,7 @@ enum ValueKind {
     sliceValue,
     rangeValue,
     functionValue,
+    procValue,
 }
 
 class YshError : Exception {
@@ -249,6 +250,13 @@ struct Value {
         result.callableValue = callable;
         return result;
     }
+
+    static Value proc(Object callable) {
+        Value result;
+        result.kind = ValueKind.procValue;
+        result.callableValue = callable;
+        return result;
+    }
 }
 
 string kindName(Value value) {
@@ -273,6 +281,8 @@ string kindName(Value value) {
         return "Range";
     case ValueKind.functionValue:
         return "Func";
+    case ValueKind.procValue:
+        return "Proc";
     }
 }
 
@@ -296,6 +306,7 @@ bool toBool(Value value) {
     case ValueKind.rangeValue:
         return true;
     case ValueKind.functionValue:
+    case ValueKind.procValue:
         return true;
     }
 }
@@ -323,6 +334,8 @@ string stringify(Value value) {
         throw new YshTypeError("can't stringify Range");
     case ValueKind.functionValue:
         throw new YshTypeError("can't stringify Func");
+    case ValueKind.procValue:
+        throw new YshTypeError("can't stringify Proc");
     }
 }
 
@@ -374,6 +387,7 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.rangeValue:
         throw new YshTypeError("Equality isn't defined on Range values");
     case ValueKind.functionValue:
+    case ValueKind.procValue:
         return left.callableValue is right.callableValue;
     }
 }
@@ -466,6 +480,8 @@ private string reprWithActive(Value value, ref bool[Object] active) {
         return format("%s..<%s", value.rangeLower, value.rangeUpper);
     case ValueKind.functionValue:
         return "<func>";
+    case ValueKind.procValue:
+        return "<proc>";
     }
 }
 
