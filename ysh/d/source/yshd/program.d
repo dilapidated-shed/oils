@@ -6,7 +6,7 @@ import std.stdio : write;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
-import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction;
+import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction, YshProc;
 import yshd.io_ysh : WriteEncoding, renderEcho, renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.state : Memory;
@@ -69,6 +69,9 @@ class ProgramParser {
             case TokenKind.funcKeyword:
                 parseFunction(mem);
                 break;
+            case TokenKind.procKeyword:
+                parseProc(mem);
+                break;
             case TokenKind.returnKeyword:
                 parseReturn(mem);
                 break;
@@ -100,9 +103,8 @@ class ProgramParser {
                     parseCall(mem);
                     break;
                 }
-                throw new YshError(format(
-                    "D YSH command parser has not translated command beginning with '%s' at byte %s",
-                    current_.text, current_.offset));
+                parseProcInvocation(mem);
+                break;
             default:
                 throw new YshError(format(
                     "D YSH command parser has not translated command beginning with '%s' at byte %s",
@@ -316,6 +318,134 @@ class ProgramParser {
         auto userFunction = new YshFunction(name, parameters, body, mem,
             restPositionalName, namedParameters, restNamedName);
         mem.declareLocal(name, Value.callable(userFunction));
+    }
+
+    private void parseProc(Memory mem) {
+        advance(); // proc
+
+        if (current_.kind == TokenKind.eof ||
+                current_.kind == TokenKind.newline ||
+                current_.kind == TokenKind.leftBrace ||
+                current_.kind == TokenKind.leftParen) {
+            throw new YshError(format(
+                "expected proc name at byte %s", current_.offset));
+        }
+
+        auto nameStart = current_.offset;
+        auto nameEnd = nameStart;
+        while (nameEnd < source_.length &&
+                !isCommandWhitespace(source_[nameEnd]) &&
+                source_[nameEnd] != '(' && source_[nameEnd] != '{') {
+            ++nameEnd;
+        }
+        auto name = source_[nameStart .. nameEnd];
+        while (current_.kind != TokenKind.eof && current_.offset < nameEnd) {
+            advance();
+        }
+
+        bool openSignature = true;
+        FunctionParameter[] wordParameters;
+        string restWordName;
+        bool sawDefault;
+
+        if (current_.kind == TokenKind.leftParen) {
+            openSignature = false;
+            advance();
+
+            while (current_.kind != TokenKind.rightParen) {
+                if (current_.kind == TokenKind.semicolon) {
+                    throw new YshError(
+                        "typed/named/block proc parameter groups are not translated yet");
+                }
+
+                if (current_.kind == TokenKind.ellipsis) {
+                    advance();
+                    if (current_.kind != TokenKind.name) {
+                        throw new YshError(format(
+                            "expected proc rest parameter name at byte %s",
+                            current_.offset));
+                    }
+                    restWordName = current_.text;
+                    advance();
+                    if (current_.kind == TokenKind.comma) {
+                        advance();
+                    }
+                    if (current_.kind != TokenKind.rightParen) {
+                        throw new YshError(
+                            "proc rest parameter must be last in its word parameter group");
+                    }
+                    break;
+                }
+
+                if (current_.kind != TokenKind.name) {
+                    throw new YshError(format(
+                        "expected proc word parameter at byte %s",
+                        current_.offset));
+                }
+
+                auto parameterName = current_.text;
+                advance();
+                string defaultSource;
+                if (current_.kind == TokenKind.equal) {
+                    sawDefault = true;
+                    advance();
+                    defaultSource = collectParameterDefault();
+                    if (defaultSource.length == 0) {
+                        throw new YshError(
+                            "expected proc parameter default expression");
+                    }
+                } else if (sawDefault) {
+                    throw new YshError(
+                        "required parameter follows a default parameter");
+                }
+
+                wordParameters ~= FunctionParameter(
+                    parameterName, defaultSource);
+
+                if (current_.kind == TokenKind.comma) {
+                    advance();
+                    continue;
+                }
+                if (current_.kind != TokenKind.rightParen) {
+                    throw new YshError(format(
+                        "untranslated proc parameter syntax at byte %s",
+                        current_.offset));
+                }
+            }
+
+            require(TokenKind.rightParen, ")");
+        }
+
+        auto body = collectBlock();
+        auto userProc = new YshProc(name, body, mem, openSignature,
+            wordParameters, restWordName);
+        mem.declareLocal(name, Value.proc(userProc));
+    }
+
+    private void parseProcInvocation(Memory mem) {
+        auto commandNameParts = readCommandWord(mem);
+        if (commandNameParts.length != 1) {
+            throw new YshError("proc command name cannot be a list splice");
+        }
+        auto commandName = commandNameParts[0];
+
+        auto cell = mem.getCell(commandName);
+        if (cell is null || cell.value.kind != ValueKind.procValue) {
+            throw new YshError(format(
+                "D YSH command parser has not translated command '%s'",
+                commandName));
+        }
+
+        auto userProc = cast(YshProc)cell.value.callableValue;
+        if (userProc is null) {
+            throw new YshError(format("invalid proc value '%s'", commandName));
+        }
+
+        string[] words;
+        while (!isEndStatement(current_.kind)) {
+            words ~= readCommandWord(mem);
+        }
+        userProc.invoke(words);
     }
 
     private string collectParameterDefault() {
@@ -947,6 +1077,7 @@ class ProgramParser {
         case TokenKind.setvarKeyword:
         case TokenKind.setglobalKeyword:
         case TokenKind.funcKeyword:
+        case TokenKind.procKeyword:
         case TokenKind.returnKeyword:
         case TokenKind.whileKeyword:
         case TokenKind.forKeyword:
@@ -1226,6 +1357,19 @@ unittest {
     assert(repr(mem.get("spread_answer")) == "2");
     assert(repr(mem.get("named_answer")) == "13");
     assert(repr(mem.get("named_spread_answer")) == "9");
+
+    executeProgram(
+        "var proc_value = ''\n" ~
+        "proc capture(first, ...rest) {\n" ~
+        "  setvar proc_value = first ++ ':' ++ rest[1]\n" ~
+        "}\n" ~
+        "capture alpha beta gamma\n" ~
+        "var open_proc_value = ''\n" ~
+        "proc open_capture { setvar open_proc_value = ARGV[1] }\n" ~
+        "open_capture red green blue\n",
+        mem);
+    assert(repr(mem.get("proc_value")) == "\"alpha:gamma\"");
+    assert(repr(mem.get("open_proc_value")) == "\"green\"");
 
     executeProgram(
         "func classify(number) {\n" ~
