@@ -307,14 +307,22 @@ class ProgramParser {
     }
 
     private IfCommand parseIfCommand() {
-        require(TokenKind.ifKeyword, "if");
+        if (current_.kind != TokenKind.ifKeyword &&
+                current_.kind != TokenKind.elifKeyword) {
+            throw new YshError(format(
+                "expected 'if' or 'elif' at byte %s", current_.offset));
+        }
+        advance();
         auto command = new IfCommand();
         command.conditionSource = collectParenthesizedExpression();
         command.thenSource = collectBlock();
 
         // `else` may follow the closing brace on the same or next line.
         skipEndStatements();
-        if (current_.kind == TokenKind.elseKeyword) {
+        if (current_.kind == TokenKind.elifKeyword) {
+            command.hasElse = true;
+            command.elseIf = parseIfCommand();
+        } else if (current_.kind == TokenKind.elseKeyword) {
             advance();
             command.hasElse = true;
             if (current_.kind == TokenKind.ifKeyword) {
@@ -873,6 +881,7 @@ class ProgramParser {
         case TokenKind.notKeyword:
         case TokenKind.inKeyword:
         case TokenKind.ifKeyword:
+        case TokenKind.elifKeyword:
         case TokenKind.elseKeyword:
         case TokenKind.varKeyword:
         case TokenKind.constKeyword:
@@ -1159,6 +1168,14 @@ unittest {
     assert(repr(mem.get("negative")) == "-1");
     assert(repr(mem.get("zero")) == "0");
     assert(repr(mem.get("positive")) == "1");
+
+    executeProgram(
+        "var elif_value = 0\n" ~
+        "if (false) { setvar elif_value = 1 } " ~
+        "elif (true) { setvar elif_value = 2 } " ~
+        "else { setvar elif_value = 3 }\n",
+        mem);
+    assert(repr(mem.get("elif_value")) == "2");
 
     executeProgram(
         "func factorial(number) {\n" ~
