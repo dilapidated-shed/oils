@@ -96,6 +96,10 @@ class ProgramParser {
                     parseEcho(mem);
                     break;
                 }
+                if (current_.text == "call") {
+                    parseCall(mem);
+                    break;
+                }
                 throw new YshError(format(
                     "D YSH command parser has not translated command beginning with '%s' at byte %s",
                     current_.text, current_.offset));
@@ -492,6 +496,16 @@ class ProgramParser {
         foreach (index, name; names) {
             mem.declareLocal(name, values[index]);
         }
+    }
+
+    /// YSH `call f(...)` evaluates a function-call expression for its
+    /// side effects and discards the returned value.
+    private void parseCall(Memory mem) {
+        advance(); // call
+        if (isEndStatement(current_.kind)) {
+            throw new YshError("call requires a function-call expression");
+        }
+        evaluate(collectRhs(), mem);
     }
 
     /// Translate builtin/io_ysh.py:Write for the already-translated word
@@ -1120,6 +1134,13 @@ unittest {
         mem);
     assert(repr(mem.get("answer")) == "42");
     assert(repr(mem.get("explicit_answer")) == "44");
+
+    executeProgram(
+        "var called = 0\n" ~
+        "func store(value) { setvar called = value; return (null) }\n" ~
+        "call store(7)\n",
+        mem);
+    assert(repr(mem.get("called")) == "7");
 
     executeProgram(
         "func classify(number) {\n" ~
