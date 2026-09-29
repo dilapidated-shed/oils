@@ -1,12 +1,11 @@
 module yshd.func_proc;
 
-import std.algorithm : canFind;
 import std.format : format;
 
 import yshd.expr : evaluate;
 import yshd.program : executeProgram;
 import yshd.state : Frame, Memory;
-import yshd.value : Value, ValueKind, YshError;
+import yshd.value : Value, ValueKind, YshDict, YshError;
 
 struct FunctionParameter {
     string name;
@@ -24,56 +23,91 @@ class FunctionReturn : Exception {
     }
 }
 
-/// User function closure and positional argument binding, translated from
-/// ysh/func_proc.py. The first command-language slice supports ordinary
-/// positional parameters, definition-time immutable defaults, lexical capture,
-/// and `return (expr)`. Named/variadic parameters and the full command body
-/// evaluator remain separate translation work.
+/// User function closure and argument binding translated from ysh/func_proc.py.
+///
+/// YSH has two typed parameter groups for funcs: positional parameters before
+/// ';' and named parameters after it. Each group may end in ...rest. Defaults
+/// are evaluated once at definition time and mutable List/Dict defaults are
+/// rejected, matching the upstream binder.
 class YshFunction {
     string name;
+
     FunctionParameter[] parameters;
+    string restPositionalName;
     Value[] defaults;
     bool[] hasDefaults;
+
+    FunctionParameter[] namedParameters;
+    string restNamedName;
+    Value[] namedDefaults;
+    bool[] namedHasDefaults;
+
     string bodySource;
     Frame closure;
 
     this(string name, FunctionParameter[] parameters, string bodySource,
-            Memory definitionMemory) {
+            Memory definitionMemory, string restPositionalName = "",
+            FunctionParameter[] namedParameters = [],
+            string restNamedName = "") {
         this.name = name;
         this.parameters = parameters;
+        this.restPositionalName = restPositionalName;
+        this.namedParameters = namedParameters;
+        this.restNamedName = restNamedName;
         this.bodySource = bodySource;
         closure = definitionMemory.currentFrame;
-        foreach (parameter; parameters) {
+
+        evaluateDefaults(parameters, definitionMemory, defaults, hasDefaults);
+        evaluateDefaults(namedParameters, definitionMemory,
+            namedDefaults, namedHasDefaults);
+    }
+
+    private static void evaluateDefaults(FunctionParameter[] source,
+            Memory definitionMemory, ref Value[] values,
+            ref bool[] present) {
+        bool sawDefault;
+        foreach (parameter; source) {
             if (parameter.defaultSource.length == 0) {
-                if (hasDefaults.canFind(true)) {
-                    throw new YshError("required parameter follows a default parameter");
+                if (sawDefault) {
+                    throw new YshError(
+                        "required parameter follows a default parameter");
                 }
-                defaults ~= Value.nullValue();
-                hasDefaults ~= false;
+                values ~= Value.nullValue();
+                present ~= false;
                 continue;
             }
+
+            sawDefault = true;
             auto value = evaluate(parameter.defaultSource, definitionMemory);
             if (value.kind == ValueKind.list || value.kind == ValueKind.dict) {
                 throw new YshError("Default values can't be mutable");
             }
-            defaults ~= value;
-            hasDefaults ~= true;
+            values ~= value;
+            present ~= true;
         }
     }
 
-    Value invoke(Value[] arguments) {
+    private size_t positionalRequired() const {
         size_t required;
         foreach (hasDefault; hasDefaults) {
             if (!hasDefault) {
                 ++required;
             }
         }
+        return required;
+    }
+
+    Value invoke(Value[] arguments, YshDict namedArguments = null) {
+        auto required = positionalRequired();
         if (arguments.length < required) {
-            throw new YshError(format("Func '%s' requires %s positional args, got %s",
+            throw new YshError(format(
+                "Func '%s' requires %s positional args, got %s",
                 name, required, arguments.length));
         }
-        if (arguments.length > parameters.length) {
-            throw new YshError(format("Func '%s' takes %s positional args, got %s",
+        if (restPositionalName.length == 0 &&
+                arguments.length > parameters.length) {
+            throw new YshError(format(
+                "Func '%s' takes %s positional args, got %s",
                 name, parameters.length, arguments.length));
         }
 
@@ -88,6 +122,43 @@ class YshFunction {
             memory.declareLocal(parameter.name, value);
         }
 
+        if (restPositionalName.length != 0) {
+            Value[] rest;
+            if (arguments.length > parameters.length) {
+                rest = arguments[parameters.length .. $].dup;
+            }
+            memory.declareLocal(restPositionalName, Value.list(rest));
+        }
+
+        auto remainingNamed = namedArguments is null
+            ? new YshDict()
+            : namedArguments.shallowCopy();
+
+        foreach (index, parameter; namedParameters) {
+            auto supplied = remainingNamed.find(parameter.name);
+            if (supplied !is null) {
+                memory.declareLocal(parameter.name, *supplied);
+                remainingNamed.erase(parameter.name);
+                continue;
+            }
+
+            if (!namedHasDefaults[index]) {
+                throw new YshError(format(
+                    "Func '%s' wasn't passed named param '%s'",
+                    name, parameter.name));
+            }
+            memory.declareLocal(parameter.name, namedDefaults[index]);
+        }
+
+        if (restNamedName.length != 0) {
+            memory.declareLocal(restNamedName, Value.dictRef(remainingNamed));
+        } else if (remainingNamed.length != 0) {
+            throw new YshError(format(
+                "Func '%s' takes %s named args, got %s",
+                name, namedParameters.length,
+                namedParameters.length + remainingNamed.length));
+        }
+
         try {
             executeProgram(bodySource, memory);
         } catch (FunctionReturn returned) {
@@ -100,12 +171,35 @@ class YshFunction {
 unittest {
     auto memory = new Memory();
     memory.declareLocal("captured", Value.integer(40));
+
     auto userFunction = new YshFunction("add", [
         FunctionParameter("amount", "2"),
     ], "return (captured + amount)\n", memory);
 
     assert(userFunction.invoke([]).integerValue == 42);
     assert(userFunction.invoke([Value.integer(3)]).integerValue == 43);
+
+    auto varargs = new YshFunction("pick", [
+        FunctionParameter("first", ""),
+    ], "return (rest[1])\n", memory, "rest");
+    assert(varargs.invoke([
+        Value.integer(0), Value.integer(10), Value.integer(20),
+    ]).integerValue == 20);
+
+    auto named = new YshFunction("named", [],
+        "return (x + y)\n", memory, "", [
+            FunctionParameter("x", "3"),
+            FunctionParameter("y", "4"),
+        ]);
+    auto namedArgs = new YshDict();
+    namedArgs.set("y", Value.integer(10));
+    assert(named.invoke([], namedArgs).integerValue == 13);
+
+    auto namedRest = new YshFunction("named_rest", [],
+        "return (other.z)\n", memory, "", [], "other");
+    auto extras = new YshDict();
+    extras.set("z", Value.integer(9));
+    assert(namedRest.invoke([], extras).integerValue == 9);
 
     bool rejectedMutableDefault;
     try {
