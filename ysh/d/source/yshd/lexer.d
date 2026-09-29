@@ -551,11 +551,214 @@ class Lexer {
         }
     }
 
-    /// Translate the single-line J8-style r'', u'', and b'' literals exposed
-    /// by YSH. r'' is raw, u'' decodes Unicode escapes, and b'' additionally
-    /// admits the J8 \\yHH byte escape.
+    private static bool stringWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\r';
+    }
+
+    /// Apply YSH's triple-quoted indentation rule: discard whitespace through
+    /// the first newline, use the indentation before the closing delimiter as
+    /// the per-line prefix, and remove that prefix where present.
+    private static string trimTripleQuoted(string raw) {
+        size_t start;
+        size_t firstNewline;
+        bool foundFirstNewline;
+        bool leadingWhitespace = true;
+        while (firstNewline < raw.length) {
+            if (raw[firstNewline] == '\n') {
+                foundFirstNewline = true;
+                break;
+            }
+            if (!stringWhitespace(raw[firstNewline])) {
+                leadingWhitespace = false;
+            }
+            ++firstNewline;
+        }
+        if (foundFirstNewline && leadingWhitespace) {
+            start = firstNewline + 1;
+        }
+
+        size_t lastLine = raw.length;
+        while (lastLine > start && raw[lastLine - 1] != '\n') {
+            --lastLine;
+        }
+
+        auto indentStart = lastLine;
+        bool closingIndentOnly = true;
+        foreach (c; raw[indentStart .. $]) {
+            if (!stringWhitespace(c)) {
+                closingIndentOnly = false;
+                break;
+            }
+        }
+
+        string indent;
+        size_t contentEnd = raw.length;
+        if (closingIndentOnly) {
+            indent = raw[indentStart .. $];
+            contentEnd = indentStart;
+        }
+
+        auto body = raw[start .. contentEnd];
+        if (indent.length == 0) {
+            return body.idup;
+        }
+
+        string result;
+        size_t lineStart;
+        while (lineStart < body.length) {
+            size_t lineEnd = lineStart;
+            while (lineEnd < body.length && body[lineEnd] != '\n') {
+                ++lineEnd;
+            }
+
+            auto line = body[lineStart .. lineEnd];
+            if (line.length >= indent.length &&
+                    line[0 .. indent.length] == indent) {
+                line = line[indent.length .. $];
+            }
+            result ~= line;
+
+            if (lineEnd < body.length) {
+                result ~= '\n';
+                lineStart = lineEnd + 1;
+            } else {
+                lineStart = lineEnd;
+            }
+        }
+        return result;
+    }
+
+    private string decodeJ8StringContent(string raw, char prefix,
+            size_t sourceStart) {
+        if (prefix == 'r') {
+            return raw.idup;
+        }
+
+        string text;
+        size_t p;
+        while (p < raw.length) {
+            auto c = raw[p];
+            if (c != '\\') {
+                text ~= c;
+                ++p;
+                continue;
+            }
+            if (p + 1 >= raw.length) {
+                throw new LexError(format(
+                    "unterminated %s string escape at byte %s",
+                    prefix, sourceStart + p));
+            }
+
+            auto escape = raw[p + 1];
+            switch (escape) {
+            case '\\':
+                text ~= '\\';
+                p += 2;
+                break;
+            case '\'':
+                text ~= '\'';
+                p += 2;
+                break;
+            case 'n':
+                text ~= '\n';
+                p += 2;
+                break;
+            case 'r':
+                text ~= '\r';
+                p += 2;
+                break;
+            case 't':
+                text ~= '\t';
+                p += 2;
+                break;
+            case '0':
+                text ~= cast(char)0;
+                p += 2;
+                break;
+            case 'u':
+                if (p + 2 >= raw.length || raw[p + 2] != '{') {
+                    throw new LexError(format(
+                        "expected '{' after \\u at byte %s",
+                        sourceStart + p));
+                }
+                size_t q = p + 3;
+                uint codePoint;
+                size_t digits;
+                while (q < raw.length && raw[q] != '}') {
+                    if (!hexDigit(raw[q]) || digits >= 6) {
+                        throw new LexError(format(
+                            "invalid \\u{...} escape at byte %s",
+                            sourceStart + p));
+                    }
+                    codePoint = codePoint * 16 + hexValue(raw[q]);
+                    ++q;
+                    ++digits;
+                }
+                if (q >= raw.length || digits == 0) {
+                    throw new LexError(format(
+                        "unterminated \\u{...} escape at byte %s",
+                        sourceStart + p));
+                }
+                appendUtf8(text, codePoint);
+                p = q + 1;
+                break;
+            case 'y':
+                if (prefix != 'b') {
+                    throw new LexError(format(
+                        "\\y byte escape requires b'' at byte %s",
+                        sourceStart + p));
+                }
+                if (p + 3 >= raw.length ||
+                        !hexDigit(raw[p + 2]) ||
+                        !hexDigit(raw[p + 3])) {
+                    throw new LexError(format(
+                        "\\y requires exactly two hex digits at byte %s",
+                        sourceStart + p));
+                }
+                auto byteValue = (hexValue(raw[p + 2]) << 4) |
+                    hexValue(raw[p + 3]);
+                text ~= cast(char)byteValue;
+                p += 4;
+                break;
+            default:
+                throw new LexError(format(
+                    "invalid escape '\\%s' in %s string at byte %s",
+                    escape, prefix, sourceStart + p));
+            }
+        }
+        return text;
+    }
+
+    private Token prefixedTripleQuotedToken(char prefix) {
+        auto start = position_;
+        position_ += 4; // prefix and opening '''
+        auto contentStart = position_;
+
+        while (position_ + 2 < input_.length) {
+            if (input_[position_ .. position_ + 3] == "'''") {
+                auto raw = input_[contentStart .. position_];
+                position_ += 3;
+                auto trimmed = trimTripleQuoted(raw);
+                auto text = decodeJ8StringContent(
+                    trimmed, prefix, contentStart);
+                return Token(TokenKind.stringValue, text, start);
+            }
+            ++position_;
+        }
+
+        throw new LexError(format(
+            "unterminated triple-quoted %s string at byte %s",
+            prefix, start));
+    }
+
+    /// Translate J8-style r'', u'', and b'' literals exposed by YSH,
+    /// including their triple-quoted forms.
     private Token prefixedSingleQuotedToken(char prefix) {
         auto start = position_;
+        if (position_ + 3 < input_.length &&
+                input_[position_ + 1 .. position_ + 4] == "'''") {
+            return prefixedTripleQuotedToken(prefix);
+        }
         position_ += 2; // prefix and opening quote
 
         string text;
@@ -692,6 +895,14 @@ unittest {
     assert(charLexer.next().text == "A");
     assert(charLexer.next().text == "\n");
     assert(charLexer.next().text == "*");
+
+    auto tripleLexer = new Lexer(
+        "u'''\n  alpha\n  \\u{3bc}\n  ''' " ~
+        "b'''\n  \\y61\n  ''' " ~
+        "r'''\n  \\u{61}\n  '''");
+    assert(tripleLexer.next().text == "alpha\nμ\n");
+    assert(tripleLexer.next().text == "a\n");
+    assert(tripleLexer.next().text == "\\u{61}\n");
 
     auto stringLexer = new Lexer("u'\\u{3bc}' b'\\yff' r'raw \\u{61}'");
     auto unicodeString = stringLexer.next();
