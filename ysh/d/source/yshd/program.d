@@ -201,36 +201,93 @@ class ProgramParser {
         advance();
         require(TokenKind.leftParen, "(");
         FunctionParameter[] parameters;
+        FunctionParameter[] namedParameters;
+        string restPositionalName;
+        string restNamedName;
+        bool namedGroup;
         bool sawDefault;
 
-        if (current_.kind != TokenKind.rightParen) {
-            while (true) {
+        while (current_.kind != TokenKind.rightParen) {
+            if (current_.kind == TokenKind.semicolon) {
+                if (namedGroup) {
+                    throw new YshError("function signature has more than one named-parameter separator");
+                }
+                namedGroup = true;
+                sawDefault = false;
+                advance();
+                continue;
+            }
+
+            if (current_.kind == TokenKind.ellipsis) {
+                advance();
                 if (current_.kind != TokenKind.name) {
-                    throw new YshError(format("expected parameter name at byte %s", current_.offset));
+                    throw new YshError(format(
+                        "expected rest parameter name at byte %s", current_.offset));
                 }
-                auto parameterName = current_.text;
+                auto restName = current_.text;
                 advance();
-                string defaultSource;
 
-                if (current_.kind == TokenKind.equal) {
-                    sawDefault = true;
-                    advance();
-                    defaultSource = collectParameterDefault();
-                    if (defaultSource.length == 0) {
-                        throw new YshError("expected parameter default expression");
+                if (namedGroup) {
+                    if (restNamedName.length != 0) {
+                        throw new YshError("function has more than one named rest parameter");
                     }
-                } else if (sawDefault) {
-                    throw new YshError("required parameter follows a default parameter");
+                    restNamedName = restName;
+                } else {
+                    if (restPositionalName.length != 0) {
+                        throw new YshError("function has more than one positional rest parameter");
+                    }
+                    restPositionalName = restName;
                 }
-                parameters ~= FunctionParameter(parameterName, defaultSource);
 
-                if (current_.kind != TokenKind.comma) {
-                    break;
+                if (current_.kind == TokenKind.comma) {
+                    advance();
+                    if (current_.kind != TokenKind.semicolon &&
+                            current_.kind != TokenKind.rightParen) {
+                        throw new YshError(
+                            "rest parameter must be last in its parameter group");
+                    }
+                } else if (current_.kind != TokenKind.semicolon &&
+                        current_.kind != TokenKind.rightParen) {
+                    throw new YshError(
+                        "rest parameter must be last in its parameter group");
                 }
+                continue;
+            }
+
+            if (current_.kind != TokenKind.name) {
+                throw new YshError(format(
+                    "expected parameter name at byte %s", current_.offset));
+            }
+            auto parameterName = current_.text;
+            advance();
+            string defaultSource;
+
+            if (current_.kind == TokenKind.equal) {
+                sawDefault = true;
                 advance();
-                if (current_.kind == TokenKind.rightParen) {
-                    break;
+                defaultSource = collectParameterDefault();
+                if (defaultSource.length == 0) {
+                    throw new YshError("expected parameter default expression");
                 }
+            } else if (sawDefault) {
+                throw new YshError("required parameter follows a default parameter");
+            }
+
+            if (namedGroup) {
+                namedParameters ~= FunctionParameter(parameterName, defaultSource);
+            } else {
+                parameters ~= FunctionParameter(parameterName, defaultSource);
+            }
+
+            if (current_.kind == TokenKind.comma) {
+                advance();
+                continue;
+            }
+            if (current_.kind != TokenKind.semicolon &&
+                    current_.kind != TokenKind.rightParen) {
+                throw new YshError(format(
+                    "untranslated function parameter syntax at byte %s",
+                    current_.offset));
             }
         }
         require(TokenKind.rightParen, ")");
@@ -256,7 +313,8 @@ class ProgramParser {
         auto body = source_[bodyStart .. bodyEnd];
         advance(); // closing brace
 
-        auto userFunction = new YshFunction(name, parameters, body, mem);
+        auto userFunction = new YshFunction(name, parameters, body, mem,
+            restPositionalName, namedParameters, restNamedName);
         mem.declareLocal(name, Value.callable(userFunction));
     }
 
@@ -266,6 +324,7 @@ class ProgramParser {
         int depth;
         while (current_.kind != TokenKind.eof) {
             if (depth == 0 && (current_.kind == TokenKind.comma ||
+                    current_.kind == TokenKind.semicolon ||
                     current_.kind == TokenKind.rightParen)) {
                 end = current_.offset;
                 break;
