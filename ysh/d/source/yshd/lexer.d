@@ -18,6 +18,7 @@ enum TokenKind {
     floating,
     stringValue,
     doubleQuoted,
+    charValue,
     name,
 
     nullKeyword,
@@ -131,6 +132,10 @@ class Lexer {
                 position_ + 1 < input_.length &&
                 input_[position_ + 1] == '\'') {
             return prefixedSingleQuotedToken(c);
+        }
+
+        if (c == '\\') {
+            return characterEscapeToken();
         }
 
         if (c == '"') {
@@ -400,6 +405,96 @@ class Lexer {
         return Token(isFloat ? TokenKind.floating : TokenKind.integer, text, start);
     }
 
+    private Token characterEscapeToken() {
+        auto start = position_;
+        ++position_; // backslash
+        if (position_ >= input_.length) {
+            throw new LexError(format(
+                "backslash at end of input at byte %s", start));
+        }
+
+        auto escape = input_[position_++];
+        string text;
+
+        switch (escape) {
+        case 'a':
+            text ~= cast(char)0x07;
+            break;
+        case 'b':
+            text ~= cast(char)0x08;
+            break;
+        case 'e':
+        case 'E':
+            text ~= cast(char)0x1b;
+            break;
+        case 'f':
+            text ~= cast(char)0x0c;
+            break;
+        case 'n':
+            text ~= '\n';
+            break;
+        case 'r':
+            text ~= '\r';
+            break;
+        case 't':
+            text ~= '\t';
+            break;
+        case 'v':
+            text ~= cast(char)0x0b;
+            break;
+        case '\\':
+            text ~= '\\';
+            break;
+        case '\n':
+            // Shell line continuation contributes no byte to the word.
+            break;
+        case 'y':
+            if (position_ + 1 >= input_.length ||
+                    !hexDigit(input_[position_]) ||
+                    !hexDigit(input_[position_ + 1])) {
+                throw new LexError(format(
+                    "\\y requires exactly two hex digits at byte %s", start));
+            }
+            auto byte = (hexValue(input_[position_]) << 4) |
+                hexValue(input_[position_ + 1]);
+            text ~= cast(char)byte;
+            position_ += 2;
+            break;
+        case 'u':
+            if (position_ >= input_.length || input_[position_] != '{') {
+                throw new LexError(format(
+                    "expected '{' after \\u at byte %s", start));
+            }
+            ++position_;
+            uint codePoint;
+            size_t digits;
+            while (position_ < input_.length && input_[position_] != '}') {
+                if (!hexDigit(input_[position_]) || digits >= 6) {
+                    throw new LexError(format(
+                        "invalid \\u{...} escape at byte %s", start));
+                }
+                codePoint = codePoint * 16 + hexValue(input_[position_]);
+                ++position_;
+                ++digits;
+            }
+            if (position_ >= input_.length || digits == 0) {
+                throw new LexError(format(
+                    "unterminated \\u{...} escape at byte %s", start));
+            }
+            ++position_; // }
+            appendUtf8(text, codePoint);
+            break;
+        default:
+            // In command mode a backslash quotes an ordinary byte. In
+            // expression mode this also gives the useful shell-compatible
+            // literal spelling for punctuation.
+            text ~= escape;
+            break;
+        }
+
+        return Token(TokenKind.charValue, text, start);
+    }
+
     private static bool hexDigit(char c) {
         return (c >= '0' && c <= '9') ||
             (c >= 'a' && c <= 'f') ||
@@ -574,6 +669,12 @@ unittest {
     assert(exprLexer.next().kind == TokenKind.plus);
     assert(exprLexer.next().kind == TokenKind.integer);
     assert(exprLexer.next().kind == TokenKind.integer);
+
+    auto charLexer = new Lexer("\\u{3bc} \\y41 \\n \\*");
+    assert(charLexer.next().text == "μ");
+    assert(charLexer.next().text == "A");
+    assert(charLexer.next().text == "\n");
+    assert(charLexer.next().text == "*");
 
     auto stringLexer = new Lexer("u'\\u{3bc}' b'\\yff' r'raw \\u{61}'");
     auto unicodeString = stringLexer.next();
