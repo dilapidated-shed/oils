@@ -22,10 +22,12 @@ private class IfCommand {
 
 private class LoopControl : Exception {
     bool shouldBreak;
+    size_t levels;
 
-    this(bool shouldBreak) {
+    this(bool shouldBreak, size_t levels = 1) {
         super(shouldBreak ? "YSH break" : "YSH continue");
         this.shouldBreak = shouldBreak;
+        this.levels = levels;
     }
 }
 
@@ -333,6 +335,10 @@ class ProgramParser {
             try {
                 executeProgram(bodySource, mem);
             } catch (LoopControl control) {
+                if (control.levels > 1) {
+                    --control.levels;
+                    throw control;
+                }
                 if (control.shouldBreak) {
                     break;
                 }
@@ -382,6 +388,10 @@ class ProgramParser {
                 try {
                     executeProgram(bodySource, mem);
                 } catch (LoopControl control) {
+                if (control.levels > 1) {
+                    --control.levels;
+                    throw control;
+                }
                     if (control.shouldBreak) {
                         break;
                     }
@@ -415,6 +425,10 @@ class ProgramParser {
                 try {
                     executeProgram(bodySource, mem);
                 } catch (LoopControl control) {
+                if (control.levels > 1) {
+                    --control.levels;
+                    throw control;
+                }
                     if (control.shouldBreak) {
                         break;
                     }
@@ -440,6 +454,10 @@ class ProgramParser {
                 try {
                     executeProgram(bodySource, mem);
                 } catch (LoopControl control) {
+                if (control.levels > 1) {
+                    --control.levels;
+                    throw control;
+                }
                     if (control.shouldBreak) {
                         break;
                     }
@@ -455,6 +473,10 @@ class ProgramParser {
                 try {
                     executeProgram(bodySource, mem);
                 } catch (LoopControl control) {
+                if (control.levels > 1) {
+                    --control.levels;
+                    throw control;
+                }
                     if (control.shouldBreak) {
                         break;
                     }
@@ -863,10 +885,30 @@ class ProgramParser {
                 ? "break is only valid inside a loop"
                 : "continue is only valid inside a loop");
         }
-        if (!isEndStatement(current_.kind)) {
-            throw new YshError("break and continue arguments are not translated yet");
+
+        size_t levels = 1;
+        if (current_.kind == TokenKind.integer) {
+            levels = 0;
+            foreach (digit; current_.text) {
+                if (digit == '_') {
+                    continue;
+                }
+                auto value = cast(size_t)(digit - '0');
+                if (levels > (size_t.max - value) / 10) {
+                    throw new YshError("break/continue level is too large");
+                }
+                levels = levels * 10 + value;
+            }
+            if (levels == 0) {
+                throw new YshError("break/continue level must be at least 1");
+            }
+            advance();
         }
-        throw new LoopControl(shouldBreak);
+
+        if (!isEndStatement(current_.kind)) {
+            throw new YshError("break and continue accept at most one integer argument");
+        }
+        throw new LoopControl(shouldBreak, levels);
     }
 
     private string collectParenthesizedExpression() {
@@ -1083,6 +1125,27 @@ unittest {
     assert(repr(mem.get("iteration")) == "4");
     assert(repr(mem.get("visits")) == "2");
     assert(repr(mem.get("once")) == "1");
+
+    executeProgram(
+        "var break_visits = 0\n" ~
+        "for i in (0 ..< 3) {\n" ~
+        "  for j in (0 ..< 3) {\n" ~
+        "    setvar break_visits = break_visits + 1\n" ~
+        "    if (j === 1) { break 2 }\n" ~
+        "  }\n" ~
+        "  setvar break_visits = break_visits + 100\n" ~
+        "}\n" ~
+        "var continue_visits = 0\n" ~
+        "for i in (0 ..< 3) {\n" ~
+        "  for j in (0 ..< 3) {\n" ~
+        "    if (j === 1) { continue 2 }\n" ~
+        "    setvar continue_visits = continue_visits + 1\n" ~
+        "  }\n" ~
+        "  setvar continue_visits = continue_visits + 100\n" ~
+        "}\n",
+        mem);
+    assert(repr(mem.get("break_visits")) == "2");
+    assert(repr(mem.get("continue_visits")) == "3");
 
     executeProgram(
         "var list_total = 0\n" ~
