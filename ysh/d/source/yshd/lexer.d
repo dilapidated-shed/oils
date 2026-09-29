@@ -127,6 +127,12 @@ class Lexer {
         auto start = position_;
         auto c = input_[position_];
 
+        if ((c == 'u' || c == 'b' || c == 'r') &&
+                position_ + 1 < input_.length &&
+                input_[position_ + 1] == '\'') {
+            return prefixedSingleQuotedToken(c);
+        }
+
         if (c == '"') {
             return doubleQuotedToken();
         }
@@ -394,6 +400,151 @@ class Lexer {
         return Token(isFloat ? TokenKind.floating : TokenKind.integer, text, start);
     }
 
+    private static bool hexDigit(char c) {
+        return (c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F');
+    }
+
+    private static uint hexValue(char c) {
+        if (c >= '0' && c <= '9') {
+            return cast(uint)(c - '0');
+        }
+        if (c >= 'a' && c <= 'f') {
+            return cast(uint)(10 + c - 'a');
+        }
+        return cast(uint)(10 + c - 'A');
+    }
+
+    private static void appendUtf8(ref string result, uint codePoint) {
+        if (codePoint > 0x10ffff ||
+                (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+            throw new LexError("invalid Unicode scalar in string literal");
+        }
+
+        if (codePoint <= 0x7f) {
+            result ~= cast(char)codePoint;
+        } else if (codePoint <= 0x7ff) {
+            result ~= cast(char)(0xc0 | (codePoint >> 6));
+            result ~= cast(char)(0x80 | (codePoint & 0x3f));
+        } else if (codePoint <= 0xffff) {
+            result ~= cast(char)(0xe0 | (codePoint >> 12));
+            result ~= cast(char)(0x80 | ((codePoint >> 6) & 0x3f));
+            result ~= cast(char)(0x80 | (codePoint & 0x3f));
+        } else {
+            result ~= cast(char)(0xf0 | (codePoint >> 18));
+            result ~= cast(char)(0x80 | ((codePoint >> 12) & 0x3f));
+            result ~= cast(char)(0x80 | ((codePoint >> 6) & 0x3f));
+            result ~= cast(char)(0x80 | (codePoint & 0x3f));
+        }
+    }
+
+    /// Translate the single-line J8-style r'', u'', and b'' literals exposed
+    /// by YSH. r'' is raw, u'' decodes Unicode escapes, and b'' additionally
+    /// admits the J8 \\yHH byte escape.
+    private Token prefixedSingleQuotedToken(char prefix) {
+        auto start = position_;
+        position_ += 2; // prefix and opening quote
+
+        string text;
+        while (position_ < input_.length) {
+            auto c = input_[position_];
+
+            if (c == '\'') {
+                ++position_;
+                return Token(TokenKind.stringValue, text, start);
+            }
+
+            if (prefix == 'r' || c != '\\') {
+                text ~= c;
+                ++position_;
+                continue;
+            }
+
+            if (position_ + 1 >= input_.length) {
+                throw new LexError(format(
+                    "unterminated %s string at byte %s", prefix, start));
+            }
+
+            auto escape = input_[position_ + 1];
+            switch (escape) {
+            case '\\':
+                text ~= '\\';
+                position_ += 2;
+                break;
+            case '\'':
+                text ~= '\'';
+                position_ += 2;
+                break;
+            case 'n':
+                text ~= '\n';
+                position_ += 2;
+                break;
+            case 'r':
+                text ~= '\r';
+                position_ += 2;
+                break;
+            case 't':
+                text ~= '\t';
+                position_ += 2;
+                break;
+            case '0':
+                text ~= cast(char)0;
+                position_ += 2;
+                break;
+            case 'u':
+                if (position_ + 2 >= input_.length ||
+                        input_[position_ + 2] != '{') {
+                    throw new LexError(format(
+                        "expected '{' after \\u at byte %s", position_));
+                }
+                size_t p = position_ + 3;
+                uint codePoint;
+                size_t digits;
+                while (p < input_.length && input_[p] != '}') {
+                    if (!hexDigit(input_[p]) || digits >= 6) {
+                        throw new LexError(format(
+                            "invalid \\u{...} escape at byte %s", position_));
+                    }
+                    codePoint = codePoint * 16 + hexValue(input_[p]);
+                    ++p;
+                    ++digits;
+                }
+                if (p >= input_.length || digits == 0) {
+                    throw new LexError(format(
+                        "unterminated \\u{...} escape at byte %s", position_));
+                }
+                appendUtf8(text, codePoint);
+                position_ = p + 1;
+                break;
+            case 'y':
+                if (prefix != 'b') {
+                    throw new LexError(format(
+                        "\\y byte escape requires b'' at byte %s", position_));
+                }
+                if (position_ + 3 >= input_.length ||
+                        !hexDigit(input_[position_ + 2]) ||
+                        !hexDigit(input_[position_ + 3])) {
+                    throw new LexError(format(
+                        "\\y requires exactly two hex digits at byte %s",
+                        position_));
+                }
+                auto byte = (hexValue(input_[position_ + 2]) << 4) |
+                    hexValue(input_[position_ + 3]);
+                text ~= cast(char)byte;
+                position_ += 4;
+                break;
+            default:
+                throw new LexError(format(
+                    "invalid escape '\\%s' in %s string at byte %s",
+                    escape, prefix, position_));
+            }
+        }
+
+        throw new LexError(format(
+            "unterminated %s string at byte %s", prefix, start));
+    }
+
     private Token doubleQuotedToken() {
         auto start = position_;
         ++position_;
@@ -423,6 +574,18 @@ unittest {
     assert(exprLexer.next().kind == TokenKind.plus);
     assert(exprLexer.next().kind == TokenKind.integer);
     assert(exprLexer.next().kind == TokenKind.integer);
+
+    auto stringLexer = new Lexer("u'\\u{3bc}' b'\\yff' r'raw \\u{61}'");
+    auto unicodeString = stringLexer.next();
+    assert(unicodeString.kind == TokenKind.stringValue);
+    assert(unicodeString.text == "μ");
+    auto byteString = stringLexer.next();
+    assert(byteString.kind == TokenKind.stringValue);
+    assert(byteString.text.length == 1);
+    assert(cast(ubyte)byteString.text[0] == 0xff);
+    auto rawString = stringLexer.next();
+    assert(rawString.kind == TokenKind.stringValue);
+    assert(rawString.text == "raw \\u{61}");
 
     auto commandLexer = new Lexer("var x = 1 # comment\nsetvar x = 2\n", true);
     assert(commandLexer.next().kind == TokenKind.varKeyword);
