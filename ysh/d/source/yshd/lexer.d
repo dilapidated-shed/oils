@@ -57,6 +57,7 @@ enum TokenKind {
     tilde,
     shiftLeft,
     shiftRight,
+    ellipsis,
     dotDotLess,
     dotDotEqual,
 
@@ -118,6 +119,12 @@ class Lexer {
     this(string input, bool emitNewlines = false) {
         input_ = input;
         emitNewlines_ = emitNewlines;
+    }
+
+    Token peek() {
+        auto saved = position_;
+        scope (exit) position_ = saved;
+        return next();
     }
 
     Token next() {
@@ -238,6 +245,10 @@ class Lexer {
         if (startsWith("++")) {
             position_ += 2;
             return Token(TokenKind.plusPlus, "++", start);
+        }
+        if (startsWith("...")) {
+            position_ += 3;
+            return Token(TokenKind.ellipsis, "...", start);
         }
         if (startsWith("..<")) {
             position_ += 3;
