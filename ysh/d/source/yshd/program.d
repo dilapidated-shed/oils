@@ -1211,6 +1211,23 @@ unittest {
     assert(repr(mem.get("called")) == "7");
 
     executeProgram(
+        "func rest_pick(first, ...rest) { return (rest[1]) }\n" ~
+        "var rest_answer = rest_pick(0, 10, 20)\n" ~
+        "var positional_values = [1, 2, 3]\n" ~
+        "func second(...args) { return (args[1]) }\n" ~
+        "var spread_answer = second(...positional_values)\n" ~
+        "func named_add(; x = 3, y = 4) { return (x + y) }\n" ~
+        "var named_answer = named_add(y = 10)\n" ~
+        "func named_rest(; ...other) { return (other.z) }\n" ~
+        "var named_values = {z: 9}\n" ~
+        "var named_spread_answer = named_rest(; ...named_values)\n",
+        mem);
+    assert(repr(mem.get("rest_answer")) == "20");
+    assert(repr(mem.get("spread_answer")) == "2");
+    assert(repr(mem.get("named_answer")) == "13");
+    assert(repr(mem.get("named_spread_answer")) == "9");
+
+    executeProgram(
         "func classify(number) {\n" ~
         "  if (number < 0) {\n" ~
         "    return (-1)\n" ~
