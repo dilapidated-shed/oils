@@ -153,7 +153,7 @@ string encodeJsonString(string value) {
         auto byte = cast(ubyte)value[offset];
 
         if (byte < 0x80) {
-            final switch (byte) {
+            switch (byte) {
             case '"':
                 result ~= "\\\"";
                 break;
