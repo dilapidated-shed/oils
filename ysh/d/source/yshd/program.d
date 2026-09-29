@@ -637,9 +637,19 @@ class ProgramParser {
     }
 
     private size_t quotedTokenEnd(size_t start, char quote) const {
-        auto position = start + 1;
+        auto position = start;
+        bool backslashEscapes = quote == '"';
+
+        // J8-style r'', u'', and b'' tokens include their one-byte prefix in
+        // Token.offset. Skip the prefix before walking the quoted source.
+        if (position < source_.length && source_[position] != quote) {
+            backslashEscapes = source_[position] != 'r';
+            ++position;
+        }
+        ++position; // opening quote
+
         while (position < source_.length) {
-            if (quote == '"' && source_[position] == '\\') {
+            if (backslashEscapes && source_[position] == '\\') {
                 position += 2;
                 continue;
             }
