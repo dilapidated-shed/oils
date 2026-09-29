@@ -8,7 +8,7 @@ import std.string : replace, strip;
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
 import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshError, YshTypeError, exactlyEqual, toBool;
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, exactlyEqual, toBool;
 
 class ParseError : YshError {
     this(string message) {
@@ -613,13 +613,27 @@ private class AttributeExpr : Expr {
     }
 }
 
+private struct PositionalCallArgument {
+    Expr expression;
+    bool spread;
+}
+
+private struct NamedCallArgument {
+    string name;
+    Expr expression;
+    bool spread;
+}
+
 private class CallExpr : Expr {
     private Expr callee_;
-    private Expr[] arguments_;
+    private PositionalCallArgument[] positional_;
+    private NamedCallArgument[] named_;
 
-    this(Expr callee, Expr[] arguments) {
+    this(Expr callee, PositionalCallArgument[] positional,
+            NamedCallArgument[] named) {
         callee_ = callee;
-        arguments_ = arguments;
+        positional_ = positional;
+        named_ = named;
     }
 
     override Value eval(Memory mem) {
@@ -631,11 +645,39 @@ private class CallExpr : Expr {
         if (userFunction is null) {
             throw new YshTypeError("unknown callable value");
         }
+
         Value[] arguments;
-        foreach (argument; arguments_) {
-            arguments ~= argument.eval(mem);
+        foreach (argument; positional_) {
+            auto value = argument.expression.eval(mem);
+            if (!argument.spread) {
+                arguments ~= value;
+                continue;
+            }
+            if (value.kind != ValueKind.list) {
+                throw new YshTypeError("positional ... spread requires List");
+            }
+            arguments ~= value.listValue.items;
         }
-        return userFunction.invoke(arguments);
+
+        YshDict namedArguments;
+        if (named_.length != 0) {
+            namedArguments = new YshDict();
+        }
+        foreach (argument; named_) {
+            auto value = argument.expression.eval(mem);
+            if (!argument.spread) {
+                namedArguments.set(argument.name, value);
+                continue;
+            }
+            if (value.kind != ValueKind.dict) {
+                throw new YshTypeError("named ... spread requires Dict");
+            }
+            foreach (key, item; value.dictValue) {
+                namedArguments.set(key, item);
+            }
+        }
+
+        return userFunction.invoke(arguments, namedArguments);
     }
 }
 
@@ -1091,18 +1133,60 @@ private class Parser {
                 left = new SubscriptExpr(left, index);
             } else if (current_.kind == TokenKind.leftParen) {
                 advance();
-                Expr[] arguments;
-                if (current_.kind != TokenKind.rightParen) {
-                    while (true) {
-                        arguments ~= parseTest();
-                        if (current_.kind != TokenKind.comma) {
-                            break;
+                PositionalCallArgument[] positionalArguments;
+                NamedCallArgument[] namedArguments;
+                bool namedGroup;
+
+                while (current_.kind != TokenKind.rightParen) {
+                    if (current_.kind == TokenKind.semicolon) {
+                        if (namedGroup) {
+                            throw new ParseError(
+                                "function call has more than one named-argument separator");
                         }
+                        namedGroup = true;
                         advance();
+                        continue;
                     }
+
+                    if (current_.kind == TokenKind.ellipsis) {
+                        advance();
+                        auto expression = parseTest();
+                        if (namedGroup) {
+                            namedArguments ~= NamedCallArgument(
+                                "", expression, true);
+                        } else {
+                            positionalArguments ~= PositionalCallArgument(
+                                expression, true);
+                        }
+                    } else if (current_.kind == TokenKind.name &&
+                            lexer_.peek().kind == TokenKind.equal) {
+                        auto name = current_.text;
+                        advance();
+                        require(TokenKind.equal, "=");
+                        namedArguments ~= NamedCallArgument(
+                            name, parseTest(), false);
+                    } else {
+                        if (namedGroup) {
+                            throw new ParseError(format(
+                                "expected named argument at byte %s",
+                                current_.offset));
+                        }
+                        positionalArguments ~= PositionalCallArgument(
+                            parseTest(), false);
+                    }
+
+                    if (current_.kind == TokenKind.comma) {
+                        advance();
+                        continue;
+                    }
+                    if (current_.kind == TokenKind.semicolon) {
+                        continue;
+                    }
+                    break;
                 }
+
                 require(TokenKind.rightParen, ")");
-                left = new CallExpr(left, arguments);
+                left = new CallExpr(left, positionalArguments, namedArguments);
             } else {
                 advance();
                 if (current_.kind != TokenKind.name) {
