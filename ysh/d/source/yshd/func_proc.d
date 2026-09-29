@@ -168,6 +168,112 @@ class YshFunction {
     }
 }
 
+
+/// User-defined proc word-argument binding from ysh/func_proc.py.
+///
+/// An open proc (no signature) receives its command words in ARGV. A closed
+/// proc binds word parameters and an optional ...rest list. Typed, named, and
+/// block proc argument groups are layered separately by the command parser.
+class YshProc {
+    string name;
+    bool openSignature;
+    FunctionParameter[] wordParameters;
+    string restWordName;
+    Value[] defaults;
+    bool[] hasDefaults;
+    string bodySource;
+    Frame closure;
+
+    this(string name, string bodySource, Memory definitionMemory,
+            bool openSignature = true,
+            FunctionParameter[] wordParameters = [],
+            string restWordName = "") {
+        this.name = name;
+        this.openSignature = openSignature;
+        this.wordParameters = wordParameters;
+        this.restWordName = restWordName;
+        this.bodySource = bodySource;
+        closure = definitionMemory.currentFrame;
+
+        if (!openSignature) {
+            bool sawDefault;
+            foreach (parameter; wordParameters) {
+                if (parameter.defaultSource.length == 0) {
+                    if (sawDefault) {
+                        throw new YshError(
+                            "required parameter follows a default parameter");
+                    }
+                    defaults ~= Value.nullValue();
+                    hasDefaults ~= false;
+                    continue;
+                }
+
+                sawDefault = true;
+                auto value = evaluate(parameter.defaultSource, definitionMemory);
+                if (value.kind == ValueKind.list ||
+                        value.kind == ValueKind.dict) {
+                    throw new YshError("Default values can't be mutable");
+                }
+                defaults ~= value;
+                hasDefaults ~= true;
+            }
+        }
+    }
+
+    Value invoke(string[] words) {
+        auto memory = new Memory();
+        memory.pushEnclosed(closure);
+        scope (exit) memory.popFrame();
+
+        if (openSignature) {
+            Value[] argv;
+            foreach (word; words) {
+                argv ~= Value.str(word);
+            }
+            memory.declareLocal("ARGV", Value.list(argv));
+        } else {
+            // Closed procs bind their word arguments and expose an empty ARGV,
+            // matching the upstream distinction between closed and open procs.
+            memory.declareLocal("ARGV", Value.list([]));
+
+            foreach (index, parameter; wordParameters) {
+                Value value;
+                if (index < words.length) {
+                    value = Value.str(words[index]);
+                } else if (hasDefaults[index]) {
+                    value = defaults[index];
+                } else {
+                    throw new YshError(format(
+                        "proc '%s' wasn't passed word param '%s'",
+                        name, parameter.name));
+                }
+                memory.declareLocal(parameter.name, value);
+            }
+
+            if (restWordName.length != 0) {
+                Value[] rest;
+                if (words.length > wordParameters.length) {
+                    foreach (word; words[wordParameters.length .. $]) {
+                        rest ~= Value.str(word);
+                    }
+                }
+                memory.declareLocal(restWordName, Value.list(rest));
+            } else if (words.length > wordParameters.length) {
+                throw new YshError(format(
+                    "proc '%s' takes %s words, but got %s",
+                    name, wordParameters.length, words.length));
+            }
+        }
+
+        try {
+            executeProgram(bodySource, memory);
+        } catch (FunctionReturn returned) {
+            return returned.value;
+        }
+        return Value.integer(0);
+    }
+}
+
 unittest {
     auto memory = new Memory();
     memory.declareLocal("captured", Value.integer(40));
@@ -200,6 +306,22 @@ unittest {
     auto extras = new YshDict();
     extras.set("z", Value.integer(9));
     assert(namedRest.invoke([], extras).integerValue == 9);
+
+    auto openProc = new YshProc("open",
+        "return (ARGV[1])\n", memory);
+    assert(openProc.invoke(["a", "b", "c"]).stringValue == "b");
+
+    auto closedProc = new YshProc("closed",
+        "return (rest[0])\n", memory, false, [
+            FunctionParameter("first", ""),
+        ], "rest");
+    assert(closedProc.invoke(["a", "b", "c"]).stringValue == "b");
+
+    auto defaultProc = new YshProc("defaulted",
+        "return (word)\n", memory, false, [
+            FunctionParameter("word", "'fallback'"),
+        ]);
+    assert(defaultProc.invoke([]).stringValue == "fallback");
 
     bool rejectedMutableDefault;
     try {
