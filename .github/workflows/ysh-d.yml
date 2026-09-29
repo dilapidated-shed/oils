@@ -125,3 +125,11 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "var items = ['a b', 'c d']; var answer = 42; write @items; write \$answer \$[6 * 7] @[['x', 'y']]; echo s=\$answer; echo \"value=\$answer\"; write pre\$answer-post; for i, item in red green blue { echo \"\$i:\$item\" }; echo hello world; echo -n joined; write one two; write --sep '_' --end ' END' -- alpha beta; write -n x; write y")
           expected=$(printf 'a b\nc d\n42\n42\nx\ny\ns=42\nvalue=42\npre42-post\n0:red\n1:green\n2:blue\nhello world\njoinedone\ntwo\nalpha_beta ENDxy\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "write --json u'\\u{3bc}' x; write --j8 b'\\yfe\\yff' y")
+          expected=$(printf '"μ"\n"x"\nb'\''\\yfe\\yff'\''\n"y"\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "echo -en 'abc\\ndef\\n'; echo -e xy 'ab\\cde' zzz")
+          expected=$(printf 'abc\ndef\nxy ab')
+          test "$actual" = "$expected"
