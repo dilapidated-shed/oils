@@ -880,9 +880,20 @@ class ProgramParser {
         bool backslashEscapes = quote == '"';
 
         // J8-style r'', u'', and b'' tokens include their one-byte prefix in
-        // Token.offset. Skip the prefix before walking the quoted source.
+        // Token.offset. Triple-quoted forms use the complete ''' delimiter.
         if (position < source_.length && source_[position] != quote) {
             backslashEscapes = source_[position] != 'r';
+            if (quote == '\'' && position + 3 < source_.length &&
+                    source_[position + 1 .. position + 4] == "'''") {
+                position += 4;
+                while (position + 2 < source_.length) {
+                    if (source_[position .. position + 3] == "'''") {
+                        return position + 3;
+                    }
+                    ++position;
+                }
+                throw new YshError("unterminated triple-quoted command word");
+            }
             ++position;
         }
         ++position; // opening quote
