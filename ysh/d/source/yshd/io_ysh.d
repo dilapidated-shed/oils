@@ -150,10 +150,10 @@ string encodeJsonString(string value) {
     size_t offset;
 
     while (offset < value.length) {
-        auto byte = cast(ubyte)value[offset];
+        auto byteValue = cast(ubyte)value[offset];
 
         if (byte < 0x80) {
-            switch (byte) {
+            switch (byteValue) {
             case '"':
                 result ~= "\\\"";
                 break;
@@ -176,12 +176,12 @@ string encodeJsonString(string value) {
                 result ~= "\\r";
                 break;
             default:
-                if (byte < 0x20) {
+                if (byteValue < 0x20) {
                     result ~= "\\u00";
-                    result ~= hexDigit(byte >> 4);
-                    result ~= hexDigit(byte);
+                    result ~= hexDigit(byteValue >> 4);
+                    result ~= hexDigit(byteValue);
                 } else {
-                    result ~= cast(char)byte;
+                    result ~= cast(char)byteValue;
                 }
                 break;
             }
@@ -213,8 +213,8 @@ string encodeJ8String(string value) {
 
     string result = "b'";
     foreach (char raw; value) {
-        auto byte = cast(ubyte)raw;
-        switch (byte) {
+        auto byteValue = cast(ubyte)raw;
+        switch (byteValue) {
         case '\\':
             result ~= "\\\\";
             break;
@@ -231,12 +231,12 @@ string encodeJ8String(string value) {
             result ~= "\\t";
             break;
         default:
-            if (byte >= 0x20 && byte <= 0x7e) {
-                result ~= cast(char)byte;
+            if (byteValue >= 0x20 && byteValue <= 0x7e) {
+                result ~= cast(char)byteValue;
             } else {
                 result ~= "\\y";
-                result ~= hexDigit(byte >> 4);
-                result ~= hexDigit(byte);
+                result ~= hexDigit(byteValue >> 4);
+                result ~= hexDigit(byteValue);
             }
             break;
         }
