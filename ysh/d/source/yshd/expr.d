@@ -581,6 +581,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.sliceValue:
         case ValueKind.rangeValue:
         case ValueKind.functionValue:
+        case ValueKind.procValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -1408,6 +1409,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.sliceValue:
         case ValueKind.rangeValue:
         case ValueKind.functionValue:
+        case ValueKind.procValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
