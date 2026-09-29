@@ -1141,6 +1141,7 @@ private class Parser {
             advance();
             return new LiteralExpr(Value.floating(to!double(token.text.replace("_", ""))));
         case TokenKind.stringValue:
+        case TokenKind.charValue:
             advance();
             return new LiteralExpr(Value.str(token.text));
         case TokenKind.name:
@@ -1217,7 +1218,8 @@ private class Parser {
                     } else {
                         value = new VariableExpr(name);
                     }
-                } else if (current_.kind == TokenKind.stringValue) {
+                } else if (current_.kind == TokenKind.stringValue ||
+                        current_.kind == TokenKind.charValue) {
                     key = new LiteralExpr(Value.str(current_.text));
                     advance();
                     require(TokenKind.colon, ":");
