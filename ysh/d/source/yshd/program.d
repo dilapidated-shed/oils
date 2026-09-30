@@ -129,6 +129,10 @@ class ProgramParser {
                     parseAssert(mem);
                     break;
                 }
+                if (current_.text == "read") {
+                    parseRead(mem);
+                    break;
+                }
                 if (current_.text == "write") {
                     parseWrite(mem);
                     break;
@@ -1063,6 +1067,52 @@ class ProgramParser {
 
     /// YSH `call f(...)` evaluates a function-call expression for its
     /// side effects and discards the returned value.
+    private void parseRead(Memory mem) {
+        advance(); // read
+        bool all;
+        bool line;
+
+        while (!isEndStatement(current_.kind)) {
+            if (atRawWord("--all")) {
+                consumeRawWord("--all");
+                all = true;
+                continue;
+            }
+            if (atRawWord("--line")) {
+                consumeRawWord("--line");
+                line = true;
+                continue;
+            }
+            throw new YshError("read currently supports --all or --line");
+        }
+
+        if (all && line) {
+            throw new YshError("read accepts only one of --all and --line");
+        }
+
+        string result;
+        if (all) {
+            while (true) {
+                auto chunk = mem.inputFile.readln();
+                if (chunk.length == 0) {
+                    break;
+                }
+                result ~= chunk;
+            }
+        } else {
+            result = mem.inputFile.readln();
+            if (result.length != 0 && result[$ - 1] == '\n') {
+                result = result[0 .. $ - 1];
+                if (result.length != 0 && result[$ - 1] == '\r') {
+                    result = result[0 .. $ - 1];
+                }
+            }
+        }
+
+        mem.setVar("_reply", Value.str(result));
+        mem.lastStatus = result.length == 0 && !all ? 1 : 0;
+    }
+
     private void parseAssert(Memory mem) {
         advance(); // assert
         if (isEndStatement(current_.kind)) {
