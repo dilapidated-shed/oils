@@ -655,7 +655,7 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         throw new YshTypeError(format("%s() does not accept named arguments yet", name));
     }
 
-    final switch (name) {
+    switch (name) {
     case "identity":
         if (arguments.length != 1) {
             throw new YshTypeError("identity() expects one argument");
@@ -759,6 +759,8 @@ private Value callBuiltinFunction(string name, Value[] arguments,
             throw new YshTypeError("bool() expects one argument");
         }
         return Value.boolean(toBool(arguments[0]));
+    default:
+        assert(false, "unknown builtin function");
     }
 }
 
