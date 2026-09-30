@@ -856,6 +856,39 @@ private Value evalLeftObject(Expr expression, Memory mem,
     throw new YshError("invalid left side for setvar/setglobal");
 }
 
+private class ScalarStringExpr : Expr {
+    private Expr child_;
+
+    this(Expr child) {
+        child_ = child;
+    }
+
+    override Value eval(Memory mem) {
+        return Value.str(stringify(child_.eval(mem)));
+    }
+}
+
+private class ArrayStringExpr : Expr {
+    private Expr child_;
+
+    this(Expr child) {
+        child_ = child;
+    }
+
+    override Value eval(Memory mem) {
+        auto value = child_.eval(mem);
+        if (value.kind != ValueKind.list) {
+            throw new YshTypeError("@[expr] expects List");
+        }
+
+        Value[] items;
+        foreach (item; value.listValue.items) {
+            items ~= Value.str(stringify(item));
+        }
+        return Value.list(items);
+    }
+}
+
 private class ListExpr : Expr {
     private Expr[] items_;
 
@@ -1377,6 +1410,18 @@ private class Parser {
         case TokenKind.name:
             advance();
             return new VariableExpr(token.text);
+        case TokenKind.dollar:
+            advance();
+            require(TokenKind.leftBracket, "[");
+            auto scalarChild = parseTest();
+            require(TokenKind.rightBracket, "]");
+            return new ScalarStringExpr(scalarChild);
+        case TokenKind.at:
+            advance();
+            require(TokenKind.leftBracket, "[");
+            auto arrayChild = parseTest();
+            require(TokenKind.rightBracket, "]");
+            return new ArrayStringExpr(arrayChild);
         case TokenKind.leftParen:
             advance();
             if (current_.kind == TokenKind.rightParen) {
@@ -1661,6 +1706,9 @@ unittest {
     assert(repr(evaluate("~0")) == "-1");
     assert(repr(evaluate("1 ..< 4")) == "1..<4");
     assert(repr(evaluate("1 ..= 3")) == "1..<4");
+    assert(repr(evaluate("$[1 + 2]")) == "\"3\"");
+    assert(repr(evaluate("@[[1, 2, 3]]")) == "[\"1\", \"2\", \"3\"]");
+
     assert(repr(evaluate("[0, 1, 2, 3][1:3]")) == "[1, 2]");
     assert(repr(evaluate("[0, 1, 2, 3][:2]")) == "[0, 1]");
     assert(repr(evaluate("[0, 1, 2, 3][2:]")) == "[2, 3]");
