@@ -532,8 +532,11 @@ class ProgramParser {
         while (splitTempBinding(commandName, bindingName, bindingValue)) {
             tempBindings[bindingName] = bindingValue;
             if (isEndStatement(current_.kind)) {
-                throw new YshError(
-                    "temporary environment binding requires a command");
+                foreach (name, text; tempBindings) {
+                    mem.setVar(name, Value.str(text));
+                }
+                mem.lastStatus = 0;
+                return;
             }
             commandNameParts = readCommandWord(mem);
             if (commandNameParts.length != 1) {
