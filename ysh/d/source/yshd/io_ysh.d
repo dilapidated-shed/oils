@@ -245,6 +245,51 @@ string encodeJ8String(string value) {
     return result;
 }
 
+string encodeDataValue(Value value, WriteEncoding encoding = WriteEncoding.json) {
+    final switch (value.kind) {
+    case ValueKind.nullValue:
+    case ValueKind.boolean:
+    case ValueKind.integer:
+    case ValueKind.floating:
+        return stringify(value);
+
+    case ValueKind.stringValue:
+        return encoding == WriteEncoding.j8
+            ? encodeJ8String(value.stringValue)
+            : encodeJsonString(value.stringValue);
+
+    case ValueKind.list:
+        string result = "[";
+        foreach (index, item; value.listValue.items) {
+            if (index != 0) {
+                result ~= ",";
+            }
+            result ~= encodeDataValue(item, encoding);
+        }
+        return result ~ "]";
+
+    case ValueKind.dict:
+        string result = "{";
+        bool first = true;
+        foreach (key, item; value.dictValue) {
+            if (!first) {
+                result ~= ",";
+            }
+            first = false;
+            result ~= encodeJsonString(key);
+            result ~= ":";
+            result ~= encodeDataValue(item, encoding);
+        }
+        return result ~ "}";
+
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
+    case ValueKind.functionValue:
+    case ValueKind.procValue:
+        throw new YshTypeError("value cannot be encoded as JSON/J8 data");
+    }
+}
+
 private string encodeWriteArgument(string value, WriteEncoding encoding) {
     final switch (encoding) {
     case WriteEncoding.plain:
