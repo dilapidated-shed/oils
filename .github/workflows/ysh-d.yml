@@ -194,6 +194,10 @@ jobs:
           expected=$(printf 'list=1,2,3,9,4\nkeys=a/seen\nstarts=true trim=abc upper=AB\n')
           test "$actual" = "$expected"
 
+          actual=$(ysh/d/.build/ysh-d -c "var d = {a: 1, b: [2, 3]}; json write (d); pp test_ (d)")
+          expected=$(printf '{"a":1,"b":[2,3]}\n(Dict)   {"a":1,"b":[2,3]}\n')
+          test "$actual" = "$expected"
+
           read_file="$RUNNER_TEMP/ysh-d-read.txt"
           printf 'alpha\nbeta\n' > "$read_file"
           actual=$(ysh/d/.build/ysh-d -c "read --all < '$read_file'; echo all=\$[_reply]; read --line < '$read_file'; echo line=\$[_reply]")
