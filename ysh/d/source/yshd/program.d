@@ -9,11 +9,12 @@ import std.string : indexOf, join, split, strip;
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction, YshProc;
-import yshd.io_ysh : WriteEncoding, renderEcho, renderWrite, spliceArray;
+import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
+    renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
 import yshd.process : runExternal, runPipeline;
 import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshError, stringify, toBool;
+import yshd.value : Value, ValueKind, YshError, kindName, stringify, toBool;
 
 private class IfCommand {
     string conditionSource;
@@ -127,6 +128,14 @@ class ProgramParser {
             case TokenKind.name:
                 if (current_.text == "assert") {
                     parseAssert(mem);
+                    break;
+                }
+                if (current_.text == "json") {
+                    parseJson(mem);
+                    break;
+                }
+                if (current_.text == "pp") {
+                    parsePrettyPrint(mem);
                     break;
                 }
                 if (current_.text == "read") {
@@ -1067,6 +1076,33 @@ class ProgramParser {
 
     /// YSH `call f(...)` evaluates a function-call expression for its
     /// side effects and discards the returned value.
+    private void parseJson(Memory mem) {
+        advance(); // json
+        if (current_.kind != TokenKind.name || current_.text != "write") {
+            throw new YshError("json currently supports 'json write'");
+        }
+        advance();
+
+        auto expression = collectRhs();
+        auto value = evaluate(expression, mem);
+        mem.outputFile.write(encodeDataValue(value, WriteEncoding.json), "\n");
+        mem.lastStatus = 0;
+    }
+
+    private void parsePrettyPrint(Memory mem) {
+        advance(); // pp
+        if (current_.kind != TokenKind.name || current_.text != "test_") {
+            throw new YshError("pp currently supports 'pp test_'");
+        }
+        advance();
+
+        auto expression = collectRhs();
+        auto value = evaluate(expression, mem);
+        mem.outputFile.write("(", kindName(value), ")   ",
+            encodeDataValue(value, WriteEncoding.j8), "\n");
+        mem.lastStatus = 0;
+    }
+
     private void parseRead(Memory mem) {
         advance(); // read
         bool all;
