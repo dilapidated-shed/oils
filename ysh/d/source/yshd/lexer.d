@@ -52,6 +52,8 @@ enum TokenKind {
     percent,
     starStar,
     plusPlus,
+    fatArrow,
+    thinArrow,
     amp,
     pipe,
     caret,
@@ -249,6 +251,14 @@ class Lexer {
         if (startsWith("++")) {
             position_ += 2;
             return Token(TokenKind.plusPlus, "++", start);
+        }
+        if (startsWith("=>")) {
+            position_ += 2;
+            return Token(TokenKind.fatArrow, "=>", start);
+        }
+        if (startsWith("->")) {
+            position_ += 2;
+            return Token(TokenKind.thinArrow, "->", start);
         }
         if (startsWith("...")) {
             position_ += 3;
