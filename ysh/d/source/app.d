@@ -4,7 +4,7 @@ import std.stdio : stderr, writeln;
 import std.string : join;
 
 import yshd.expr : evaluate;
-import yshd.program : executeProgram;
+import yshd.program : ShellExit, executeProgram;
 import yshd.state : Memory;
 import yshd.value : YshError, repr;
 
@@ -29,6 +29,8 @@ int main(string[] args) {
         auto source = args[1 .. $].join(" ");
         writeln(repr(evaluate(source)));
         return 0;
+    } catch (ShellExit control) {
+        return control.status;
     } catch (YshError error) {
         stderr.writeln("ysh-d: ", error.msg);
         return 3;
