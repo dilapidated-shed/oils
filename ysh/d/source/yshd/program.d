@@ -10,7 +10,7 @@ import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction, YshProc;
 import yshd.io_ysh : WriteEncoding, renderEcho, renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
-import yshd.process : runExternal;
+import yshd.process : runExternal, runPipeline;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, stringify, toBool;
 
@@ -439,25 +439,48 @@ class ProgramParser {
         }
         auto commandName = commandNameParts[0];
 
-        string[] words;
+        string[][] pipeline;
+        string[] argv = [commandName];
+
         while (!isEndStatement(current_.kind)) {
-            words ~= readCommandWord(mem);
+            if (current_.kind == TokenKind.pipe) {
+                pipeline ~= argv;
+                argv = [];
+                advance();
+                if (isEndStatement(current_.kind) ||
+                        current_.kind == TokenKind.pipe) {
+                    throw new YshError("expected command after '|'");
+                }
+                auto nextName = readCommandWord(mem);
+                if (nextName.length != 1) {
+                    throw new YshError(
+                        "pipeline command name cannot be a list splice");
+                }
+                argv ~= nextName[0];
+                continue;
+            }
+            argv ~= readCommandWord(mem);
         }
 
-        auto cell = mem.getCell(commandName);
-        if (cell !is null && cell.value.kind == ValueKind.procValue) {
-            auto userProc = cast(YshProc)cell.value.callableValue;
-            if (userProc is null) {
-                throw new YshError(format("invalid proc value '%s'", commandName));
+        if (pipeline.length == 0) {
+            auto cell = mem.getCell(commandName);
+            if (cell !is null && cell.value.kind == ValueKind.procValue) {
+                auto userProc = cast(YshProc)cell.value.callableValue;
+                if (userProc is null) {
+                    throw new YshError(format(
+                        "invalid proc value '%s'", commandName));
+                }
+                userProc.invoke(argv[1 .. $]);
+                mem.lastStatus = 0;
+                return;
             }
-            userProc.invoke(words);
-            mem.lastStatus = 0;
+
+            mem.lastStatus = runExternal(argv, mem);
             return;
         }
 
-        string[] argv = [commandName];
-        argv ~= words;
-        mem.lastStatus = runExternal(argv, mem);
+        pipeline ~= argv;
+        mem.lastStatus = runPipeline(pipeline, mem);
     }
 
     /// Accept the option-setting forms that gate YSH syntax in the upstream
