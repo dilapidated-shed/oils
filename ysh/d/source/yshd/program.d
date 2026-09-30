@@ -1,8 +1,9 @@
 module yshd.program;
 
-import std.file : chdir;
+import std.conv : to;
+import std.file : chdir, readText;
 import std.format : format;
-import std.string : indexOf, strip;
+import std.string : indexOf, join, strip;
 import std.stdio : write;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
@@ -20,6 +21,15 @@ private class IfCommand {
     string elseSource;
     IfCommand elseIf;
     bool hasElse;
+}
+
+class ShellExit : Exception {
+    int status;
+
+    this(int status) {
+        super("YSH exit");
+        this.status = status;
+    }
 }
 
 private class LoopControl : Exception {
@@ -92,6 +102,9 @@ class ProgramParser {
             case TokenKind.continueKeyword:
                 parseLoopControl(mem, false);
                 break;
+            case TokenKind.colon:
+                parseNoOp(mem);
+                break;
             case TokenKind.name:
                 if (current_.text == "write") {
                     parseWrite(mem);
@@ -111,6 +124,18 @@ class ProgramParser {
                 }
                 if (current_.text == "cd") {
                     parseCd(mem);
+                    break;
+                }
+                if (current_.text == "source") {
+                    parseSource(mem);
+                    break;
+                }
+                if (current_.text == "eval") {
+                    parseEval(mem);
+                    break;
+                }
+                if (current_.text == "exit") {
+                    parseExit(mem);
                     break;
                 }
                 parseCommandInvocation(mem);
@@ -573,6 +598,61 @@ class ProgramParser {
             readCommandWord(mem);
         }
         mem.lastStatus = 0;
+    }
+
+    private void parseNoOp(Memory mem) {
+        advance(); // :
+        if (!isEndStatement(current_.kind)) {
+            throw new YshError(": does not accept arguments");
+        }
+        mem.lastStatus = 0;
+    }
+
+    private void parseSource(Memory mem) {
+        advance(); // source
+        if (isEndStatement(current_.kind)) {
+            throw new YshError("source requires a path");
+        }
+        auto words = readCommandWord(mem);
+        if (words.length != 1 || !isEndStatement(current_.kind)) {
+            throw new YshError("source accepts exactly one path");
+        }
+
+        try {
+            executeProgram(readText(words[0]), mem);
+        } catch (YshError error) {
+            throw error;
+        } catch (Exception error) {
+            throw new YshError(format("source %s: %s", words[0], error.msg));
+        }
+        mem.lastStatus = 0;
+    }
+
+    private void parseEval(Memory mem) {
+        advance(); // eval
+        string[] words;
+        while (!isEndStatement(current_.kind)) {
+            words ~= readCommandWord(mem);
+        }
+        executeProgram(words.join(" "), mem);
+        mem.lastStatus = 0;
+    }
+
+    private void parseExit(Memory mem) {
+        advance(); // exit
+        int status = mem.lastStatus;
+        if (!isEndStatement(current_.kind)) {
+            auto words = readCommandWord(mem);
+            if (words.length != 1 || !isEndStatement(current_.kind)) {
+                throw new YshError("exit accepts zero or one status");
+            }
+            try {
+                status = to!int(words[0]);
+            } catch (Exception error) {
+                throw new YshError("exit status must be an integer");
+            }
+        }
+        throw new ShellExit(status);
     }
 
     private void parseCd(Memory mem) {
