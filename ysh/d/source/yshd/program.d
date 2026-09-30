@@ -65,6 +65,11 @@ class ProgramParser {
         skipEndStatements();
 
         while (current_.kind != TokenKind.eof) {
+            if (tryExecuteTopLevelRedirect(mem)) {
+                skipEndStatements();
+                continue;
+            }
+
             switch (current_.kind) {
             case TokenKind.varKeyword:
                 parseDeclaration(mem, false);
@@ -166,6 +171,114 @@ class ProgramParser {
 
             skipEndStatements();
         }
+    }
+
+    private bool redirectableStatementStart(TokenKind kind) const {
+        return kind == TokenKind.name ||
+            kind == TokenKind.ifKeyword ||
+            kind == TokenKind.whileKeyword ||
+            kind == TokenKind.forKeyword;
+    }
+
+    private string decodeRedirectPath(string raw, Memory mem) {
+        auto pathParser = new ProgramParser(raw);
+        auto parts = pathParser.readCommandWord(mem);
+        if (parts.length != 1 || pathParser.current_.kind != TokenKind.eof) {
+            throw new YshError("redirect path must expand to exactly one word");
+        }
+        return parts[0];
+    }
+
+    private bool tryExecuteTopLevelRedirect(Memory mem) {
+        if (!redirectableStatementStart(current_.kind)) {
+            return false;
+        }
+
+        auto statementStart = current_.offset;
+        auto scanner = new Lexer(source_[statementStart .. $], true);
+        int depth;
+        bool found;
+        TokenKind redirectKind;
+        size_t redirectOffset;
+        size_t redirectEnd;
+        size_t statementEnd = source_.length - statementStart;
+
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof) {
+                statementEnd = token.offset;
+                break;
+            }
+            if (depth == 0 &&
+                    (token.kind == TokenKind.newline ||
+                     token.kind == TokenKind.semicolon)) {
+                statementEnd = token.offset;
+                break;
+            }
+
+            if (depth == 0 &&
+                    (token.kind == TokenKind.greater ||
+                     token.kind == TokenKind.shiftRight ||
+                     token.kind == TokenKind.less)) {
+                if (found) {
+                    throw new YshError(
+                        "multiple redirects in one command are not translated yet");
+                }
+                found = true;
+                redirectKind = token.kind;
+                redirectOffset = token.offset;
+                redirectEnd = token.offset + token.text.length;
+                continue;
+            }
+
+            adjustDepth(depth, token.kind);
+        }
+
+        if (!found) {
+            return false;
+        }
+
+        auto commandSource = strip(source_[
+            statementStart .. statementStart + redirectOffset]);
+        auto pathRaw = strip(source_[
+            statementStart + redirectEnd .. statementStart + statementEnd]);
+        if (commandSource.length == 0 || pathRaw.length == 0) {
+            throw new YshError("redirect requires both command and path");
+        }
+        auto path = decodeRedirectPath(pathRaw, mem);
+
+        File redirected;
+        File previous;
+        if (redirectKind == TokenKind.less) {
+            redirected = File(path, "r");
+            previous = mem.inputFile;
+            mem.inputFile = redirected;
+            scope (exit) mem.inputFile = previous;
+        } else {
+            redirected = File(path,
+                redirectKind == TokenKind.shiftRight ? "a" : "w");
+            previous = mem.outputFile;
+            mem.outputFile = redirected;
+            scope (exit) mem.outputFile = previous;
+        }
+        scope (exit) redirected.close();
+
+        executeProgram(commandSource, mem);
+        if (redirectKind != TokenKind.less) {
+            redirected.flush();
+        }
+
+        int consumeDepth;
+        while (current_.kind != TokenKind.eof) {
+            if (consumeDepth == 0 &&
+                    (current_.kind == TokenKind.newline ||
+                     current_.kind == TokenKind.semicolon)) {
+                break;
+            }
+            adjustDepth(consumeDepth, current_.kind);
+            advance();
+        }
+        return true;
     }
 
     private void parseDeclaration(Memory mem, bool readOnly) {
