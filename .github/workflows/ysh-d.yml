@@ -146,6 +146,10 @@ jobs:
           expected=$(printf 'two\n')
           test "$actual" = "$expected"
 
+          actual=$(ysh/d/.build/ysh-d -c "write alpha beta | grep beta; printf 'left\\nright\\n' | read --all; echo captured=\$[_reply]")
+          expected=$(printf 'beta\ncaptured=left\nright\n\n')
+          test "$actual" = "$expected"
+
           actual=$(ysh/d/.build/ysh-d -c "AA=temporary sh -c 'printf \"%s\\n\" \"\$AA\"'; proc show_env { sh -c 'printf \"%s\\n\" \"\$BB\"' }; BB=inside-proc show_env")
           expected=$(printf 'temporary\ninside-proc\n')
           test "$actual" = "$expected"
