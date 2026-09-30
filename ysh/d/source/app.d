@@ -1,5 +1,6 @@
 module app;
 
+import std.file : exists, readText;
 import std.stdio : stderr, stdin, writeln;
 import std.string : join;
 
@@ -36,6 +37,12 @@ int main(string[] args) {
             auto source = args[2 .. $].join(" ");
             auto mem = new Memory();
             executeProgram(source, mem);
+            return 0;
+        }
+
+        if (args.length == 2 && exists(args[1])) {
+            auto mem = new Memory();
+            executeProgram(readText(args[1]), mem);
             return 0;
         }
 
