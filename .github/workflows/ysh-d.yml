@@ -189,3 +189,7 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "x=assigned; echo x=\$x; true; echo true=\$?; false; echo false=\$?; assert [1 + 1 === 2]")
           expected=$(printf 'x=assigned\ntrue=0\nfalse=1\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "var items = list(1..<4); call items->append(4); call items->insert(-1, 9); echo list=\$[items => join(',')]; var d = {a: 2}; call d->inc('a', 3); call d->append('seen', 7); echo keys=\$[d => keys() => join('/')]; echo starts=\$['abc' => startsWith('a')] trim=\$['xxabcxx' => trim('xx')] upper=\$['ab' => upper()]")
+          expected=$(printf 'list=1,2,3,9,4\nkeys=a/seen\nstarts=true trim=abc upper=AB\n')
+          test "$actual" = "$expected"
