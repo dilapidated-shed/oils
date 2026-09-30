@@ -145,3 +145,7 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "printf 'one\\ntwo\\n' | grep two")
           expected=$(printf 'two\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "AA=temporary sh -c 'printf \"%s\\n\" \"$AA\"'; proc show_env { sh -c 'printf \"%s\\n\" \"$BB\"' }; BB=inside-proc show_env")
+          expected=$(printf 'temporary\ninside-proc\n')
+          test "$actual" = "$expected"
