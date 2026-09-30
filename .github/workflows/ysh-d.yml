@@ -173,6 +173,10 @@ jobs:
           expected=$(printf 'stdin-mode\n')
           test "$actual" = "$expected"
 
+          actual=$(ysh/d/.build/ysh-d -c "read --all <<< 'here value'; echo \"\$[_reply]\"")
+          expected=$(printf 'here value\n')
+          test "$actual" = "$expected"
+
           actual=$(ysh/d/.build/ysh-d -c "sh -c 'exit 7'; echo status=\$?")
           expected=$(printf 'status=7\n')
           test "$actual" = "$expected"
