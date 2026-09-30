@@ -172,3 +172,7 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "sh -c 'exit 7'; echo status=\$?")
           expected=$(printf 'status=7\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "echo value=\$(printf captured); write -- @(seq 3)")
+          expected=$(printf 'value=captured\n1\n2\n3\n')
+          test "$actual" = "$expected"
