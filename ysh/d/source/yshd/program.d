@@ -102,10 +102,28 @@ class ProgramParser {
             case TokenKind.continueKeyword:
                 parseLoopControl(mem, false);
                 break;
+            case TokenKind.trueKeyword:
+                advance();
+                if (!isEndStatement(current_.kind)) {
+                    throw new YshError("true does not accept arguments");
+                }
+                mem.lastStatus = 0;
+                break;
+            case TokenKind.falseKeyword:
+                advance();
+                if (!isEndStatement(current_.kind)) {
+                    throw new YshError("false does not accept arguments");
+                }
+                mem.lastStatus = 1;
+                break;
             case TokenKind.colon:
                 parseNoOp(mem);
                 break;
             case TokenKind.name:
+                if (current_.text == "assert") {
+                    parseAssert(mem);
+                    break;
+                }
                 if (current_.text == "write") {
                     parseWrite(mem);
                     break;
@@ -932,6 +950,25 @@ class ProgramParser {
 
     /// YSH `call f(...)` evaluates a function-call expression for its
     /// side effects and discards the returned value.
+    private void parseAssert(Memory mem) {
+        advance(); // assert
+        if (isEndStatement(current_.kind)) {
+            throw new YshError("assert requires an expression");
+        }
+
+        string expression;
+        if (current_.kind == TokenKind.leftBracket) {
+            expression = collectBracketedExpression("assert");
+        } else {
+            expression = collectRhs();
+        }
+
+        if (!toBool(evaluate(expression, mem))) {
+            throw new YshError("assertion failed");
+        }
+        mem.lastStatus = 0;
+    }
+
     private void parseCall(Memory mem) {
         advance(); // call
         if (isEndStatement(current_.kind)) {
