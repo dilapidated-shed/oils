@@ -180,3 +180,12 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "var a = [1, 2, 3]; var d = {key: 42}; echo len=\$[len(a)] abs=\$[abs(-3)] max=\$[max(3, 9, 4)]; echo \"key \$[d[\"key\"]]\"; var strings = @[a]; write -- @strings")
           expected=$(printf 'len=3 abs=3 max=9\nkey 42\n1\n2\n3\n')
           test "$actual" = "$expected"
+
+          redirect_file="$RUNNER_TEMP/ysh-d-redirect.txt"
+          actual=$(ysh/d/.build/ysh-d -c "echo first > '$redirect_file'; echo second >> '$redirect_file'; cat < '$redirect_file'; if (true) { echo block } > '$redirect_file'; cat '$redirect_file'")
+          expected=$(printf 'first\nsecond\nblock\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "x=assigned; echo x=\$x; true; echo true=\$?; false; echo false=\$?; assert [1 + 1 === 2]")
+          expected=$(printf 'x=assigned\ntrue=0\nfalse=1\n')
+          test "$actual" = "$expected"
