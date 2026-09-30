@@ -2,7 +2,7 @@ module yshd.program;
 
 import std.file : chdir;
 import std.format : format;
-import std.string : strip;
+import std.string : indexOf, strip;
 import std.stdio : write;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
@@ -432,12 +432,90 @@ class ProgramParser {
         mem.declareLocal(name, Value.proc(userProc));
     }
 
+    private struct SavedEnvBinding {
+        string name;
+        bool existed;
+        Value value;
+    }
+
+    private static bool splitTempBinding(string word,
+            out string name, out string value) {
+        auto equal = word.indexOf('=');
+        if (equal <= 0) {
+            return false;
+        }
+
+        name = word[0 .. cast(size_t)equal];
+        if (!asciiIdentifierStart(name[0])) {
+            return false;
+        }
+        foreach (c; name[1 .. $]) {
+            if (!asciiIdentifierContinue(c)) {
+                return false;
+            }
+        }
+
+        value = word[cast(size_t)equal + 1 .. $];
+        return true;
+    }
+
+    private static SavedEnvBinding[] applyTempBindings(
+            string[string] bindings, Memory mem) {
+        SavedEnvBinding[] saved;
+        auto envValue = mem.get("ENV");
+        if (envValue.kind != ValueKind.dict) {
+            throw new YshError("ENV must be a Dict");
+        }
+
+        foreach (name, text; bindings) {
+            auto old = envValue.dictValue.find(name);
+            if (old is null) {
+                saved ~= SavedEnvBinding(name, false, Value.nullValue());
+            } else {
+                saved ~= SavedEnvBinding(name, true, *old);
+            }
+            envValue.dictValue.set(name, Value.str(text));
+        }
+        return saved;
+    }
+
+    private static void restoreTempBindings(
+            SavedEnvBinding[] saved, Memory mem) {
+        auto envValue = mem.get("ENV");
+        if (envValue.kind != ValueKind.dict) {
+            throw new YshError("ENV must be a Dict");
+        }
+        foreach_reverse (entry; saved) {
+            if (entry.existed) {
+                envValue.dictValue.set(entry.name, entry.value);
+            } else {
+                envValue.dictValue.erase(entry.name);
+            }
+        }
+    }
+
     private void parseCommandInvocation(Memory mem) {
         auto commandNameParts = readCommandWord(mem);
         if (commandNameParts.length != 1) {
             throw new YshError("command name cannot be a list splice");
         }
+
+        string[string] tempBindings;
         auto commandName = commandNameParts[0];
+        string bindingName;
+        string bindingValue;
+        while (splitTempBinding(commandName, bindingName, bindingValue)) {
+            tempBindings[bindingName] = bindingValue;
+            if (isEndStatement(current_.kind)) {
+                throw new YshError(
+                    "temporary environment binding requires a command");
+            }
+            commandNameParts = readCommandWord(mem);
+            if (commandNameParts.length != 1) {
+                throw new YshError("command name cannot be a list splice");
+            }
+            commandName = commandNameParts[0];
+        }
 
         string[][] pipeline;
         string[] argv = [commandName];
@@ -461,6 +539,9 @@ class ProgramParser {
             }
             argv ~= readCommandWord(mem);
         }
+
+        auto saved = applyTempBindings(tempBindings, mem);
+        scope (exit) restoreTempBindings(saved, mem);
 
         if (pipeline.length == 0) {
             auto cell = mem.getCell(commandName);
