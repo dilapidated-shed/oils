@@ -1215,7 +1215,7 @@ class ProgramParser {
                 auto output = captureCommandOutput(command, mem);
                 while (output.length != 0 &&
                         (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
-                    output.length = output.length - 1;
+                    output = output[0 .. $ - 1];
                 }
                 result ~= output;
                 position = close + 1;
@@ -1299,7 +1299,7 @@ class ProgramParser {
             auto output = captureCommandOutput(command, mem);
             while (output.length != 0 &&
                     (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
-                output.length = output.length - 1;
+                output = output[0 .. $ - 1];
             }
             return output;
         }
