@@ -575,7 +575,7 @@ class ProgramParser {
                     throw new YshError(format(
                         "invalid proc value '%s'", commandName));
                 }
-                userProc.invoke(argv[1 .. $]);
+                userProc.invoke(argv[1 .. $], mem);
                 mem.lastStatus = 0;
                 return;
             }
