@@ -125,6 +125,9 @@ class ProgramParser {
             case TokenKind.colon:
                 parseNoOp(mem);
                 break;
+            case TokenKind.equal:
+                parseExpressionDisplay(mem);
+                break;
             case TokenKind.name:
                 if (current_.text == "assert") {
                     parseAssert(mem);
@@ -744,6 +747,14 @@ class ProgramParser {
         while (!isEndStatement(current_.kind)) {
             readCommandWord(mem);
         }
+        mem.lastStatus = 0;
+    }
+
+    private void parseExpressionDisplay(Memory mem) {
+        advance(); // =
+        auto expression = collectRhs();
+        auto value = evaluate(expression, mem);
+        mem.outputFile.write(encodeDataValue(value, WriteEncoding.j8), "\n");
         mem.lastStatus = 0;
     }
 
