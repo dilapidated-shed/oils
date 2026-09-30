@@ -1143,32 +1143,106 @@ class ProgramParser {
         throw new YshError("unterminated quoted command word");
     }
 
+    private static size_t substitutionClose(string content,
+            size_t openOffset, char open, char close) {
+        int depth = 1;
+        auto position = openOffset + 1;
+        while (position < content.length) {
+            auto ch = content[position];
+            if (ch == '\\') {
+                position += position + 1 < content.length ? 2 : 1;
+                continue;
+            }
+            if (ch == '\'' || ch == '"') {
+                auto quote = ch;
+                ++position;
+                while (position < content.length) {
+                    if (content[position] == '\\') {
+                        position += position + 1 < content.length ? 2 : 1;
+                        continue;
+                    }
+                    if (content[position] == quote) {
+                        ++position;
+                        break;
+                    }
+                    ++position;
+                }
+                continue;
+            }
+            if (ch == open) {
+                ++depth;
+            } else if (ch == close) {
+                --depth;
+                if (depth == 0) {
+                    return position;
+                }
+            }
+            ++position;
+        }
+        throw new YshError("unterminated substitution in double-quoted word");
+    }
+
     private string evaluateDoubleQuoted(string content, Memory mem) {
         string result;
         size_t position;
         while (position < content.length) {
-            auto c = content[position];
-            if (c == '\\' && position + 1 < content.length) {
+            auto ch = content[position];
+            if (ch == '\\' && position + 1 < content.length) {
                 auto next = content[position + 1];
                 if (next == '$' || next == '`' || next == '"' || next == '\\') {
                     result ~= next;
                     position += 2;
                     continue;
                 }
-                result ~= c;
+                result ~= ch;
                 ++position;
                 continue;
             }
-            if (c == '
+
+            if (ch == '$' && position + 1 < content.length &&
+                    content[position + 1] == '[') {
+                auto close = substitutionClose(content, position + 1, '[', ']');
+                auto expression = content[position + 2 .. close];
+                result ~= stringify(evaluate(expression, mem));
+                position = close + 1;
+                continue;
+            }
+
+            if (ch == '$' && position + 1 < content.length &&
+                    content[position + 1] == '(') {
+                auto close = substitutionClose(content, position + 1, '(', ')');
+                auto command = content[position + 2 .. close];
+                auto output = captureCommandOutput(command, mem);
+                while (output.length != 0 &&
+                        (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
+                    output.length = output.length - 1;
+                }
+                result ~= output;
+                position = close + 1;
+                continue;
+            }
+
+            if (ch == '$' && position + 1 < content.length &&
+                    content[position + 1] == '?') {
+                result ~= to!string(mem.lastStatus);
+                position += 2;
+                continue;
+            }
+
+            if (ch == '$' && position + 1 < content.length &&
+                    asciiIdentifierStart(content[position + 1])) {
+                auto nameStart = position + 1;
                 auto nameEnd = nameStart + 1;
-                while (nameEnd < content.length && asciiIdentifierContinue(content[nameEnd])) {
+                while (nameEnd < content.length &&
+                        asciiIdentifierContinue(content[nameEnd])) {
                     ++nameEnd;
                 }
                 result ~= stringify(mem.get(content[nameStart .. nameEnd]));
                 position = nameEnd;
                 continue;
             }
-            result ~= c;
+
+            result ~= ch;
             ++position;
         }
         return result;
@@ -1185,7 +1259,8 @@ class ProgramParser {
     private static bool isCommandWordToken(TokenKind kind) {
         return isLiteralWordToken(kind) || kind == TokenKind.equal ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
-            kind == TokenKind.charValue || kind == TokenKind.dollar;
+            kind == TokenKind.charValue || kind == TokenKind.dollar ||
+            kind == TokenKind.question;
     }
 
     private string[] parseArraySplice(Memory mem) {
