@@ -1,8 +1,9 @@
 module yshd.state;
 
 import std.format : format;
+import std.process : environment;
 
-import yshd.value : Value, YshError;
+import yshd.value : Value, ValueKind, YshDict, YshError;
 
 /// A YSH variable cell. The shape follows core/runtime.asdl's Cell closely
 /// enough for the D translation to preserve identity when a frame is enclosed.
@@ -58,11 +59,52 @@ class Memory {
     Frame currentFrame;
     private Frame[] frameStack;
     private size_t loopDepth;
+    int lastStatus;
 
     this() {
         globalFrame = new Frame();
         currentFrame = globalFrame;
         frameStack = [globalFrame];
+
+        // core/state.py exposes the process environment through the YSH ENV
+        // object.  Keep it as a mutable Dict so setglobal ENV.NAME updates the
+        // environment inherited by subsequently spawned child processes.
+        auto env = new YshDict();
+        foreach (name, value; environment.toAA()) {
+            env.set(name, Value.str(value));
+        }
+        globalFrame.cells["ENV"] = new Cell(Value.dictRef(env));
+    }
+
+    string getEnv(string name, string fallback = "") {
+        auto env = get("ENV");
+        if (env.kind != ValueKind.dict) {
+            throw new YshError("ENV must be a Dict");
+        }
+        auto found = env.dictValue.find(name);
+        if (found is null) {
+            return fallback;
+        }
+        if (found.kind != ValueKind.stringValue) {
+            throw new YshError(format("ENV.%s must be a Str", name));
+        }
+        return found.stringValue;
+    }
+
+    string[string] childEnvironment() {
+        auto env = get("ENV");
+        if (env.kind != ValueKind.dict) {
+            throw new YshError("ENV must be a Dict");
+        }
+
+        string[string] result;
+        foreach (name, value; env.dictValue) {
+            if (value.kind != ValueKind.stringValue) {
+                throw new YshError(format("ENV.%s must be a Str", name));
+            }
+            result[name] = value.stringValue;
+        }
+        return result;
     }
 
     Value get(string name) {
