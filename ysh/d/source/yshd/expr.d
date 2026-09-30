@@ -666,7 +666,7 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         if (arguments.length != 1) {
             throw new YshTypeError("len() expects one argument");
         }
-        final switch (arguments[0].kind) {
+        switch (arguments[0].kind) {
         case ValueKind.stringValue:
             return Value.integer(cast(long)arguments[0].stringValue.length);
         case ValueKind.list:
