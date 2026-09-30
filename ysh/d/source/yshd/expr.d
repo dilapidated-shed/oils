@@ -2,7 +2,11 @@ module yshd.expr;
 
 import std.bigint : BigInt, toDecimalString;
 import std.conv : to;
+import std.algorithm.sorting : sort;
+import std.array : array;
+import std.file : SpanMode, dirEntries;
 import std.format : format;
+import std.path : baseName, dirName;
 import std.string : replace, strip;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
@@ -643,6 +647,7 @@ private bool builtinFunctionName(string name) {
     case "float":
     case "str":
     case "bool":
+    case "glob":
         return true;
     default:
         return false;
@@ -759,6 +764,38 @@ private Value callBuiltinFunction(string name, Value[] arguments,
             throw new YshTypeError("bool() expects one argument");
         }
         return Value.boolean(toBool(arguments[0]));
+
+    case "glob":
+        if (arguments.length != 1 ||
+                arguments[0].kind != ValueKind.stringValue) {
+            throw new YshTypeError("glob() expects one Str pattern");
+        }
+
+        auto pattern = arguments[0].stringValue;
+        auto directory = dirName(pattern);
+        auto leafPattern = baseName(pattern);
+        if (directory.length == 0) {
+            directory = ".";
+        }
+
+        Value[] matches;
+        try {
+            auto entries = dirEntries(directory, leafPattern,
+                SpanMode.shallow).array;
+            entries.sort!((a, b) => a.name < b.name);
+            foreach (entry; entries) {
+                auto name = directory == "."
+                    ? baseName(entry.name)
+                    : entry.name;
+                matches ~= Value.str(name);
+            }
+        } catch (Exception error) {
+            // Shell-style glob() returns an empty list when the directory or
+            // pattern has no matches; filesystem access errors at an existing
+            // directory are still surfaced by dirEntries on iteration.
+        }
+        return Value.list(matches);
+
     default:
         assert(false, "unknown builtin function");
     }
