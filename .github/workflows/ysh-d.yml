@@ -193,3 +193,9 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "var items = list(1..<4); call items->append(4); call items->insert(-1, 9); echo list=\$[items => join(',')]; var d = {a: 2}; call d->inc('a', 3); call d->append('seen', 7); echo keys=\$[d => keys() => join('/')]; echo starts=\$['abc' => startsWith('a')] trim=\$['xxabcxx' => trim('xx')] upper=\$['ab' => upper()]")
           expected=$(printf 'list=1,2,3,9,4\nkeys=a/seen\nstarts=true trim=abc upper=AB\n')
           test "$actual" = "$expected"
+
+          read_file="$RUNNER_TEMP/ysh-d-read.txt"
+          printf 'alpha\nbeta\n' > "$read_file"
+          actual=$(ysh/d/.build/ysh-d -c "read --all < '$read_file'; echo all=\$[_reply]; read --line < '$read_file'; echo line=\$[_reply]")
+          expected=$(printf 'all=alpha\nbeta\n\nline=alpha\n')
+          test "$actual" = "$expected"
