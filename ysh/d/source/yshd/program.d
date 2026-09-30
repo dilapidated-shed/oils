@@ -3,7 +3,8 @@ module yshd.program;
 import std.conv : to;
 import std.file : chdir, readText;
 import std.format : format;
-import std.string : indexOf, join, strip;
+import std.stdio : File;
+import std.string : indexOf, join, split, strip;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
@@ -1193,6 +1194,12 @@ class ProgramParser {
         if (current_.offset != atOffset + 1) {
             throw new YshError("@ splice expression must follow '@' without whitespace");
         }
+        if (current_.kind == TokenKind.leftParen) {
+            size_t commandEnd;
+            auto command = collectParenthesizedCommand("@ command substitution",
+                commandEnd);
+            return splitCommandOutput(captureCommandOutput(command, mem));
+        }
         if (current_.kind == TokenKind.leftBracket) {
             auto expression = collectBracketedExpression("@ splice");
             return spliceArray(evaluate(expression, mem));
@@ -1211,6 +1218,16 @@ class ProgramParser {
         if (current_.offset != dollarOffset + 1) {
             throw new YshError("$ substitution must follow '$' without whitespace");
         }
+        if (current_.kind == TokenKind.leftParen) {
+            auto command = collectParenthesizedCommand("$ command substitution",
+                endOffset);
+            auto output = captureCommandOutput(command, mem);
+            while (output.length != 0 &&
+                    (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
+                output.length = output.length - 1;
+            }
+            return output;
+        }
         if (current_.kind == TokenKind.leftBracket) {
             auto expression = collectBracketedExpression("$ expression", endOffset);
             return stringify(evaluate(expression, mem));
@@ -1227,6 +1244,57 @@ class ProgramParser {
         endOffset = current_.offset + current_.text.length;
         advance();
         return stringify(value);
+    }
+
+    private string captureCommandOutput(string command, Memory mem) {
+        auto capture = File.tmpfile();
+        auto previous = mem.outputFile;
+        mem.outputFile = capture;
+        scope (exit) mem.outputFile = previous;
+
+        executeProgram(command, mem);
+        capture.flush();
+        capture.rewind();
+
+        string output;
+        while (true) {
+            auto line = capture.readln();
+            if (line.length == 0) {
+                break;
+            }
+            output ~= line;
+        }
+        return output;
+    }
+
+    private static string[] splitCommandOutput(string output) {
+        string[] result;
+        foreach (line; output.split("\n")) {
+            auto word = strip(line);
+            if (word.length != 0) {
+                result ~= word;
+            }
+        }
+        return result;
+    }
+
+    private string collectParenthesizedCommand(string description,
+            ref size_t endOffset) {
+        require(TokenKind.leftParen, "(");
+        auto start = current_.offset;
+        int depth;
+
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0 && current_.kind == TokenKind.rightParen) {
+                auto command = source_[start .. current_.offset];
+                endOffset = current_.offset + 1;
+                advance();
+                return command;
+            }
+            adjustDepth(depth, current_.kind);
+            advance();
+        }
+        throw new YshError("unterminated " ~ description);
     }
 
     private string collectBracketedExpression(string description) {
