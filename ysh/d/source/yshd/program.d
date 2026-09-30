@@ -4,7 +4,6 @@ import std.conv : to;
 import std.file : chdir, readText;
 import std.format : format;
 import std.string : indexOf, join, strip;
-import std.stdio : write;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, evaluate;
@@ -984,7 +983,7 @@ class ProgramParser {
         auto encoding = jsonEncoding
             ? WriteEncoding.json
             : (j8Encoding ? WriteEncoding.j8 : WriteEncoding.plain);
-        write(renderWrite(arguments, separator, ending, encoding));
+        mem.outputFile.write(renderWrite(arguments, separator, ending, encoding));
     }
 
     /// Translate builtin/io_osh.py:Echo for the command-word forms currently
@@ -1005,7 +1004,7 @@ class ProgramParser {
             parsingFlags = false;
             arguments ~= readCommandWord(mem);
         }
-        write(renderEcho(arguments, noNewline, interpretEscapes));
+        mem.outputFile.write(renderEcho(arguments, noNewline, interpretEscapes));
     }
 
     private bool consumeEchoFlags(ref bool noNewline,
