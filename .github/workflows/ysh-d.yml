@@ -164,3 +164,7 @@ jobs:
           status=$?
           set -e
           test "$status" = 23
+
+          actual=$(printf 'echo stdin-mode\n' | ysh/d/.build/ysh-d)
+          expected=$(printf 'stdin-mode\n')
+          test "$actual" = "$expected"
