@@ -114,7 +114,8 @@ class YshFunction {
 
         auto memory = callerMemory is null
             ? new Memory()
-            : new Memory(callerMemory.outputFile, callerMemory.errorFile);
+            : new Memory(callerMemory.inputFile, callerMemory.outputFile,
+                callerMemory.errorFile);
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
@@ -226,7 +227,8 @@ class YshProc {
     Value invoke(string[] words, Memory callerMemory = null) {
         auto memory = callerMemory is null
             ? new Memory()
-            : new Memory(callerMemory.outputFile, callerMemory.errorFile);
+            : new Memory(callerMemory.inputFile, callerMemory.outputFile,
+                callerMemory.errorFile);
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
