@@ -1,5 +1,6 @@
 module yshd.program;
 
+import std.file : chdir;
 import std.format : format;
 import std.string : strip;
 import std.stdio : write;
@@ -9,6 +10,7 @@ import yshd.expr : AssignmentScope, evaluate;
 import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction, YshProc;
 import yshd.io_ysh : WriteEncoding, renderEcho, renderWrite, spliceArray;
 import yshd.lexer : Lexer, Token, TokenKind;
+import yshd.process : runExternal;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError, stringify, toBool;
 
@@ -103,7 +105,15 @@ class ProgramParser {
                     parseCall(mem);
                     break;
                 }
-                parseProcInvocation(mem);
+                if (current_.text == "shopt") {
+                    parseShopt(mem);
+                    break;
+                }
+                if (current_.text == "cd") {
+                    parseCd(mem);
+                    break;
+                }
+                parseCommandInvocation(mem);
                 break;
             default:
                 throw new YshError(format(
@@ -422,30 +432,68 @@ class ProgramParser {
         mem.declareLocal(name, Value.proc(userProc));
     }
 
-    private void parseProcInvocation(Memory mem) {
+    private void parseCommandInvocation(Memory mem) {
         auto commandNameParts = readCommandWord(mem);
         if (commandNameParts.length != 1) {
-            throw new YshError("proc command name cannot be a list splice");
+            throw new YshError("command name cannot be a list splice");
         }
         auto commandName = commandNameParts[0];
-
-        auto cell = mem.getCell(commandName);
-        if (cell is null || cell.value.kind != ValueKind.procValue) {
-            throw new YshError(format(
-                "D YSH command parser has not translated command '%s'",
-                commandName));
-        }
-
-        auto userProc = cast(YshProc)cell.value.callableValue;
-        if (userProc is null) {
-            throw new YshError(format("invalid proc value '%s'", commandName));
-        }
 
         string[] words;
         while (!isEndStatement(current_.kind)) {
             words ~= readCommandWord(mem);
         }
-        userProc.invoke(words);
+
+        auto cell = mem.getCell(commandName);
+        if (cell !is null && cell.value.kind == ValueKind.procValue) {
+            auto userProc = cast(YshProc)cell.value.callableValue;
+            if (userProc is null) {
+                throw new YshError(format("invalid proc value '%s'", commandName));
+            }
+            userProc.invoke(words);
+            mem.lastStatus = 0;
+            return;
+        }
+
+        string[] argv = [commandName];
+        argv ~= words;
+        mem.lastStatus = runExternal(argv, mem);
+    }
+
+    /// Accept the option-setting forms that gate YSH syntax in the upstream
+    /// spec suite.  The translated parser already speaks YSH directly, so
+    /// these settings do not need to switch parser modes here.
+    private void parseShopt(Memory mem) {
+        advance(); // shopt
+        while (!isEndStatement(current_.kind)) {
+            readCommandWord(mem);
+        }
+        mem.lastStatus = 0;
+    }
+
+    private void parseCd(Memory mem) {
+        advance(); // cd
+
+        string target;
+        if (isEndStatement(current_.kind)) {
+            target = mem.getEnv("HOME");
+            if (target.length == 0) {
+                throw new YshError("cd: HOME is not set");
+            }
+        } else {
+            auto words = readCommandWord(mem);
+            if (words.length != 1 || !isEndStatement(current_.kind)) {
+                throw new YshError("cd accepts zero or one path");
+            }
+            target = words[0];
+        }
+
+        try {
+            chdir(target);
+        } catch (Exception error) {
+            throw new YshError(format("cd: %s", error.msg));
+        }
+        mem.lastStatus = 0;
     }
 
     private string collectParameterDefault() {
@@ -1097,6 +1145,7 @@ class ProgramParser {
         case TokenKind.minus:
         case TokenKind.plus:
         case TokenKind.dot:
+        case TokenKind.colon:
         case TokenKind.slash:
             return true;
         default:
@@ -1109,6 +1158,7 @@ class ProgramParser {
         case TokenKind.minus:
         case TokenKind.plus:
         case TokenKind.dot:
+        case TokenKind.colon:
         case TokenKind.slash:
         case TokenKind.equal:
             return 1;
