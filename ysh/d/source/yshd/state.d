@@ -2,6 +2,7 @@ module yshd.state;
 
 import std.format : format;
 import std.process : environment;
+import std.stdio : File, stderr, stdout;
 
 import yshd.value : Value, ValueKind, YshDict, YshError;
 
@@ -60,8 +61,16 @@ class Memory {
     private Frame[] frameStack;
     private size_t loopDepth;
     int lastStatus;
+    File outputFile;
+    File errorFile;
 
     this() {
+        this(stdout, stderr);
+    }
+
+    this(File outputFile, File errorFile) {
+        this.outputFile = outputFile;
+        this.errorFile = errorFile;
         globalFrame = new Frame();
         currentFrame = globalFrame;
         frameStack = [globalFrame];
