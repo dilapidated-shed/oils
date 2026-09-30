@@ -812,7 +812,7 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         if (arguments.length != 1) {
             throw new YshTypeError("list() expects one argument");
         }
-        final switch (arguments[0].kind) {
+        switch (arguments[0].kind) {
         case ValueKind.list:
             return Value.list(arguments[0].listValue.items.dup);
         case ValueKind.dict:
