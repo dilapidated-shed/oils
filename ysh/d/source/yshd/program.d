@@ -129,6 +129,10 @@ class ProgramParser {
                 parseExpressionDisplay(mem);
                 break;
             case TokenKind.name:
+                if (current_.text == "try") {
+                    parseTry(mem);
+                    break;
+                }
                 if (current_.text == "assert") {
                     parseAssert(mem);
                     break;
@@ -1158,6 +1162,23 @@ class ProgramParser {
 
         mem.setVar("_reply", Value.str(result));
         mem.lastStatus = result.length == 0 && !all ? 1 : 0;
+    }
+
+    private void parseTry(Memory mem) {
+        advance(); // try
+        auto body = collectBlock();
+
+        auto error = Value.dict();
+        try {
+            executeProgram(body, mem);
+            error.dictValue.set("code", Value.integer(0));
+            error.dictValue.set("message", Value.str(""));
+        } catch (YshError caught) {
+            error.dictValue.set("code", Value.integer(3));
+            error.dictValue.set("message", Value.str(caught.msg));
+        }
+        mem.setVar("_error", error);
+        mem.lastStatus = 0;
     }
 
     private void parseAssert(Memory mem) {
