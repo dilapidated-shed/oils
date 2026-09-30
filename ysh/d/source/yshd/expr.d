@@ -8,7 +8,8 @@ import std.string : replace, strip;
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
 import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, exactlyEqual, toBool;
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError,
+    exactlyEqual, kindName, stringify, toBool;
 
 class ParseError : YshError {
     this(string message) {
@@ -628,6 +629,139 @@ private struct NamedCallArgument {
     bool spread;
 }
 
+private bool builtinFunctionName(string name) {
+    switch (name) {
+    case "identity":
+    case "len":
+    case "abs":
+    case "max":
+    case "min":
+    case "get":
+    case "getVar":
+    case "type":
+    case "int":
+    case "float":
+    case "str":
+    case "bool":
+        return true;
+    default:
+        return false;
+    }
+}
+
+private Value callBuiltinFunction(string name, Value[] arguments,
+        YshDict namedArguments, Memory mem) {
+    if (namedArguments !is null && namedArguments.length != 0) {
+        throw new YshTypeError(format("%s() does not accept named arguments yet", name));
+    }
+
+    final switch (name) {
+    case "identity":
+        if (arguments.length != 1) {
+            throw new YshTypeError("identity() expects one argument");
+        }
+        return arguments[0];
+
+    case "len":
+        if (arguments.length != 1) {
+            throw new YshTypeError("len() expects one argument");
+        }
+        final switch (arguments[0].kind) {
+        case ValueKind.stringValue:
+            return Value.integer(cast(long)arguments[0].stringValue.length);
+        case ValueKind.list:
+            return Value.integer(cast(long)arguments[0].listValue.length);
+        case ValueKind.dict:
+            return Value.integer(cast(long)arguments[0].dictValue.length);
+        default:
+            throw new YshTypeError("len() expects Str, List, or Dict");
+        }
+
+    case "abs":
+        if (arguments.length != 1) {
+            throw new YshTypeError("abs() expects one argument");
+        }
+        auto number = convertToNumber(arguments[0]);
+        if (number.kind == NumericKind.integer) {
+            return Value.integer(number.integerValue < 0
+                ? -number.integerValue : number.integerValue);
+        }
+        return Value.floating(number.floatValue < 0.0
+            ? -number.floatValue : number.floatValue);
+
+    case "max":
+    case "min":
+        if (arguments.length == 0) {
+            throw new YshTypeError(name ~ "() expects at least one argument");
+        }
+        auto best = arguments[0];
+        foreach (candidate; arguments[1 .. $]) {
+            auto replaceBest = name == "max"
+                ? numericCompare(">", candidate, best)
+                : numericCompare("<", candidate, best);
+            if (replaceBest) {
+                best = candidate;
+            }
+        }
+        return best;
+
+    case "get":
+        if (arguments.length < 2 || arguments.length > 3) {
+            throw new YshTypeError("get() expects Dict, key, and optional fallback");
+        }
+        if (arguments[0].kind != ValueKind.dict ||
+                arguments[1].kind != ValueKind.stringValue) {
+            throw new YshTypeError("get() expects Dict and Str key");
+        }
+        auto found = arguments[0].dictValue.find(arguments[1].stringValue);
+        if (found !is null) {
+            return *found;
+        }
+        return arguments.length == 3 ? arguments[2] : Value.nullValue();
+
+    case "getVar":
+        if (arguments.length != 1 ||
+                arguments[0].kind != ValueKind.stringValue) {
+            throw new YshTypeError("getVar() expects one Str argument");
+        }
+        auto cell = mem.getCell(arguments[0].stringValue);
+        return cell is null ? Value.nullValue() : cell.value;
+
+    case "type":
+        if (arguments.length != 1) {
+            throw new YshTypeError("type() expects one argument");
+        }
+        return Value.str(kindName(arguments[0]));
+
+    case "int":
+        if (arguments.length != 1) {
+            throw new YshTypeError("int() expects one argument");
+        }
+        return Value.integer(convertToInt(arguments[0]));
+
+    case "float":
+        if (arguments.length != 1) {
+            throw new YshTypeError("float() expects one argument");
+        }
+        auto floatNumber = convertToNumber(arguments[0]);
+        return Value.floating(floatNumber.kind == NumericKind.integer
+            ? bigintToDouble(floatNumber.integerValue)
+            : floatNumber.floatValue);
+
+    case "str":
+        if (arguments.length != 1) {
+            throw new YshTypeError("str() expects one argument");
+        }
+        return Value.str(stringify(arguments[0]));
+
+    case "bool":
+        if (arguments.length != 1) {
+            throw new YshTypeError("bool() expects one argument");
+        }
+        return Value.boolean(toBool(arguments[0]));
+    }
+}
+
 private class CallExpr : Expr {
     private Expr callee_;
     private PositionalCallArgument[] positional_;
@@ -641,15 +775,6 @@ private class CallExpr : Expr {
     }
 
     override Value eval(Memory mem) {
-        auto callee = callee_.eval(mem);
-        if (callee.kind != ValueKind.functionValue) {
-            throw new YshTypeError("YSH expression call requires Func");
-        }
-        auto userFunction = cast(YshFunction)callee.callableValue;
-        if (userFunction is null) {
-            throw new YshTypeError("unknown callable value");
-        }
-
         Value[] arguments;
         foreach (argument; positional_) {
             auto value = argument.expression.eval(mem);
@@ -681,10 +806,25 @@ private class CallExpr : Expr {
             }
         }
 
+        if (auto variable = cast(VariableExpr)callee_) {
+            auto cell = mem.getCell(variable.name_);
+            if (cell is null && builtinFunctionName(variable.name_)) {
+                return callBuiltinFunction(variable.name_, arguments,
+                    namedArguments, mem);
+            }
+        }
+
+        auto callee = callee_.eval(mem);
+        if (callee.kind != ValueKind.functionValue) {
+            throw new YshTypeError("YSH expression call requires Func");
+        }
+        auto userFunction = cast(YshFunction)callee.callableValue;
+        if (userFunction is null) {
+            throw new YshTypeError("unknown callable value");
+        }
         return userFunction.invoke(arguments, namedArguments, mem);
     }
 }
-
 
 private Value evalLeftObject(Expr expression, Memory mem,
         AssignmentScope assignmentScope) {
