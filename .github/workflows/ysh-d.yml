@@ -138,7 +138,7 @@ jobs:
           expected=$(printf '<alpha>\n<beta>\n')
           test "$actual" = "$expected"
 
-          actual=$(ysh/d/.build/ysh-d -c "setglobal ENV.YSH_D_PROBE = 'from-d'; sh -c 'printf \"%s\\n\" \"$YSH_D_PROBE\"'")
+          actual=$(ysh/d/.build/ysh-d -c "setglobal ENV.YSH_D_PROBE = 'from-d'; sh -c 'printf \"%s\\n\" \"\$YSH_D_PROBE\"'")
           expected=$(printf 'from-d\n')
           test "$actual" = "$expected"
 
@@ -146,6 +146,21 @@ jobs:
           expected=$(printf 'two\n')
           test "$actual" = "$expected"
 
-          actual=$(ysh/d/.build/ysh-d -c "AA=temporary sh -c 'printf \"%s\\n\" \"$AA\"'; proc show_env { sh -c 'printf \"%s\\n\" \"$BB\"' }; BB=inside-proc show_env")
+          actual=$(ysh/d/.build/ysh-d -c "AA=temporary sh -c 'printf \"%s\\n\" \"\$AA\"'; proc show_env { sh -c 'printf \"%s\\n\" \"\$BB\"' }; BB=inside-proc show_env")
           expected=$(printf 'temporary\ninside-proc\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "eval 'echo evaluated'; :")
+          expected=$(printf 'evaluated\n')
+          test "$actual" = "$expected"
+
+          printf 'echo sourced\n' > "$RUNNER_TEMP/ysh-d-source.ysh"
+          actual=$(ysh/d/.build/ysh-d -c "source '$RUNNER_TEMP/ysh-d-source.ysh'")
+          expected=$(printf 'sourced\n')
+          test "$actual" = "$expected"
+
+          set +e
+          ysh/d/.build/ysh-d -c 'exit 23'
+          status=$?
+          set -e
+          test "$status" = 23
