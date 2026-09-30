@@ -66,6 +66,10 @@ class ProgramParser {
         skipEndStatements();
 
         while (current_.kind != TokenKind.eof) {
+            if (tryExecuteTopLevelPipeline(mem)) {
+                skipEndStatements();
+                continue;
+            }
             if (tryExecuteTopLevelRedirect(mem)) {
                 skipEndStatements();
                 continue;
@@ -191,6 +195,110 @@ class ProgramParser {
 
             skipEndStatements();
         }
+    }
+
+    private bool pipelineStatementStart(TokenKind kind) const {
+        return kind == TokenKind.name ||
+            kind == TokenKind.ifKeyword ||
+            kind == TokenKind.whileKeyword ||
+            kind == TokenKind.forKeyword;
+    }
+
+    private bool tryExecuteTopLevelPipeline(Memory mem) {
+        if (!pipelineStatementStart(current_.kind)) {
+            return false;
+        }
+
+        auto statementStart = current_.offset;
+        auto scanner = new Lexer(source_[statementStart .. $], true);
+        int depth;
+        size_t[] separators;
+        size_t statementEnd = source_.length - statementStart;
+
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof) {
+                statementEnd = token.offset;
+                break;
+            }
+            if (depth == 0 &&
+                    (token.kind == TokenKind.newline ||
+                     token.kind == TokenKind.semicolon)) {
+                statementEnd = token.offset;
+                break;
+            }
+            if (depth == 0 && token.kind == TokenKind.pipe) {
+                separators ~= token.offset;
+                continue;
+            }
+            adjustDepth(depth, token.kind);
+        }
+
+        if (separators.length == 0) {
+            return false;
+        }
+
+        string[] stages;
+        size_t begin;
+        foreach (separator; separators) {
+            auto stage = strip(source_[
+                statementStart + begin .. statementStart + separator]);
+            if (stage.length == 0) {
+                throw new YshError("pipeline has an empty stage");
+            }
+            stages ~= stage;
+            begin = separator + 1;
+        }
+        auto last = strip(source_[
+            statementStart + begin .. statementStart + statementEnd]);
+        if (last.length == 0) {
+            throw new YshError("pipeline has an empty final stage");
+        }
+        stages ~= last;
+
+        auto originalInput = mem.inputFile;
+        auto originalOutput = mem.outputFile;
+        File[] links;
+        scope (exit) {
+            mem.inputFile = originalInput;
+            mem.outputFile = originalOutput;
+            foreach (ref link; links) {
+                link.close();
+            }
+        }
+
+        foreach (index, stage; stages) {
+            if (index == 0) {
+                mem.inputFile = originalInput;
+            } else {
+                links[index - 1].rewind();
+                mem.inputFile = links[index - 1];
+            }
+
+            if (index + 1 == stages.length) {
+                mem.outputFile = originalOutput;
+            } else {
+                links ~= File.tmpfile();
+                mem.outputFile = links[$ - 1];
+            }
+
+            executeProgram(stage, mem);
+            if (index + 1 != stages.length) {
+                mem.outputFile.flush();
+            }
+        }
+
+        int consumeDepth;
+        while (current_.kind != TokenKind.eof) {
+            if (consumeDepth == 0 &&
+                    (current_.kind == TokenKind.newline ||
+                     current_.kind == TokenKind.semicolon)) {
+                break;
+            }
+            adjustDepth(consumeDepth, current_.kind);
+            advance();
+        }
+        return true;
     }
 
     private bool redirectableStatementStart(TokenKind kind) const {
