@@ -347,7 +347,8 @@ class ProgramParser {
             if (depth == 0 &&
                     (token.kind == TokenKind.greater ||
                      token.kind == TokenKind.shiftRight ||
-                     token.kind == TokenKind.less)) {
+                     token.kind == TokenKind.less ||
+                     token.kind == TokenKind.tripleLess)) {
                 if (found) {
                     throw new YshError(
                         "multiple redirects in one command are not translated yet");
@@ -382,6 +383,14 @@ class ProgramParser {
             previous = mem.inputFile;
             mem.inputFile = redirected;
             scope (exit) mem.inputFile = previous;
+        } else if (redirectKind == TokenKind.tripleLess) {
+            redirected = File.tmpfile();
+            redirected.write(path, "\n");
+            redirected.flush();
+            redirected.rewind();
+            previous = mem.inputFile;
+            mem.inputFile = redirected;
+            scope (exit) mem.inputFile = previous;
         } else {
             redirected = File(path,
                 redirectKind == TokenKind.shiftRight ? "a" : "w");
@@ -392,7 +401,8 @@ class ProgramParser {
         scope (exit) redirected.close();
 
         executeProgram(commandSource, mem);
-        if (redirectKind != TokenKind.less) {
+        if (redirectKind == TokenKind.greater ||
+                redirectKind == TokenKind.shiftRight) {
             redirected.flush();
         }
 
