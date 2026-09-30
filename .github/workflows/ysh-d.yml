@@ -1,0 +1,213 @@
+name: ysh-d
+
+on:
+  pull_request:
+    paths:
+      - 'ysh/d/**'
+      - '.github/workflows/ysh-d.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ysh-d-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact YSH translation
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install Icky DMD bootstrap dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential ldc
+
+      - name: Check out qualified Icky DMD
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dilapidated-shed/ick
+          ref: ccf61ab82659b9eadee2d05b489fb195956cef88
+          path: .icky-dmd
+          persist-credentials: false
+
+      - name: Build Icky DMD
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd .icky-dmd/dmd/compiler/src
+          ldmd2 -run ./build.d dmd HOST_DMD="$(command -v ldmd2)"
+          dmd_bin=$(find ../../generated -type f -name dmd -perm -u+x -print -quit)
+          test -n "$dmd_bin"
+          dmd_bin=$(realpath "$dmd_bin")
+          "$dmd_bin" --version
+          printf '%s\n' "$dmd_bin" > "$GITHUB_WORKSPACE/.icky-dmd-bin"
+
+      - name: Check out matching druntime source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dlang/dmd
+          ref: 74917954b53f7f35b13e61b4438c7253834929ed
+          path: .runtime-dmd
+          persist-credentials: false
+
+      - name: Check out matching Phobos source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: dlang/phobos
+          ref: 7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+          path: .runtime-phobos
+          persist-credentials: false
+
+      - name: Build matching runtime and Phobos
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dmd_bin=$(cat .icky-dmd-bin)
+          mkdir -p .runtime-dmd/generated/linux/release/64
+          cp "$dmd_bin" .runtime-dmd/generated/linux/release/64/dmd
+          chmod +x .runtime-dmd/generated/linux/release/64/dmd
+          runtime_dmd="$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd"
+
+          make -C .runtime-dmd/druntime -j"$(nproc)" \
+            MODEL=64 OS=linux BUILD=release SHARED=0 DMD="$runtime_dmd"
+
+          make -C .runtime-phobos -j"$(nproc)" \
+            MODEL=64 OS=linux BUILD=release SHARED=0 USE_IMPORTC=1 \
+            DMD_DIR="$GITHUB_WORKSPACE/.runtime-dmd" DMD="$runtime_dmd"
+
+          test -f .runtime-dmd/druntime/import/object.d
+          test -f .runtime-phobos/generated/linux/release/64/libphobos2.a
+
+      - name: Compile translated YSH with Icky DMD
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p ysh/d/.build
+          runtime_dmd="$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd"
+          phobos="$GITHUB_WORKSPACE/.runtime-phobos/generated/linux/release/64/libphobos2.a"
+          common_flags=(
+            -conf= -fPIC -w
+            -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import"
+            -I"$GITHUB_WORKSPACE/.runtime-phobos"
+            "$phobos"
+            -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl
+          )
+
+          mapfile -t library_sources < <(
+            find ysh/d/source/yshd -type f -name '*.d' -print | LC_ALL=C sort
+          )
+          test "${#library_sources[@]}" -gt 0
+
+          "$runtime_dmd" -unittest -main             "${common_flags[@]}" "${library_sources[@]}"             -of=ysh/d/.build/ysh-d-unittests
+
+          "$runtime_dmd"             "${common_flags[@]}"             ysh/d/source/app.d "${library_sources[@]}"             -of=ysh/d/.build/ysh-d
+
+          test -x ysh/d/.build/ysh-d-unittests
+          test -x ysh/d/.build/ysh-d
+
+      - name: Run translated YSH tests and smoke cases
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ysh/d/.build/ysh-d-unittests
+          actual=$(ysh/d/.build/ysh-d '1 + 2 * 3')
+          test "$actual" = 7
+          ysh/d/.build/ysh-d -c 'var x = 1; setvar x = 42'
+          actual=$(ysh/d/.build/ysh-d -c "var items = ['a b', 'c d']; var answer = 42; write @items; write \$answer \$[6 * 7] @[['x', 'y']]; echo s=\$answer; echo \"value=\$answer\"; write pre\$answer-post; for i, item in red green blue { echo \"\$i:\$item\" }; echo hello world; echo -n joined; write one two; write --sep '_' --end ' END' -- alpha beta; write -n x; write y")
+          expected=$(printf 'a b\nc d\n42\n42\nx\ny\ns=42\nvalue=42\npre42-post\n0:red\n1:green\n2:blue\nhello world\njoinedone\ntwo\nalpha_beta ENDxy\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "write --json u'\\u{3bc}' x; write --j8 b'\\yfe\\yff' y")
+          expected=$(printf '"μ"\n"x"\nb'\''\\yfe\\yff'\''\n"y"\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "echo -en 'abc\\ndef\\n'; echo -e xy 'ab\\cde' zzz")
+          expected=$(printf 'abc\ndef\nxy ab')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "shopt -s ysh:upgrade; printf '<%s>\\n' alpha beta")
+          expected=$(printf '<alpha>\n<beta>\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "setglobal ENV.YSH_D_PROBE = 'from-d'; sh -c 'printf \"%s\\n\" \"\$YSH_D_PROBE\"'")
+          expected=$(printf 'from-d\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "printf 'one\\ntwo\\n' | grep two")
+          expected=$(printf 'two\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "write alpha beta | grep beta; printf 'left\\nright\\n' | read --all; echo captured=\$[_reply]")
+          expected=$(printf 'beta\ncaptured=left\nright\n\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "AA=temporary sh -c 'printf \"%s\\n\" \"\$AA\"'; proc show_env { sh -c 'printf \"%s\\n\" \"\$BB\"' }; BB=inside-proc show_env")
+          expected=$(printf 'temporary\ninside-proc\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "eval 'echo evaluated'; :")
+          expected=$(printf 'evaluated\n')
+          test "$actual" = "$expected"
+
+          printf 'echo sourced\n' > "$RUNNER_TEMP/ysh-d-source.ysh"
+          actual=$(ysh/d/.build/ysh-d -c "source '$RUNNER_TEMP/ysh-d-source.ysh'")
+          expected=$(printf 'sourced\n')
+          test "$actual" = "$expected"
+
+          set +e
+          ysh/d/.build/ysh-d -c 'exit 23'
+          status=$?
+          set -e
+          test "$status" = 23
+
+          actual=$(printf 'echo stdin-mode\n' | ysh/d/.build/ysh-d)
+          expected=$(printf 'stdin-mode\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "read --all <<< 'here value'; echo \"\$[_reply]\"")
+          expected=$(printf 'here value\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "sh -c 'exit 7'; echo status=\$?")
+          expected=$(printf 'status=7\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "echo value=\$(printf captured); write -- @(seq 3)")
+          expected=$(printf 'value=captured\n1\n2\n3\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "var a = [1, 2, 3]; var d = {key: 42}; echo len=\$[len(a)] abs=\$[abs(-3)] max=\$[max(3, 9, 4)]; echo \"key \$[d[\"key\"]]\"; var strings = @[a]; write -- @strings")
+          expected=$(printf 'len=3 abs=3 max=9\nkey 42\n1\n2\n3\n')
+          test "$actual" = "$expected"
+
+          redirect_file="$RUNNER_TEMP/ysh-d-redirect.txt"
+          actual=$(ysh/d/.build/ysh-d -c "echo first > '$redirect_file'; echo second >> '$redirect_file'; cat < '$redirect_file'; if (true) { echo block } > '$redirect_file'; cat '$redirect_file'")
+          expected=$(printf 'first\nsecond\nblock\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "x=assigned; echo x=\$x; true; echo true=\$?; false; echo false=\$?; assert [1 + 1 === 2]")
+          expected=$(printf 'x=assigned\ntrue=0\nfalse=1\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "var items = list(1..<4); call items->append(4); call items->insert(-1, 9); echo list=\$[items => join(',')]; var d = {a: 2}; call d->inc('a', 3); call d->append('seen', 7); echo keys=\$[d => keys() => join('/')]; echo starts=\$['abc' => startsWith('a')] trim=\$['xxabcxx' => trim('xx')] upper=\$['ab' => upper()]")
+          expected=$(printf 'list=1,2,3,9,4\nkeys=a/seen\nstarts=true trim=abc upper=AB\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "var d = {a: 1, b: [2, 3]}; json write (d); pp test_ (d)")
+          expected=$(printf '{"a":1,"b":[2,3]}\n(Dict)   {"a":1,"b":[2,3]}\n')
+          test "$actual" = "$expected"
+
+          read_file="$RUNNER_TEMP/ysh-d-read.txt"
+          printf 'alpha\nbeta\n' > "$read_file"
+          actual=$(ysh/d/.build/ysh-d -c "read --all < '$read_file'; echo all=\$[_reply]; read --line < '$read_file'; echo line=\$[_reply]")
+          expected=$(printf 'all=alpha\nbeta\n\nline=alpha\n')
+          test "$actual" = "$expected"
