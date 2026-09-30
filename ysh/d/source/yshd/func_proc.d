@@ -97,7 +97,8 @@ class YshFunction {
         return required;
     }
 
-    Value invoke(Value[] arguments, YshDict namedArguments = null) {
+    Value invoke(Value[] arguments, YshDict namedArguments = null,
+            Memory callerMemory = null) {
         auto required = positionalRequired();
         if (arguments.length < required) {
             throw new YshError(format(
@@ -111,7 +112,9 @@ class YshFunction {
                 name, parameters.length, arguments.length));
         }
 
-        auto memory = new Memory();
+        auto memory = callerMemory is null
+            ? new Memory()
+            : new Memory(callerMemory.outputFile, callerMemory.errorFile);
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
@@ -220,8 +223,10 @@ class YshProc {
         }
     }
 
-    Value invoke(string[] words) {
-        auto memory = new Memory();
+    Value invoke(string[] words, Memory callerMemory = null) {
+        auto memory = callerMemory is null
+            ? new Memory()
+            : new Memory(callerMemory.outputFile, callerMemory.errorFile);
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
