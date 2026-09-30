@@ -681,7 +681,7 @@ private class CallExpr : Expr {
             }
         }
 
-        return userFunction.invoke(arguments, namedArguments);
+        return userFunction.invoke(arguments, namedArguments, mem);
     }
 }
 
