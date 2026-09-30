@@ -176,3 +176,7 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "echo value=\$(printf captured); write -- @(seq 3)")
           expected=$(printf 'value=captured\n1\n2\n3\n')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "var a = [1, 2, 3]; var d = {key: 42}; echo len=\$[len(a)] abs=\$[abs(-3)] max=\$[max(3, 9, 4)]; echo \"key \$[d[\"key\"]]\"; var strings = @[a]; write -- @strings")
+          expected=$(printf 'len=3 abs=3 max=9\nkey 42\n1\n2\n3\n')
+          test "$actual" = "$expected"
