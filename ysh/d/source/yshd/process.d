@@ -2,7 +2,7 @@ module yshd.process;
 
 import std.format : format;
 import std.process : Pid, Pipe, ProcessException, pipe, spawnProcess, wait;
-import std.stdio : File, stdin;
+import std.stdio : File;
 
 import yshd.state : Memory;
 import yshd.value : YshError;
@@ -27,7 +27,7 @@ private Pid spawn(string[] argv, File input, File output,
 /// expansion stay in the D implementation, while process creation itself is a
 /// normal POSIX/library boundary.
 int runExternal(string[] argv, Memory mem) {
-    auto pid = spawn(argv, stdin, mem.outputFile, mem);
+    auto pid = spawn(argv, mem.inputFile, mem.outputFile, mem);
     return wait(pid);
 }
 
@@ -53,7 +53,7 @@ int runPipeline(string[][] commands, Memory mem) {
     children.reserve(commands.length);
     try {
         foreach (index, command; commands) {
-            auto input = index == 0 ? stdin : links[index - 1].readEnd;
+            auto input = index == 0 ? mem.inputFile : links[index - 1].readEnd;
             auto output = index + 1 == commands.length
                 ? mem.outputFile
                 : links[index].writeEnd;
