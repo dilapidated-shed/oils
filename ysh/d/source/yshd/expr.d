@@ -2,12 +2,15 @@ module yshd.expr;
 
 import std.bigint : BigInt, toDecimalString;
 import std.conv : to;
+import std.algorithm.mutation : reverse;
 import std.algorithm.sorting : sort;
-import std.array : array;
+import std.array : array, join;
 import std.file : SpanMode, dirEntries;
 import std.format : format;
 import std.path : baseName, dirName;
-import std.string : replace, strip;
+import std.string : endsWith, indexOf, lastIndexOf, replace, split,
+    startsWith, strip, stripLeft, stripRight;
+import std.uni : toLower, toUpper;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
@@ -603,14 +606,19 @@ private class AttributeExpr : Expr {
 
     override Value eval(Memory mem) {
         auto object = object_.eval(mem);
-        if (object.kind != ValueKind.dict) {
-            throw new YshTypeError("attribute lookup expected Dict in this translated slice");
+        if (object.kind == ValueKind.dict) {
+            auto found = object.dictValue.find(name_);
+            if (found !is null) {
+                return *found;
+            }
         }
-        auto found = object.dictValue.find(name_);
-        if (found is null) {
+        if (valueMethodExists(object.kind, name_)) {
+            return Value.callable(new YshBoundMethod(object, name_, false));
+        }
+        if (object.kind == ValueKind.dict) {
             throw new YshError(format("Dict key not found: '%s'", name_));
         }
-        return *found;
+        throw new YshTypeError("value has no attribute '" ~ name_ ~ "'");
     }
 
     void assign(Memory mem, Value value) {
@@ -648,6 +656,10 @@ private bool builtinFunctionName(string name) {
     case "str":
     case "bool":
     case "glob":
+    case "list":
+    case "keys":
+    case "values":
+    case "strcmp":
         return true;
     default:
         return false;
@@ -796,8 +808,571 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         }
         return Value.list(matches);
 
+    case "list":
+        if (arguments.length != 1) {
+            throw new YshTypeError("list() expects one argument");
+        }
+        final switch (arguments[0].kind) {
+        case ValueKind.list:
+            return Value.list(arguments[0].listValue.items.dup);
+        case ValueKind.dict:
+            Value[] keys;
+            foreach (key; arguments[0].dictValue.keys()) {
+                keys ~= Value.str(key);
+            }
+            return Value.list(keys);
+        case ValueKind.rangeValue:
+            Value[] items;
+            for (auto i = arguments[0].rangeLower;
+                    i < arguments[0].rangeUpper; ++i) {
+                items ~= Value.integer(i);
+            }
+            return Value.list(items);
+        case ValueKind.stringValue:
+            Value[] chars;
+            foreach (dchar ch; arguments[0].stringValue) {
+                chars ~= Value.str(ch.to!string);
+            }
+            return Value.list(chars);
+        default:
+            throw new YshTypeError("list() expects List, Dict, Range, or Str");
+        }
+
+    case "keys":
+        if (arguments.length != 1 ||
+                arguments[0].kind != ValueKind.dict) {
+            throw new YshTypeError("keys() expects one Dict");
+        }
+        Value[] keyValues;
+        foreach (key; arguments[0].dictValue.keys()) {
+            keyValues ~= Value.str(key);
+        }
+        return Value.list(keyValues);
+
+    case "values":
+        if (arguments.length != 1 ||
+                arguments[0].kind != ValueKind.dict) {
+            throw new YshTypeError("values() expects one Dict");
+        }
+        return Value.list(arguments[0].dictValue.values());
+
+    case "strcmp":
+        if (arguments.length != 2 ||
+                arguments[0].kind != ValueKind.stringValue ||
+                arguments[1].kind != ValueKind.stringValue) {
+            throw new YshTypeError("strcmp() expects two Str arguments");
+        }
+        return Value.integer(arguments[0].stringValue <
+                arguments[1].stringValue ? -1 :
+            (arguments[0].stringValue > arguments[1].stringValue ? 1 : 0));
+
     default:
         assert(false, "unknown builtin function");
+    }
+}
+
+private long methodInt(Value value, string description) {
+    return bigIntToLong(convertToInt(value), description);
+}
+
+private string requireString(Value value, string description) {
+    if (value.kind != ValueKind.stringValue) {
+        throw new YshTypeError(description);
+    }
+    return value.stringValue;
+}
+
+private Value[] splitExact(string source, string separator, long count = -1) {
+    if (separator.length == 0) {
+        throw new YshTypeError("split separator cannot be empty");
+    }
+    if (source.length == 0) {
+        return [];
+    }
+
+    Value[] result;
+    size_t start;
+    long used;
+    while (count < 0 || used < count) {
+        auto relative = source[start .. $].indexOf(separator);
+        if (relative < 0) {
+            break;
+        }
+        auto cut = start + cast(size_t)relative;
+        result ~= Value.str(source[start .. cut]);
+        start = cut + separator.length;
+        ++used;
+    }
+    result ~= Value.str(source[start .. $]);
+    return result;
+}
+
+private long normalizeSearchStart(long start, size_t length) {
+    auto n = cast(long)length;
+    return start < 0 ? (start + n < 0 ? 0 : start + n) : start;
+}
+
+private long normalizeSearchEnd(long end, size_t length) {
+    auto n = cast(long)length;
+    auto value = end < 0 ? end + n : end;
+    if (value < 0) {
+        return 0;
+    }
+    return value > n ? n : value;
+}
+
+private bool valueMethodExists(ValueKind kind, string name) {
+    switch (kind) {
+    case ValueKind.stringValue:
+        switch (name) {
+        case "startsWith":
+        case "endsWith":
+        case "trimStart":
+        case "trimEnd":
+        case "trim":
+        case "split":
+        case "lines":
+        case "find":
+        case "findLast":
+        case "contains":
+        case "upper":
+        case "lower":
+            return true;
+        default:
+            return false;
+        }
+    case ValueKind.list:
+        switch (name) {
+        case "append":
+        case "extend":
+        case "pop":
+        case "clear":
+        case "remove":
+        case "insert":
+        case "reverse":
+        case "indexOf":
+        case "lastIndexOf":
+        case "join":
+            return true;
+        default:
+            return false;
+        }
+    case ValueKind.dict:
+        switch (name) {
+        case "keys":
+        case "values":
+        case "erase":
+        case "clear":
+        case "get":
+        case "inc":
+        case "append":
+        case "update":
+            return true;
+        default:
+            return false;
+        }
+    default:
+        return false;
+    }
+}
+
+private Value callValueMethod(Value receiver, string name,
+        Value[] arguments, YshDict namedArguments, Memory mem) {
+    auto named = namedArguments is null ? new YshDict() : namedArguments;
+
+    final switch (receiver.kind) {
+    case ValueKind.stringValue:
+        auto s = receiver.stringValue;
+
+        if (name == "startsWith" || name == "endsWith" ||
+                name == "contains") {
+            if (arguments.length != 1 || named.length != 0) {
+                throw new YshTypeError(name ~ "() expects one Str argument");
+            }
+            auto pattern = requireString(arguments[0],
+                name ~ "() expects a Str argument");
+            if (name == "startsWith") {
+                return Value.boolean(s.startsWith(pattern));
+            }
+            if (name == "endsWith") {
+                return Value.boolean(s.endsWith(pattern));
+            }
+            return Value.boolean(s.indexOf(pattern) >= 0);
+        }
+
+        if (name == "trimStart" || name == "trimEnd" || name == "trim") {
+            if (arguments.length > 1 || named.length != 0) {
+                throw new YshTypeError(name ~ "() expects zero or one Str");
+            }
+            if (arguments.length == 0) {
+                if (name == "trimStart") {
+                    return Value.str(stripLeft(s));
+                }
+                if (name == "trimEnd") {
+                    return Value.str(stripRight(s));
+                }
+                return Value.str(strip(s));
+            }
+            auto pattern = requireString(arguments[0],
+                name ~ "() expects a Str pattern");
+            auto result = s;
+            if ((name == "trimStart" || name == "trim") &&
+                    result.startsWith(pattern)) {
+                result = result[pattern.length .. $];
+            }
+            if ((name == "trimEnd" || name == "trim") &&
+                    result.endsWith(pattern)) {
+                result = result[0 .. $ - pattern.length];
+            }
+            return Value.str(result);
+        }
+
+        if (name == "split") {
+            if (arguments.length != 1) {
+                throw new YshTypeError("split() expects one Str separator");
+            }
+            auto separator = requireString(arguments[0],
+                "split() expects a Str separator");
+            long count = -1;
+            auto countValue = named.find("count");
+            if (countValue !is null) {
+                count = methodInt(*countValue, "split count should be Int");
+            }
+            if (named.length > (countValue is null ? 0 : 1)) {
+                throw new YshTypeError("split() got unknown named argument");
+            }
+            return Value.list(splitExact(s, separator, count));
+        }
+
+        if (name == "lines") {
+            if (arguments.length != 0) {
+                throw new YshTypeError("lines() takes no positional arguments");
+            }
+            string eol = "\n";
+            auto eolValue = named.find("eol");
+            if (eolValue !is null) {
+                eol = requireString(*eolValue, "lines eol should be Str");
+            }
+            if (named.length > (eolValue is null ? 0 : 1)) {
+                throw new YshTypeError("lines() got unknown named argument");
+            }
+            if (eol.length == 0) {
+                throw new YshTypeError("lines eol cannot be empty");
+            }
+            auto parts = splitExact(s, eol);
+            if (parts.length != 0 &&
+                    parts[$ - 1].kind == ValueKind.stringValue &&
+                    parts[$ - 1].stringValue.length == 0) {
+                parts = parts[0 .. $ - 1];
+            }
+            return Value.list(parts);
+        }
+
+        if (name == "find" || name == "findLast") {
+            if (arguments.length != 1) {
+                throw new YshTypeError(name ~ "() expects one Str needle");
+            }
+            auto needle = requireString(arguments[0],
+                name ~ "() expects a Str needle");
+            long start = 0;
+            long end = cast(long)s.length;
+            auto startValue = named.find("start");
+            if (startValue !is null) {
+                start = methodInt(*startValue, name ~ " start should be Int");
+            }
+            auto endValue = named.find("end");
+            if (endValue !is null) {
+                end = methodInt(*endValue, name ~ " end should be Int");
+            }
+            auto knownNamed = (startValue is null ? 0 : 1) +
+                (endValue is null ? 0 : 1);
+            if (named.length > knownNamed) {
+                throw new YshTypeError(name ~ "() got unknown named argument");
+            }
+
+            start = normalizeSearchStart(start, s.length);
+            end = normalizeSearchEnd(end, s.length);
+            if (start > cast(long)s.length || start > end) {
+                return Value.integer(-1);
+            }
+
+            auto slice = s[cast(size_t)start .. cast(size_t)end];
+            auto relative = name == "find"
+                ? slice.indexOf(needle)
+                : slice.lastIndexOf(needle);
+            return Value.integer(relative < 0 ? -1 :
+                start + cast(long)relative);
+        }
+
+        if (name == "upper" || name == "lower") {
+            if (arguments.length != 0 || named.length != 0) {
+                throw new YshTypeError(name ~ "() expects no arguments");
+            }
+            return Value.str(name == "upper" ? toUpper(s) : toLower(s));
+        }
+
+        throw new YshTypeError("unknown Str method " ~ name);
+
+    case ValueKind.list:
+        auto list = receiver.listValue;
+
+        if (name == "append") {
+            if (arguments.length != 1 || named.length != 0) {
+                throw new YshTypeError("append() expects one argument");
+            }
+            list.items ~= arguments[0];
+            return Value.nullValue();
+        }
+        if (name == "extend") {
+            if (arguments.length != 1 ||
+                    arguments[0].kind != ValueKind.list ||
+                    named.length != 0) {
+                throw new YshTypeError("extend() expects one List");
+            }
+            list.items ~= arguments[0].listValue.items;
+            return Value.nullValue();
+        }
+        if (name == "pop") {
+            if (arguments.length != 0 || named.length != 0 ||
+                    list.items.length == 0) {
+                throw new YshTypeError("pop() expects a non-empty List");
+            }
+            auto result = list.items[$ - 1];
+            list.items = list.items[0 .. $ - 1];
+            return result;
+        }
+        if (name == "clear") {
+            if (arguments.length != 0 || named.length != 0) {
+                throw new YshTypeError("clear() expects no arguments");
+            }
+            list.items.length = 0;
+            return Value.nullValue();
+        }
+        if (name == "remove") {
+            if (arguments.length != 1 || named.length != 0) {
+                throw new YshTypeError("remove() expects one argument");
+            }
+            foreach (index, item; list.items) {
+                if (exactlyEqual(item, arguments[0])) {
+                    list.items = list.items[0 .. index] ~
+                        list.items[index + 1 .. $];
+                    break;
+                }
+            }
+            return Value.nullValue();
+        }
+        if (name == "insert") {
+            if (arguments.length != 2 || named.length != 0) {
+                throw new YshTypeError("insert() expects index and value");
+            }
+            auto index = methodInt(arguments[0], "insert index should be Int");
+            auto n = cast(long)list.items.length;
+            if (index < 0) {
+                index += n;
+                if (index < 0) {
+                    index = 0;
+                }
+            }
+            if (index > n) {
+                index = n;
+            }
+            auto i = cast(size_t)index;
+            list.items = list.items[0 .. i] ~ [arguments[1]] ~
+                list.items[i .. $];
+            return Value.nullValue();
+        }
+        if (name == "reverse") {
+            if (arguments.length != 0 || named.length != 0) {
+                throw new YshTypeError("reverse() expects no arguments");
+            }
+            reverse(list.items);
+            return Value.nullValue();
+        }
+        if (name == "indexOf" || name == "lastIndexOf") {
+            if (arguments.length != 1 || named.length != 0) {
+                throw new YshTypeError(name ~ "() expects one argument");
+            }
+            if (name == "indexOf") {
+                foreach (index, item; list.items) {
+                    if (exactlyEqual(item, arguments[0])) {
+                        return Value.integer(cast(long)index);
+                    }
+                }
+            } else {
+                for (auto index = list.items.length; index != 0; --index) {
+                    if (exactlyEqual(list.items[index - 1], arguments[0])) {
+                        return Value.integer(cast(long)(index - 1));
+                    }
+                }
+            }
+            return Value.integer(-1);
+        }
+        if (name == "join") {
+            if (arguments.length > 1 || named.length != 0) {
+                throw new YshTypeError("join() expects zero or one Str");
+            }
+            auto separator = arguments.length == 0
+                ? ""
+                : requireString(arguments[0], "join separator should be Str");
+            string[] pieces;
+            foreach (item; list.items) {
+                pieces ~= stringify(item);
+            }
+            return Value.str(pieces.join(separator));
+        }
+
+        throw new YshTypeError("unknown List method " ~ name);
+
+    case ValueKind.dict:
+        auto dict = receiver.dictValue;
+
+        if (name == "keys" || name == "values") {
+            if (arguments.length != 0 || named.length != 0) {
+                throw new YshTypeError(name ~ "() expects no arguments");
+            }
+            if (name == "keys") {
+                Value[] keys;
+                foreach (key; dict.keys()) {
+                    keys ~= Value.str(key);
+                }
+                return Value.list(keys);
+            }
+            return Value.list(dict.values());
+        }
+        if (name == "erase") {
+            if (arguments.length != 1 || named.length != 0) {
+                throw new YshTypeError("erase() expects one Str key");
+            }
+            dict.erase(requireString(arguments[0],
+                "erase() expects a Str key"));
+            return Value.nullValue();
+        }
+        if (name == "clear") {
+            if (arguments.length != 0 || named.length != 0) {
+                throw new YshTypeError("clear() expects no arguments");
+            }
+            dict.clear();
+            return Value.nullValue();
+        }
+        if (name == "get") {
+            if (arguments.length < 1 || arguments.length > 2 ||
+                    named.length != 0) {
+                throw new YshTypeError("get() expects key and optional fallback");
+            }
+            auto key = requireString(arguments[0], "get key should be Str");
+            auto fallback = arguments.length == 2
+                ? arguments[1] : Value.nullValue();
+            return dict.getOr(key, fallback);
+        }
+        if (name == "inc") {
+            if (arguments.length != 2 || named.length != 0) {
+                throw new YshTypeError("inc() expects key and amount");
+            }
+            auto key = requireString(arguments[0], "inc key should be Str");
+            auto old = dict.find(key);
+            auto next = old is null ? arguments[1] :
+                numericBinary("+", *old, arguments[1]);
+            dict.set(key, next);
+            return Value.nullValue();
+        }
+        if (name == "append") {
+            if (arguments.length != 2 || named.length != 0) {
+                throw new YshTypeError("Dict append() expects key and value");
+            }
+            auto key = requireString(arguments[0], "append key should be Str");
+            auto old = dict.find(key);
+            if (old is null) {
+                dict.set(key, Value.list([arguments[1]]));
+            } else {
+                if (old.kind != ValueKind.list) {
+                    throw new YshTypeError(
+                        "Dict append() requires an existing List value");
+                }
+                old.listValue.items ~= arguments[1];
+            }
+            return Value.nullValue();
+        }
+        if (name == "update") {
+            if (arguments.length != 1 ||
+                    arguments[0].kind != ValueKind.dict ||
+                    named.length != 0) {
+                throw new YshTypeError("update() expects one Dict");
+            }
+            foreach (key, value; arguments[0].dictValue) {
+                dict.set(key, value);
+            }
+            return Value.nullValue();
+        }
+
+        throw new YshTypeError("unknown Dict method " ~ name);
+
+    case ValueKind.nullValue:
+    case ValueKind.boolean:
+    case ValueKind.integer:
+    case ValueKind.floating:
+    case ValueKind.sliceValue:
+    case ValueKind.rangeValue:
+    case ValueKind.functionValue:
+    case ValueKind.procValue:
+        throw new YshTypeError("value has no method " ~ name);
+    }
+}
+
+private class YshBoundMethod {
+    private Value receiver_;
+    private string name_;
+    private bool mutating_;
+
+    this(Value receiver, string name, bool mutating) {
+        receiver_ = receiver;
+        name_ = name;
+        mutating_ = mutating;
+    }
+
+    Value invoke(Value[] arguments, YshDict namedArguments, Memory mem) {
+        return callValueMethod(receiver_, name_, arguments,
+            namedArguments, mem);
+    }
+}
+
+private class MethodExpr : Expr {
+    private Expr receiver_;
+    private string name_;
+    private bool mutating_;
+
+    this(Expr receiver, string name, bool mutating) {
+        receiver_ = receiver;
+        name_ = name;
+        mutating_ = mutating;
+    }
+
+    override Value eval(Memory mem) {
+        auto receiver = receiver_.eval(mem);
+        if (valueMethodExists(receiver.kind, name_)) {
+            return Value.callable(new YshBoundMethod(
+                receiver, name_, mutating_));
+        }
+
+        if (builtinFunctionName(name_)) {
+            return Value.callable(new YshPipelineFunction(receiver, name_));
+        }
+        throw new YshTypeError("unknown method or chained function " ~ name_);
+    }
+}
+
+private class YshPipelineFunction {
+    private Value receiver_;
+    private string name_;
+
+    this(Value receiver, string name) {
+        receiver_ = receiver;
+        name_ = name;
+    }
+
+    Value invoke(Value[] arguments, YshDict namedArguments, Memory mem) {
+        Value[] all = [receiver_];
+        all ~= arguments;
+        return callBuiltinFunction(name_, all, namedArguments, mem);
     }
 }
 
@@ -858,10 +1433,18 @@ private class CallExpr : Expr {
             throw new YshTypeError("YSH expression call requires Func");
         }
         auto userFunction = cast(YshFunction)callee.callableValue;
-        if (userFunction is null) {
-            throw new YshTypeError("unknown callable value");
+        if (userFunction !is null) {
+            return userFunction.invoke(arguments, namedArguments, mem);
         }
-        return userFunction.invoke(arguments, namedArguments, mem);
+        auto boundMethod = cast(YshBoundMethod)callee.callableValue;
+        if (boundMethod !is null) {
+            return boundMethod.invoke(arguments, namedArguments, mem);
+        }
+        auto pipelineFunction = cast(YshPipelineFunction)callee.callableValue;
+        if (pipelineFunction !is null) {
+            return pipelineFunction.invoke(arguments, namedArguments, mem);
+        }
+        throw new YshTypeError("unknown callable value");
     }
 }
 
@@ -1319,7 +1902,9 @@ private class Parser {
 
         while (current_.kind == TokenKind.leftBracket ||
                 current_.kind == TokenKind.leftParen ||
-                current_.kind == TokenKind.dot) {
+                current_.kind == TokenKind.dot ||
+                current_.kind == TokenKind.fatArrow ||
+                current_.kind == TokenKind.thinArrow) {
             if (current_.kind == TokenKind.leftBracket) {
                 advance();
 
@@ -1404,13 +1989,21 @@ private class Parser {
                 require(TokenKind.rightParen, ")");
                 left = new CallExpr(left, positionalArguments, namedArguments);
             } else {
+                auto accessKind = current_.kind;
                 advance();
                 if (current_.kind != TokenKind.name) {
-                    throw new ParseError(format("expected attribute name at byte %s", current_.offset));
+                    throw new ParseError(format(
+                        "expected attribute or method name at byte %s",
+                        current_.offset));
                 }
                 auto name = current_.text;
                 advance();
-                left = new AttributeExpr(left, name);
+                if (accessKind == TokenKind.dot) {
+                    left = new AttributeExpr(left, name);
+                } else {
+                    left = new MethodExpr(left, name,
+                        accessKind == TokenKind.thinArrow);
+                }
             }
         }
 
