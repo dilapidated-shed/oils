@@ -60,6 +60,7 @@ enum TokenKind {
     tilde,
     shiftLeft,
     shiftRight,
+    tripleLess,
     ellipsis,
     dotDotLess,
     dotDotEqual,
@@ -271,6 +272,10 @@ class Lexer {
         if (startsWith("..=")) {
             position_ += 3;
             return Token(TokenKind.dotDotEqual, "..=", start);
+        }
+        if (startsWith("<<<")) {
+            position_ += 3;
+            return Token(TokenKind.tripleLess, "<<<", start);
         }
         if (startsWith("<<")) {
             position_ += 2;
