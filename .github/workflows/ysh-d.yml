@@ -133,3 +133,11 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "echo -en 'abc\\ndef\\n'; echo -e xy 'ab\\cde' zzz")
           expected=$(printf 'abc\ndef\nxy ab')
           test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "shopt -s ysh:upgrade; printf '<%s>\\n' alpha beta")
+          expected=$(printf '<alpha>\n<beta>\n')
+          test "$actual" = "$expected"
+
+          actual=$(ysh/d/.build/ysh-d -c "setglobal ENV.YSH_D_PROBE = 'from-d'; sh -c 'printf \"%s\\n\" \"$YSH_D_PROBE\"'")
+          expected=$(printf 'from-d\n')
+          test "$actual" = "$expected"
