@@ -377,28 +377,27 @@ class ProgramParser {
         auto path = decodeRedirectPath(pathRaw, mem);
 
         File redirected;
-        File previous;
+        auto previousInput = mem.inputFile;
+        auto previousOutput = mem.outputFile;
         if (redirectKind == TokenKind.less) {
             redirected = File(path, "r");
-            previous = mem.inputFile;
             mem.inputFile = redirected;
-            scope (exit) mem.inputFile = previous;
         } else if (redirectKind == TokenKind.tripleLess) {
             redirected = File.tmpfile();
             redirected.write(path, "\n");
             redirected.flush();
             redirected.rewind();
-            previous = mem.inputFile;
             mem.inputFile = redirected;
-            scope (exit) mem.inputFile = previous;
         } else {
             redirected = File(path,
                 redirectKind == TokenKind.shiftRight ? "a" : "w");
-            previous = mem.outputFile;
             mem.outputFile = redirected;
-            scope (exit) mem.outputFile = previous;
         }
-        scope (exit) redirected.close();
+        scope (exit) {
+            mem.inputFile = previousInput;
+            mem.outputFile = previousOutput;
+            redirected.close();
+        }
 
         executeProgram(commandSource, mem);
         if (redirectKind == TokenKind.greater ||
