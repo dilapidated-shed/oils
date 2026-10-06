@@ -211,3 +211,11 @@ jobs:
           actual=$(ysh/d/.build/ysh-d -c "read --all < '$read_file'; echo all=\$[_reply]; read --line < '$read_file'; echo line=\$[_reply]")
           expected=$(printf 'all=alpha\nbeta\n\nline=alpha\n')
           test "$actual" = "$expected"
+
+      - name: Preserve tested partial translation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ysh-d-partial-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ysh/d/.build/ysh-d
+          if-no-files-found: error
+          retention-days: 7
