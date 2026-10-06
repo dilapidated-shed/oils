@@ -354,6 +354,19 @@ private class LiteralExpr : Expr {
 }
 
 
+private class DoubleQuotedExpr : Expr {
+    private string content_;
+
+    this(string content) {
+        content_ = content;
+    }
+
+    override Value eval(Memory mem) {
+        import yshd.program : evaluateDoubleQuotedExpression;
+        return Value.str(evaluateDoubleQuotedExpression(content_, mem));
+    }
+}
+
 private class VariableExpr : Expr {
     private string name_;
 
@@ -2033,6 +2046,9 @@ private class Parser {
         case TokenKind.floating:
             advance();
             return new LiteralExpr(Value.floating(to!double(token.text.replace("_", ""))));
+        case TokenKind.doubleQuoted:
+            advance();
+            return new DoubleQuotedExpr(token.text);
         case TokenKind.stringValue:
         case TokenKind.charValue:
             advance();

@@ -2067,6 +2067,11 @@ class ProgramParser {
     }
 }
 
+// Expressions and command words share interpolation and escape semantics.
+string evaluateDoubleQuotedExpression(string content, Memory mem) {
+    return (new ProgramParser("")).evaluateDoubleQuoted(content, mem);
+}
+
 void executeProgram(string source, Memory mem) {
     auto parser = new ProgramParser(source);
     parser.execute(mem);
@@ -2298,4 +2303,10 @@ unittest {
     // Comments terminate at the newline in command mode.
     executeProgram("var commented = 9 # note\nsetvar commented = 10\n", mem);
     assert(repr(mem.get("commented")) == "10");
+}
+
+unittest {
+    auto mem = new Memory();
+    executeProgram(`var key = 'value'; var d = {key: 42}; var quoted = "key=$key $[d["key"]]";`, mem);
+    assert(mem.get("quoted").stringValue == "key=value 42");
 }
