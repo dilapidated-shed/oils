@@ -1,7 +1,7 @@
 module yshd.process;
 
 import std.format : format;
-import std.process : Pid, Pipe, ProcessException, pipe, spawnProcess, wait;
+import std.process : Config, Pid, Pipe, ProcessException, pipe, spawnProcess, wait;
 import std.stdio : File;
 
 import yshd.state : Memory;
@@ -15,7 +15,8 @@ private Pid spawn(string[] argv, File input, File output,
 
     try {
         return spawnProcess(argv, input, output, mem.errorFile,
-            mem.childEnvironment());
+            mem.childEnvironment(),
+            Config.retainStdin | Config.retainStdout | Config.retainStderr);
     } catch (ProcessException error) {
         throw new YshError(format("%s: %s", argv[0], error.msg));
     }
