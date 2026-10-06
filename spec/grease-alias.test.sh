@@ -1,4 +1,5 @@
 ## our_shell: ysh
+## suite: ysh
 ## oils_failures_allowed: 0
 ## compare_shells:
 
