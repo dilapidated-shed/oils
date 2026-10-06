@@ -155,9 +155,6 @@ _YSH_RUNTIME_OPTS = [
 
     # TODO: simple_trap
 
-    # Turn aliases off so we can statically parse.  bash has it off
-    # non-interactively, so this shouldn't break much.
-    ('expand_aliases', True),
 ]
 
 # Stuff that doesn't break too many programs.
@@ -306,6 +303,10 @@ def _Init(opt_def):
     opt_def.Add('globskipdots', default=True)
 
     opt_def.Add('extdebug')  # for task files
+
+    # Grease keeps command aliases available even when the inherited YSH
+    # option group is enabled.
+    opt_def.Add('expand_aliases', default=True)
 
     # recursive parsing and evaluation - for compatibility, ble.sh, etc.
     opt_def.Add('eval_unsafe_arith')

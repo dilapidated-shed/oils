@@ -706,7 +706,7 @@ alias on
 OK
 ## END
 
-#### expand_aliases turned off only in ysh:all
+#### Grease keeps expand_aliases on in ysh:all
 
 alias e=echo
 e normal
@@ -717,10 +717,10 @@ e upgrade
 shopt -s ysh:all
 e all
 
-## status: 127
 ## STDOUT:
 normal
 upgrade
+all
 ## END
 
 #### [[ isn't allowed in ysh

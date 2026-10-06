@@ -193,3 +193,18 @@ parity, jobs/signals/traps, modules, regex/Eggex, interactive behavior, and
 mutation-sensitive iteration still require inherited-spec coverage. Smoke tests
 do not discharge this dependency. No completed `greased` or replacement for
 ordinary YSH is claimed.
+
+The alias reference is now integrated from Oils grease/main
+dd39aa720c386f9ad007fb96f6475c6afbce297c, the merge of
+[dilapidated-shed/oils PR #6, “Grease: keep command aliases available”](https://github.com/dilapidated-shed/oils/pull/6).
+This brings the reference implementation and exact focused spec into this branch;
+it does not pretend the D backend already passes that spec.
+
+The tested partial D executable at 6db04a02228ad4328f75f79c0ad477c02723767c
+passed the pinned compiler/runtime, nine module suites and full existing smoke
+sequence in [the artifact-producing receipt](https://github.com/dilapidated-shed/oils/actions/runs/37475808606).
+The actual paired benchmark gate passes the empty program on both runtimes,
+then rejects D on `--ast-format none -n FILE`: exit 3, unexpected 'none' at
+byte 13. C++ passes that parse-only case. The benchmark's hashes and result are
+preserved in [dilapidated-shed/grease PR #45, “Integrate current aliases and greasecpp versus greased benchmarks”](https://github.com/dilapidated-shed/grease/pull/45).
+No timing or runtime winner follows from this failed compatibility gate.
