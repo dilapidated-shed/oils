@@ -8,8 +8,11 @@ shopt -s ysh:all
 alias ll='printf "%s\n" alias-ok'
 ll
 unalias ll
-alias ll >/dev/null 2>&1
-echo status=$?
+if alias ll >/dev/null 2>&1 {
+  echo status=0
+} else {
+  echo status=$?
+}
 ## STDOUT:
 alias-ok
 status=1
