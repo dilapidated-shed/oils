@@ -796,10 +796,10 @@ private Value callBuiltinFunction(string name, Value[] arguments,
                 SpanMode.shallow).array;
             entries.sort!((a, b) => a.name < b.name);
             foreach (entry; entries) {
-                auto name = directory == "."
+                auto matchName = directory == "."
                     ? baseName(entry.name)
                     : entry.name;
-                matches ~= Value.str(name);
+                matches ~= Value.str(matchName);
             }
         } catch (Exception error) {
             // Shell-style glob() returns an empty list when the directory or
