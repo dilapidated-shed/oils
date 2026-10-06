@@ -252,8 +252,7 @@ class _Executor(object):
         # The error message would be better
         # This also relates to __builtin__ reflection and so forth
         if (self.exec_opts.no_osh_builtins() and
-                builtin_id in (builtin_i.alias, builtin_i.unalias,
-                               builtin_i.chdir, builtin_i.colon)):
+                builtin_id in (builtin_i.chdir, builtin_i.colon)):
             if builtin_id == builtin_i.chdir:
                 msg = "Use 'cd' instead of 'chdir' in YSH (no_osh_builtins)"
             else:
