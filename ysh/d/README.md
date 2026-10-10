@@ -36,6 +36,7 @@ The implementation currently follows these sources on the Oils/Grease line:
 - expression `for` loops over Lists, Dicts, and Ranges, including index/key/value bindings
 - scalar words, `$var`/`$[expr]`, and `@List`/`@[expr]` through `write`, with `--sep`, `--end`, and `-n`
 - common `echo` output with scalar substitutions and `-n`
+- first conventional command-position `alias`/`unalias` support, including same-line visibility and recursive expansion guards
 - concatenated literal/`$var` words and simple double-quoted variable substitution
 
 ## Deliberately not in this slice
@@ -46,6 +47,8 @@ substitution, external execution, ENV, pipelines, command and file redirections,
 read/source/eval, and selected JSON/J8 and collection operations. The workflow
 smoke sequence covers these implemented paths. It does not establish complete
 YSH compatibility.
+
+The first alias slice covers the named-command/unalias behavior, not the complete inherited alias grammar (including trailing-space expansion and every compound context). The focused Grease spec also uses an OSH-style command condition and fd redirection that the D parser cannot yet accept. Passing its extracted statements is therefore **not** a full spec-suite pass.
 
 The remaining acceptance dependency and current source ownership are recorded
 in [PORTING.md](PORTING.md). In particular, the D CLI does not yet provide a
