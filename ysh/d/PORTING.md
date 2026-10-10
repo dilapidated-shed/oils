@@ -134,6 +134,7 @@ Current state:
 - [x] first literal shell-word iterator path: `for` over static words with optional index binding
 - [x] first builtin output path: scalar `write` words, `$var`/`$[expr]`, `@List`/`@[expr]`, `--sep`, `--end`, and `-n`
 - [x] common `echo` output path with scalar words and `-n`
+- [x] first command-position alias/unalias slice, with newline-bound visibility and cycle guard
 - [x] concatenated literal/scalar-substitution words and simple double-quoted `$var` substitution
 - [ ] complete ASDL/data-model coverage
 - [ ] full YSH lexer
@@ -193,6 +194,8 @@ parity, jobs/signals/traps, modules, regex/Eggex, interactive behavior, and
 mutation-sensitive iteration still require inherited-spec coverage. Smoke tests
 do not discharge this dependency. No completed `greased` or replacement for
 ordinary YSH is claimed.
+
+A bounded D alias slice handles definition, invocation, listing, removal and self-recursion suppression for unquoted command names. It preserves same-line parse visibility. The inherited spec still requires OSH-style command conditions, file-descriptor redirects, trailing-space/compound alias expansion, and other untranslated parsing semantics. These remain open; do not count the focused Grease alias spec as passed until run unmodified on the D executable.
 
 The alias reference is now integrated from Oils grease/main
 dd39aa720c386f9ad007fb96f6475c6afbce297c, the merge of
