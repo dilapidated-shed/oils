@@ -1,5 +1,6 @@
 module yshd.program;
 
+import std.algorithm : sort;
 import std.conv : to;
 import std.file : chdir, readText;
 import std.format : format;
@@ -55,6 +56,8 @@ class ProgramParser {
     private string source_;
     private Lexer lexer_;
     private Token current_;
+    private Memory activeMemory_;
+    private string[string] visibleAliases_;
 
     this(string source) {
         source_ = source;
@@ -63,6 +66,11 @@ class ProgramParser {
     }
 
     void execute(Memory mem) {
+        activeMemory_ = mem;
+        // Command aliases expand while parsing, not while invoking arbitrary
+        // argument words. Definitions following a semicolon become visible
+        // only on the next source line, as in the inherited alias tests.
+        visibleAliases_ = mem.aliases.dup;
         skipEndStatements();
 
         while (current_.kind != TokenKind.eof) {
@@ -71,6 +79,10 @@ class ProgramParser {
                 continue;
             }
             if (tryExecuteTopLevelRedirect(mem)) {
+                skipEndStatements();
+                continue;
+            }
+            if (tryExpandCommandAlias(mem)) {
                 skipEndStatements();
                 continue;
             }
@@ -133,6 +145,14 @@ class ProgramParser {
                 parseExpressionDisplay(mem);
                 break;
             case TokenKind.name:
+                if (current_.text == "alias") {
+                    parseAlias(mem);
+                    break;
+                }
+                if (current_.text == "unalias") {
+                    parseUnalias(mem);
+                    break;
+                }
                 if (current_.text == "try") {
                     parseTry(mem);
                     break;
@@ -195,6 +215,64 @@ class ProgramParser {
 
             skipEndStatements();
         }
+    }
+
+    /// Expand a command-position, unquoted alias using the same D parser
+    /// that executes ordinary source. Do not expand argument words or typed
+    /// declaration names. Cycles are bounded by the active alias stack.
+    ///
+    /// This is a first alias slice. The more general upstream trailing-space
+    /// and compound-language alias expansion remains untranslated.
+    private bool tryExpandCommandAlias(Memory mem) {
+        if (current_.kind != TokenKind.name) {
+            return false;
+        }
+        auto value = current_.text in visibleAliases_;
+        if (value is null) {
+            return false;
+        }
+
+        auto aliasName = current_.text;
+        foreach (active; mem.aliasExpansionStack) {
+            if (active == aliasName) {
+                return false;
+            }
+        }
+
+        auto statementStart = current_.offset;
+        auto scanner = new Lexer(source_[statementStart .. $], true);
+        size_t statementEnd = source_.length;
+        int depth;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof) {
+                break;
+            }
+            if (depth == 0 &&
+                    (token.kind == TokenKind.newline ||
+                     token.kind == TokenKind.semicolon)) {
+                statementEnd = statementStart + token.offset;
+                break;
+            }
+            adjustDepth(depth, token.kind);
+        }
+
+        // Preserve the original, *unexpanded* argument source. In particular,
+        // single quotes and later variable reads must not be evaluated twice.
+        auto expandedSource = *value ~
+            source_[statementStart + aliasName.length .. statementEnd];
+        mem.aliasExpansionStack ~= aliasName;
+        scope (exit) {
+            mem.aliasExpansionStack.length =
+                mem.aliasExpansionStack.length - 1;
+        }
+        executeProgram(expandedSource, mem);
+
+        while (current_.kind != TokenKind.eof &&
+                current_.offset < statementEnd) {
+            advance();
+        }
+        return true;
     }
 
     private bool pipelineStatementStart(TokenKind kind) const {
@@ -785,6 +863,103 @@ class ProgramParser {
                 envValue.dictValue.erase(entry.name);
             }
         }
+    }
+
+    private static string shellQuotedAlias(string value) {
+        string quoted = "'";
+        foreach (character; value) {
+            if (character == '\'') {
+                quoted ~= "'\\''";
+            } else {
+                quoted ~= character;
+            }
+        }
+        return quoted ~ "'";
+    }
+
+    /// Translate the conventional alias/unalias builtin surface used by
+    /// Grease's current spec, retaining definitions in shell parser state.
+    private void parseAlias(Memory mem) {
+        advance(); // alias
+        string[] operands;
+        while (!isEndStatement(current_.kind)) {
+            operands ~= readCommandWord(mem);
+        }
+
+        if (operands.length == 0 ||
+                (operands.length == 1 && operands[0] == "--")) {
+            auto names = mem.aliases.keys;
+            sort(names);
+            foreach (name; names) {
+                mem.outputFile.write("alias ", name, "=",
+                    shellQuotedAlias(mem.aliases[name]), "\n");
+            }
+            mem.lastStatus = 0;
+            return;
+        }
+
+        int status;
+        foreach (word; operands) {
+            if (word == "--") {
+                continue;
+            }
+            auto equal = word.indexOf('=');
+            if (equal >= 0) {
+                if (equal == 0) {
+                    mem.errorFile.write("alias: empty alias name\n");
+                    status = 2;
+                } else {
+                    mem.aliases[word[0 .. cast(size_t)equal]] =
+                        word[cast(size_t)equal + 1 .. $];
+                }
+                continue;
+            }
+
+            auto known = word in mem.aliases;
+            if (known is null) {
+                mem.errorFile.write("alias: ", word, ": not found\n");
+                if (status == 0) {
+                    status = 1;
+                }
+            } else {
+                mem.outputFile.write("alias ", word, "=",
+                    shellQuotedAlias(*known), "\n");
+            }
+        }
+        mem.lastStatus = status;
+    }
+
+    private void parseUnalias(Memory mem) {
+        advance(); // unalias
+        string[] operands;
+        while (!isEndStatement(current_.kind)) {
+            operands ~= readCommandWord(mem);
+        }
+        if (operands.length == 0) {
+            mem.errorFile.write("unalias: requires at least one name\n");
+            mem.lastStatus = 2;
+            return;
+        }
+
+        int status;
+        bool clearAll;
+        foreach (word; operands) {
+            if (word == "--") {
+                continue;
+            }
+            if (word == "-a") {
+                clearAll = true;
+                continue;
+            }
+            if (!mem.aliases.remove(word)) {
+                mem.errorFile.write("unalias: ", word, ": not found\n");
+                status = 1;
+            }
+        }
+        if (clearAll) {
+            mem.aliases = null;
+        }
+        mem.lastStatus = status;
     }
 
     private void parseCommandInvocation(Memory mem) {
@@ -2052,6 +2227,10 @@ class ProgramParser {
     private void skipEndStatements() {
         while (current_.kind == TokenKind.newline ||
                 current_.kind == TokenKind.semicolon) {
+            if (current_.kind == TokenKind.newline &&
+                    activeMemory_ !is null) {
+                visibleAliases_ = activeMemory_.aliases.dup;
+            }
             advance();
         }
     }
@@ -2309,4 +2488,58 @@ unittest {
     auto mem = new Memory();
     executeProgram(`var key = 'value'; var d = {key: 42}; var quoted = "key=$key $[d["key"]]";`, mem);
     assert(mem.get("quoted").stringValue == "key=value 42");
+}
+
+unittest {
+    // Grease spec/grease-alias.test.sh: selected unquoted command names
+    // expand, unalias removes the definition, missing aliases return status 1.
+    auto output = File.tmpfile();
+    auto errors = File.tmpfile();
+    auto mem = new Memory(output, errors);
+    executeProgram(
+        "shopt -s ysh:all\n" ~
+        "alias ll='echo alias-ok'\n" ~
+        "ll\n" ~
+        "unalias ll\n" ~
+        "alias ll\n", mem);
+    output.rewind();
+    assert(output.readln() == "alias-ok\n");
+    assert(output.readln().length == 0);
+    assert(mem.lastStatus == 1);
+    assert(("ll" in mem.aliases) is null);
+}
+
+unittest {
+    // The source line is parsed before alias definitions on that line are
+    // visible. An alias can override a builtin on later lines, but recursion
+    // within the replacement is suppressed.
+    auto output = File.tmpfile();
+    auto errors = File.tmpfile();
+    auto mem = new Memory(output, errors);
+    executeProgram(
+        "alias echo='echo marked'; echo same-line\n" ~
+        "echo next-line\n" ~
+        "unalias echo\n" ~
+        "echo restored\n", mem);
+    output.rewind();
+    assert(output.readln() == "same-line\n");
+    assert(output.readln() == "marked next-line\n");
+    assert(output.readln() == "restored\n");
+    assert(output.readln().length == 0);
+}
+
+unittest {
+    // Alias expansion occurs at command position, not in ordinary arguments.
+    auto output = File.tmpfile();
+    auto errors = File.tmpfile();
+    auto mem = new Memory(output, errors);
+    executeProgram(
+        "alias greet='echo expanded'\n" ~
+        "echo greet\n" ~
+        "greet literal\n" ~
+        "unalias -a\n", mem);
+    output.rewind();
+    assert(output.readln() == "greet\n");
+    assert(output.readln() == "expanded literal\n");
+    assert(mem.aliases.length == 0);
 }
