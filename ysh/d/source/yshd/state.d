@@ -61,6 +61,14 @@ class Memory {
     private Frame[] frameStack;
     private size_t loopDepth;
     int lastStatus;
+
+    // Command aliases are shell parser state, not lexical-frame variables.
+    // Keep them across source/eval and calls that share this Memory.
+    string[string] aliases;
+
+    // Suppress recursive re-expansion while reparsing an alias's source.
+    // This permits the ordinary `alias echo='echo prefix'` pattern.
+    string[] aliasExpansionStack;
     File inputFile;
     File outputFile;
     File errorFile;
