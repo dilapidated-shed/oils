@@ -1,6 +1,11 @@
 name: ysh-d
 
 on:
+  push:
+    branches: [d/ysh-first-slice]
+    paths:
+      - 'ysh/d/**'
+      - '.github/workflows/ysh-d.yml'
   pull_request:
     paths:
       - 'ysh/d/**'
@@ -187,6 +192,16 @@ jobs:
 
           actual=$(ysh/d/.build/ysh-d -c "var a = [1, 2, 3]; var d = {key: 42}; echo len=\$[len(a)] abs=\$[abs(-3)] max=\$[max(3, 9, 4)]; echo \"key \$[d[\"key\"]]\"; var strings = @[a]; write -- @strings")
           expected=$(printf 'len=3 abs=3 max=9\nkey 42\n1\n2\n3\n')
+          test "$actual" = "$expected"
+
+          # First D-native Grease alias slice: no Python/C++ shell executes.
+          actual=$(ysh/d/.build/ysh-d -c "shopt -s ysh:all
+          alias ll='echo alias-ok'
+          ll
+          unalias ll
+          alias ll
+          echo status=\$?")
+          expected=$(printf 'alias-ok\nstatus=1\n')
           test "$actual" = "$expected"
 
           redirect_file="$RUNNER_TEMP/ysh-d-redirect.txt"
