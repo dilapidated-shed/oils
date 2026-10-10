@@ -119,6 +119,30 @@ jobs:
           test -x ysh/d/.build/ysh-d-unittests
           test -x ysh/d/.build/ysh-d
 
+      - name: Reject dynamically linked C++ dependencies in D YSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=ysh/d/.build/ysh-d
+          test -x "$binary"
+          file "$binary" | grep -F 'ELF 64-bit' > /dev/null
+          readelf -h "$binary" | grep -F 'Advanced Micro Devices X86-64' > /dev/null
+
+          # These inspect actual new D executable bytes, not a C++ reference
+          # artifact or a caller-supplied claim. Keep the host's LD_PRELOAD
+          # out of the *dependency inspection*, not out of the system.
+          readelf -d "$binary" > ysh/d/.build/native-needed.txt
+          env -u LD_PRELOAD ldd "$binary" > ysh/d/.build/native-resolved.txt
+          if grep -F -e 'libstdc++' -e 'libc++.so' -e 'libcxx' \
+              ysh/d/.build/native-needed.txt ysh/d/.build/native-resolved.txt; then
+            echo 'D YSH requires a forbidden dynamic C++ library' >&2
+            exit 1
+          fi
+
+          printf 'D YSH dynamic dependencies (LD_PRELOAD suppressed for inspection):\n'
+          cat ysh/d/.build/native-needed.txt
+          cat ysh/d/.build/native-resolved.txt
+
       - name: Run translated YSH tests and smoke cases
         shell: bash
         run: |
