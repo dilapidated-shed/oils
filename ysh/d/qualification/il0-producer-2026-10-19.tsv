@@ -1,0 +1,42 @@
+key	value
+overall	BLOCKED
+purpose	Execute actual retained Icky Lua producer scripts through the existing partial D runtime
+scope	Disposable Linux x86_64 host; source repair and bounded runtime diagnostics only
+source_revision	bbe84e5671c6d6f298c79cdae208965943d99279
+source_tree	4a760410b8590e3ccebf8d8cd0d6f04898e6a819
+candidate_name	ysh-d; partial whole-hog translation, not qualified Grease
+candidate_sha256	c95442c35e590d31cbadd328c14642c5d6c36bc555802d04b1051c5d6a0b447b
+compiler_owner	dilapidated-shed/ick
+compiler_source	ccf61ab82659b9eadee2d05b489fb195956cef88
+compiler_sha256	83aeb1a4c6192e0386eae4f2106c2a874ba193bd3ec4aa06fe3788204e2731a8
+druntime_source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos_source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	4f79f66387a7c3e829f8cb17e9f590bf2ee7b1672be6c183c4d29d8565f98d5e
+module_and_cli_tests	PASS; 11 modules
+hosted_source_tests	PASS; exact source bbe84e5671c6d6f298c79cdae208965943d99279 rebuilt through pinned Icky DMD and matching runtime, executed module/CLI/smoke tests
+hosted_source_run	https://github.com/dilapidated-shed/oils/actions/runs/39332123577
+owner_cli_smoke	PASS; unchanged inherited owner workflow smoke sequence
+focused_alias_case	PASS; unchanged spec/grease-alias.test.sh body; not full option-group acceptance
+errexit_disabled_mutant	REJECTED; producer_options_test fails the set-minus-eu false-command case
+pipefail_disabled_mutant	REJECTED; producer_options_test fails false-pipe-true under errexit and pipefail
+fp_source_revision	68c53d0daa64ec998701060abaaf225752ea1e93
+qualifier_sha256	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+lua_source_revision	87306483cec50f8c750a22dda1d0742246fad756
+lua_runtime_ick_source	515c0f29fe6e2e96e10495fbaf25da93532e7722
+lua_runtime_ick_run	37589849631
+lua_runtime_ick_artifact	11468256648
+lua_runtime_ick_zip_sha256	03a86b94e862b1d726ffc369407168145485a055322fda46370a99ccde2e0475
+lua_interpreter_semantics	PASS; literal original symbolic-assignment.lua
+lua_embedded_semantics	PASS; literal original probe, exact embedded bytes and retained linked object
+lua_controls	PASS; all 13 retained controls, including actual same-version stock Lua and relocation with spaces
+lua_control_table_sha256	3061aa0ca90293e467f998d8a9a81dfc8c148e387ba65cf49faedf633bdf54a2
+cpp_dynamic_dependencies	ABSENT in direct readelf and resolved ldd inspection; libgcc_s.so.1, libc.so.6, ld-linux-x86-64.so.2
+full_shell_compatibility	BLOCKED; real nonexecuting --ast-format none -n FILE entrypoint remains untranslated
+full_inherited_suite	NOT_RUN; staged pipelines, substitution isolation, complete options/aliases and other PORTING.md surfaces remain unfinished
+independent_aici_package_acceptance	NOT_RUN; no independent static/transitive C++ exclusion or complete managed-package verdict
+catfood_admission	BLOCKED
+managed_fp_admission	BLOCKED; diagnostic host execution is not an admitted FP job/package receipt
+consumer_migration	NOT_ACCEPTED by this continuation
+managed_installation	NOT_RUN
+android	NOT_RUN
+physical_device	NOT_RUN
