@@ -48,7 +48,11 @@ read/source/eval, and selected JSON/J8 and collection operations. The workflow
 smoke sequence covers these implemented paths. It does not establish complete
 YSH compatibility.
 
-The first alias slice covers the named-command/unalias behavior, not the complete inherited alias grammar (including trailing-space expansion and every compound context). The focused Grease spec also uses an OSH-style command condition and fd redirection that the D parser cannot yet accept. Passing its extracted statements is therefore **not** a full spec-suite pass.
+The first alias slice covers named-command/unalias behavior, not the complete
+inherited alias grammar (including trailing-space expansion and every compound
+context). The focused Grease spec's command condition and descriptor redirects
+now execute unchanged. This focused transcript is **not** a full spec-suite pass
+or proof of complete option-group semantics.
 
 The remaining acceptance dependency and current source ownership are recorded
 in [PORTING.md](PORTING.md). In particular, the D CLI does not yet provide a
@@ -61,9 +65,13 @@ With a file invocation, following words populate the global `ARGV` list and
 `$0` retains the complete file path, including spaces. Script/stdin/`-c` modes
 return the last command's status instead of unconditional success. The legacy
 single-argument expression diagnostic remains available. These entrypoint
-repairs do not establish Grease consumer compatibility: the real IL-0 qualifier
-currently stops at its first `set -eu -o pipefail` command because the D command
-layer has not translated the `set` builtin.
+repairs do not establish complete Grease compatibility. The producer continuation
+now implements `set -e/-u/-o pipefail` and their disabling forms, command
+conditions and negation, ordered descriptor redirections, expression command
+substitution, and braced parameter/pattern removal. The unchanged FP IL-0
+qualifier and its thirteen runtime/source-substitution controls execute through
+the partial D runtime on Linux x86_64. These results do not qualify a managed
+Grease package or discharge the remaining inherited-spec dependency.
 
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 

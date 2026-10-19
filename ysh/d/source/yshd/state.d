@@ -61,6 +61,12 @@ class Memory {
     private Frame[] frameStack;
     private size_t loopDepth;
     int lastStatus;
+    bool errexit;
+    bool nounset;
+    bool pipefail;
+    // Conditions and individual pipeline stages defer errexit to their owner.
+    // A counter preserves nested suppression.
+    size_t errexitSuppression;
     // core/state.py:Mem keeps $0 separate from mutable/global/local ARGV.
     string argumentZero = "ysh-d";
 
@@ -154,6 +160,17 @@ class Memory {
     Cell getCell(string name) {
         Frame ignored;
         return lookupLocalOrGlobal(name, ignored);
+    }
+
+    /// Shell-word lookup differs from a YSH expression's required binding.
+    string wordVariable(string name) {
+        import yshd.value : stringify;
+        auto cell = getCell(name);
+        if (cell !is null) return stringify(cell.value);
+        auto environmentValue = get("ENV").dictValue.find(name);
+        if (environmentValue !is null) return stringify(*environmentValue);
+        if (nounset) throw new YshError(format("Undefined variable '%s'", name));
+        return "";
     }
 
     Value getLocal(string name) {

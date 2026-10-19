@@ -71,6 +71,7 @@ enum TokenKind {
     greaterEqual,
     tripleEqual,
     notDoubleEqual,
+    bang,
     equal,
 
     leftParen,
@@ -320,6 +321,8 @@ class Lexer {
             return Token(TokenKind.greater, ">", start);
         case '=':
             return Token(TokenKind.equal, "=", start);
+        case '!':
+            return Token(TokenKind.bang, "!", start);
         case '(':
             return Token(TokenKind.leftParen, "(", start);
         case ')':

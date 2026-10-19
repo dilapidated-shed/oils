@@ -367,6 +367,15 @@ private class DoubleQuotedExpr : Expr {
     }
 }
 
+private class CommandSubstitutionExpr : Expr {
+    private string command_;
+    this(string command) { command_ = command; }
+    override Value eval(Memory mem) {
+        import yshd.program : evaluateCommandSubstitution;
+        return Value.str(evaluateCommandSubstitution(command_, mem));
+    }
+}
+
 private class VariableExpr : Expr {
     private string name_;
 
@@ -1698,10 +1707,12 @@ private class CompareExpr : Expr {
 }
 
 private class Parser {
+    private string source_;
     private Lexer lexer_;
     private Token current_;
 
     this(string input) {
+        source_ = input;
         lexer_ = new Lexer(input);
         current_ = lexer_.next();
     }
@@ -2058,6 +2069,22 @@ private class Parser {
             return new VariableExpr(token.text);
         case TokenKind.dollar:
             advance();
+            if (current_.kind == TokenKind.leftParen) {
+                auto start = current_.offset + 1;
+                advance();
+                int depth;
+                while (current_.kind != TokenKind.eof) {
+                    if (current_.kind == TokenKind.rightParen && depth == 0) {
+                        auto command = source_[start .. current_.offset];
+                        advance();
+                        return new CommandSubstitutionExpr(command);
+                    }
+                    if (current_.kind == TokenKind.leftParen) ++depth;
+                    else if (current_.kind == TokenKind.rightParen) --depth;
+                    advance();
+                }
+                throw new ParseError("unterminated command substitution");
+            }
             require(TokenKind.leftBracket, "[");
             auto scalarChild = parseTest();
             require(TokenKind.rightBracket, "]");

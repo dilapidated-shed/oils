@@ -116,6 +116,13 @@ class YshFunction {
             ? new Memory()
             : new Memory(callerMemory.inputFile, callerMemory.outputFile,
                 callerMemory.errorFile);
+        if (callerMemory !is null) {
+            memory.errexit = callerMemory.errexit;
+            memory.nounset = callerMemory.nounset;
+            memory.pipefail = callerMemory.pipefail;
+            memory.errexitSuppression = callerMemory.errexitSuppression;
+            memory.argumentZero = callerMemory.argumentZero;
+        }
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
@@ -229,6 +236,21 @@ class YshProc {
             ? new Memory()
             : new Memory(callerMemory.inputFile, callerMemory.outputFile,
                 callerMemory.errorFile);
+        if (callerMemory !is null) {
+            memory.errexit = callerMemory.errexit;
+            memory.nounset = callerMemory.nounset;
+            memory.pipefail = callerMemory.pipefail;
+            memory.errexitSuppression = callerMemory.errexitSuppression;
+            memory.argumentZero = callerMemory.argumentZero;
+        }
+        scope (exit) {
+            if (callerMemory !is null) {
+                callerMemory.lastStatus = memory.lastStatus;
+                callerMemory.errexit = memory.errexit;
+                callerMemory.nounset = memory.nounset;
+                callerMemory.pipefail = memory.pipefail;
+            }
+        }
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 

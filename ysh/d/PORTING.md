@@ -176,7 +176,7 @@ command status. Quoted/unquoted script identities preserve spaces. Successful
 `echo`/`write` clear a preceding failure status after expanding their arguments.
 This repair has CLI/module tests and the unchanged owner CLI smoke sequence.
 
-The actual IL-0 script now reaches its first statement and fails with
+The earlier acquisition attempt reached its first statement and failed with
 `ysh-d: set: Executable file not found: set`. The next required translation is
 the shell's own `set` builtin, including real `errexit`, `nounset` and `pipefail`
 behavior, followed by whatever later consumer/inherited-spec failures actual
@@ -230,7 +230,7 @@ mutation-sensitive iteration still require inherited-spec coverage. Smoke tests
 do not discharge this dependency. No completed `greased` or replacement for
 ordinary YSH is claimed.
 
-A bounded D alias slice handles definition, invocation, listing, removal and self-recursion suppression for unquoted command names. It preserves same-line parse visibility. The inherited spec still requires OSH-style command conditions, file-descriptor redirects, trailing-space/compound alias expansion, and other untranslated parsing semantics. These remain open; do not count the focused Grease alias spec as passed until run unmodified on the D executable.
+A bounded D alias slice handles definition, invocation, listing, removal and self-recursion suppression for unquoted command names. It preserves same-line parse visibility. Command conditions and standard-descriptor redirects now execute the unchanged focused alias case; trailing-space/compound alias expansion and option-group parity still need inherited-spec acceptance.
 
 The alias reference is now integrated from Oils grease/main
 dd39aa720c386f9ad007fb96f6475c6afbce297c, the merge of
@@ -246,3 +246,43 @@ then rejects D on `--ast-format none -n FILE`: exit 3, unexpected 'none' at
 byte 13. C++ passes that parse-only case. The benchmark's hashes and result are
 preserved in [dilapidated-shed/grease PR #45, “Integrate current aliases and greasecpp versus greased benchmarks”](https://github.com/dilapidated-shed/grease/pull/45).
 No timing or runtime winner follows from this failed compatibility gate.
+
+## IL-0 producer continuation, 2026-10-19
+
+The existing D implementation now executes the unmodified
+`qualify-icky-lua.grease` and `negative-controls.grease` from Flexible Pipes
+`68c53d0daa64ec998701060abaaf225752ea1e93`. This is bounded diagnostic host
+execution through a partial D candidate, not managed Grease admission.
+
+The translated surface added here is:
+
+- actual enabling/disabling of errexit, nounset and pipefail; conditional and
+  negated-command exemptions; nested suppression and proc propagation;
+- command-form `if` conditions and quoted executable names;
+- ordered input/output/error redirection and descriptor duplication, preserving
+  the distinction between `>file 2>&1` and `2>&1 >file` and restoring streams;
+- command substitution in expressions and braced parameter/pattern removal;
+- URL and linker-option words without turning command commas into expression
+  tuples when negating a command.
+
+Eleven module/CLI test suites cover these cases; the existing owner CLI smoke
+sequence also passes. Actual pinned ICK builds the modified Lua interpreter and
+embedded object, both run the literal symbolic probe, the embedded bytes match,
+and all thirteen retained negative controls pass, including same-version stock
+Lua, hidden source changes, forged receipts and relocation with spaces. The
+focused inherited Grease alias case executes unchanged and yields its expected
+transcript. This does not prove that the still-partial `shopt` implementation
+enables every option in `ysh:all`.
+
+The whole-shell boundary remains open. `--ast-format none -n FILE` still lacks a
+real nonexecuting parser entrypoint; the inherited suite has not passed. Existing
+staged-file pipelines do not establish concurrent process/pipeline parity, and
+command-substitution isolation, complete options/aliases, jobs, signals, traps,
+modules, regex and interactive behavior remain unfinished. Unsupported `set`
+flags/names and descriptor operations fail rather than becoming no-ops.
+
+Keep the executable named `ysh-d`. No complete Grease package, static/transitive
+C++ exclusion verdict by independent AICI, Cat Food admission, managed FP
+receipt, consumer migration, Android or physical-device PASS follows from these
+host results. The retained runtime branch remains the sole successor; do not
+reopen or merge the parked PR as completed whole-hog translation on this evidence.
