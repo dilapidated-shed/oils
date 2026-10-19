@@ -158,6 +158,41 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
+## IL-0 acquisition continuation, 2026-10-19
+
+The retained D translation has been rebuilt on Ubuntu 24.04 x86_64 through the
+existing exact Icky DMD pin `ccf61ab82659b9eadee2d05b489fb195956cef88`, matching
+druntime `74917954b53f7f35b13e61b4438c7253834929ed` and Phobos
+`7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95`. The isolated compiler bootstrap uses
+LDC 1.36.0; it does not compile the maintained translated shell directly. The
+actual final D executable's inspected dynamic dependencies contain no C++
+runtime. This finding does not promote an incomplete D interpreter to Grease.
+
+Executing the actual IL-0 qualifier exposed an earlier CLI defect: a file with
+arguments was parsed as an expression. Also, `-c` joined later argument words
+into executable source. The entrypoint now binds only the designated source
+argument, initializes global `ARGV` and separate `$0`, and returns the final
+command status. Quoted/unquoted script identities preserve spaces. Successful
+`echo`/`write` clear a preceding failure status after expanding their arguments.
+This repair has CLI/module tests and the unchanged owner CLI smoke sequence.
+
+The actual IL-0 script now reaches its first statement and fails with
+`ysh-d: set: Executable file not found: set`. The next required translation is
+the shell's own `set` builtin, including real `errexit`, `nounset` and `pipefail`
+behavior, followed by whatever later consumer/inherited-spec failures actual
+execution demonstrates. Ignoring those options or routing source to another
+shell is not a repair. The parse-only CLI and all untranslated surfaces below
+remain open; full inherited-spec compatibility has not passed. No Cat Food
+default, complete Grease package, managed installation or IL-0 admission is
+claimed. Partial CI artifacts retain 90 days of diagnostic availability and
+include their dependency inspection instead of expiring after seven days.
+
+The unchanged inherited Grease alias case also fails: its ordinary command
+condition and descriptor redirections reach `multiple redirects in one command
+are not translated yet`. Its extracted statements have not been simplified to
+claim a pass. Scoped local evidence is retained in
+[`qualification/il0-acquisition-2026-10-19.tsv`](qualification/il0-acquisition-2026-10-19.tsv).
+
 The checked items are initial executable slices, not completion of the unchecked
 subsystems. The current branch also implements initial proc positional/rest and
 ARGV binding, named/rest func parameters, external commands with child ENV,

@@ -56,6 +56,15 @@ nonexecuting `-n FILE` path, and the inherited YSH behavior suite has not passed
 against it. Conventional aliases must follow the Grease reference frontend;
 readable spellings must remain separate from changes in runtime meaning.
 
+The CLI now keeps `-c` program text separate from its following argument words.
+With a file invocation, following words populate the global `ARGV` list and
+`$0` retains the complete file path, including spaces. Script/stdin/`-c` modes
+return the last command's status instead of unconditional success. The legacy
+single-argument expression diagnostic remains available. These entrypoint
+repairs do not establish Grease consumer compatibility: the real IL-0 qualifier
+currently stops at its first `set -eu -o pipefail` command because the D command
+layer has not translated the `set` builtin.
+
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 
 ## Build and run

@@ -1,0 +1,29 @@
+key	value
+purpose	Obtain a compatible C++-free Grease runtime for Flexible Pipes IL-0
+overall	BLOCKED
+source_base	98fe46e287ce4177c9845d46ae0ad23c7e8bfb5c
+host	Ubuntu 24.04.3 Linux x86_64 disposable build host
+compiler_owner	dilapidated-shed/ick
+compiler_source	ccf61ab82659b9eadee2d05b489fb195956cef88
+compiler_version	DMD64 D Compiler v2.113.0
+bootstrap_compiler	LDC 1.36.0; isolated bootstrap only, not the maintained shell compiler
+druntime_source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos_source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+local_candidate_sha256	aaeee47cd37a056dda118b1312b1d8aa90d632857bab3019d1134e578ef9da43
+module_and_cli_tests	PASS; 10 modules passed unittests, including script-file arguments, source/argv separation and command status
+owner_cli_smoke	PASS; unchanged Run translated YSH tests and smoke cases block from source_base workflow
+baseline_c_argument_control	FAIL; -c true-semicolon plus argument exit-91 executes that argument and returns 91
+repaired_c_argument_control	PASS; the same argument remains argv and source returns 0
+baseline_file_arguments	FAIL; actual IL-0 invocation gives expected-expression-at-byte-0 instead of reading the script
+repaired_file_arguments	PASS; actual script reaches its first statement
+actual_il0_script	FAIL; exit 3; ysh-d: set: Executable file not found: set
+actual_il0_source	isomorphisms/flexible-pipes/scripts/qualify-icky-lua.grease at 68c53d0daa64ec998701060abaaf225752ea1e93; source-identical to local tested candidate
+inherited_grease_alias_case	FAIL; unchanged spec/grease-alias.test.sh body reaches multiple redirects in one command are not translated yet
+dynamic_cpp_dependencies	ABSENT; inspected readelf DT_NEEDED and resolved ldd with LD_PRELOAD excluded from inspection
+direct_dynamic_dependencies	libgcc_s.so.1; libc.so.6; ld-linux-x86-64.so.2
+full_inherited_suite	NOT_RUN; no whole-Grease compatibility claim
+independent_aici_runtime_acceptance	NOT_RUN
+catfood_managed_eligibility	BLOCKED
+managed_installation	NOT_RUN
+android	NOT_RUN
+physical_device	NOT_RUN

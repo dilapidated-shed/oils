@@ -116,8 +116,15 @@ jobs:
 
           "$runtime_dmd"             "${common_flags[@]}"             ysh/d/source/app.d "${library_sources[@]}"             -of=ysh/d/.build/ysh-d
 
+          "$runtime_dmd" -unittest "${common_flags[@]}" \
+            ysh/d/source/app.d "${library_sources[@]}" \
+            -of=ysh/d/.build/ysh-d-cli-unittests
+
           test -x ysh/d/.build/ysh-d-unittests
           test -x ysh/d/.build/ysh-d
+
+      - name: Check CLI argument boundaries and terminal status
+        run: ysh/d/.build/ysh-d-cli-unittests -c true
 
       - name: Reject dynamically linked C++ dependencies in D YSH
         shell: bash
@@ -255,6 +262,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ysh-d-partial-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ysh/d/.build/ysh-d
+          path: |
+            ysh/d/.build/ysh-d
+            ysh/d/.build/native-needed.txt
+            ysh/d/.build/native-resolved.txt
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90

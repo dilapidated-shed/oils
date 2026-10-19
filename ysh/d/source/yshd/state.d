@@ -61,6 +61,8 @@ class Memory {
     private Frame[] frameStack;
     private size_t loopDepth;
     int lastStatus;
+    // core/state.py:Mem keeps $0 separate from mutable/global/local ARGV.
+    string argumentZero = "ysh-d";
 
     // Command aliases are shell parser state, not lexical-frame variables.
     // Keep them across source/eval and calls that share this Memory.
@@ -97,6 +99,16 @@ class Memory {
             env.set(name, Value.str(value));
         }
         globalFrame.cells["ENV"] = new Cell(Value.dictRef(env));
+        globalFrame.cells["ARGV"] = new Cell(Value.list([]));
+    }
+
+    void initializeArguments(string argumentZero, string[] arguments) {
+        this.argumentZero = argumentZero;
+        Value[] values;
+        foreach (argument; arguments) {
+            values ~= Value.str(argument);
+        }
+        globalFrame.cells["ARGV"] = new Cell(Value.list(values));
     }
 
     string getEnv(string name, string fallback = "") {

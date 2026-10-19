@@ -1548,6 +1548,7 @@ class ProgramParser {
             ? WriteEncoding.json
             : (j8Encoding ? WriteEncoding.j8 : WriteEncoding.plain);
         mem.outputFile.write(renderWrite(arguments, separator, ending, encoding));
+        mem.lastStatus = 0;
     }
 
     /// Translate builtin/io_osh.py:Echo for the command-word forms currently
@@ -1569,6 +1570,7 @@ class ProgramParser {
             arguments ~= readCommandWord(mem);
         }
         mem.outputFile.write(renderEcho(arguments, noNewline, interpretEscapes));
+        mem.lastStatus = 0;
     }
 
     private bool consumeEchoFlags(ref bool noNewline,
@@ -1793,6 +1795,13 @@ class ProgramParser {
             }
 
             if (ch == '$' && position + 1 < content.length &&
+                    content[position + 1] == '0') {
+                result ~= mem.argumentZero;
+                position += 2;
+                continue;
+            }
+
+            if (ch == '$' && position + 1 < content.length &&
                     asciiIdentifierStart(content[position + 1])) {
                 auto nameStart = position + 1;
                 auto nameEnd = nameStart + 1;
@@ -1874,6 +1883,11 @@ class ProgramParser {
             endOffset = current_.offset + 1;
             advance();
             return to!string(mem.lastStatus);
+        }
+        if (current_.kind == TokenKind.integer && current_.text == "0") {
+            endOffset = current_.offset + 1;
+            advance();
+            return mem.argumentZero;
         }
         if (current_.kind != TokenKind.name) {
             throw new YshError("$ substitution expects a variable name or [expression]");
@@ -2254,6 +2268,25 @@ string evaluateDoubleQuotedExpression(string content, Memory mem) {
 void executeProgram(string source, Memory mem) {
     auto parser = new ProgramParser(source);
     parser.execute(mem);
+}
+
+unittest {
+    // core/state.py keeps script identity separate from the mutable ARGV
+    // cell; both quoted and unquoted $0 preserve the complete script name.
+    auto output = File.tmpfile();
+    auto errors = File.tmpfile();
+    auto mem = new Memory(output, errors);
+    mem.initializeArguments("directory/script with spaces.grease", ["one word", "two"]);
+    executeProgram("echo $0; echo \"$0\"; write @ARGV", mem);
+    output.rewind();
+    assert(output.readln() == "directory/script with spaces.grease\n");
+    assert(output.readln() == "directory/script with spaces.grease\n");
+    assert(output.readln() == "one word\n");
+    assert(output.readln() == "two\n");
+    assert(output.readln().length == 0);
+    executeProgram("call ARGV->append('later')", mem);
+    assert(mem.argumentZero == "directory/script with spaces.grease");
+    assert(mem.get("ARGV").listValue.length == 3);
 }
 
 unittest {
