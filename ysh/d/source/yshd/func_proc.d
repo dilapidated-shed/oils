@@ -2,14 +2,23 @@ module yshd.func_proc;
 
 import std.format : format;
 
-import yshd.expr : evaluate;
+import yshd.expr : evaluate, EvaluatedArguments;
 import yshd.program : executeProgram;
-import yshd.state : Frame, Memory, ReturnMode;
-import yshd.value : Value, ValueKind, YshDict, YshError;
+import yshd.state : Frame, Memory, ReturnMode, BuiltinRegistry;
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError;
 
 struct FunctionParameter {
     string name;
     string defaultSource;
+}
+
+struct ProcSignature {
+    FunctionParameter[] positional;
+    string restPositional;
+    FunctionParameter[] named;
+    string restNamed;
+    FunctionParameter block;
+    bool hasBlock;
 }
 
 /// Return control flow is separate from ordinary YSH errors, matching the
@@ -49,6 +58,7 @@ class YshFunction {
 
     string bodySource;
     Frame closure;
+    BuiltinRegistry builtins;
 
     this(string name, FunctionParameter[] parameters, string bodySource,
             Memory definitionMemory, string restPositionalName = "",
@@ -61,6 +71,7 @@ class YshFunction {
         this.restNamedName = restNamedName;
         this.bodySource = bodySource;
         closure = definitionMemory.currentFrame;
+        builtins = definitionMemory.builtins;
 
         evaluateDefaults(parameters, definitionMemory, defaults, hasDefaults);
         evaluateDefaults(namedParameters, definitionMemory,
@@ -125,10 +136,13 @@ class YshFunction {
             memory.options = callerMemory.options;
             memory.errexitSuppression = callerMemory.errexitSuppression;
             memory.argumentZero = callerMemory.argumentZero;
+            memory.shellArguments = callerMemory.shellArguments;
+            memory.contextStack = callerMemory.contextStack;
         }
         auto root = closure;
         while (root.enclosed !is null) root = root.enclosed;
         memory.useGlobalFrame(root);
+        memory.builtins = builtins;
         memory.returnMode = ReturnMode.functionValue;
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
@@ -201,44 +215,69 @@ class YshProc {
     bool[] hasDefaults;
     string bodySource;
     Frame closure;
+    BuiltinRegistry builtins;
+    ProcSignature signature;
+    Value[] positionalDefaults;
+    bool[] positionalHasDefaults;
+    Value[] namedDefaults;
+    bool[] namedHasDefaults;
+    Value blockDefault;
+    bool hasBlockDefault;
 
     this(string name, string bodySource, Memory definitionMemory,
             bool openSignature = true,
             FunctionParameter[] wordParameters = [],
-            string restWordName = "") {
+            string restWordName = "", ProcSignature signature = ProcSignature.init) {
         this.name = name;
         this.openSignature = openSignature;
         this.wordParameters = wordParameters;
         this.restWordName = restWordName;
         this.bodySource = bodySource;
+        this.signature = signature;
         closure = definitionMemory.currentFrame;
+        builtins = definitionMemory.builtins;
 
         if (!openSignature) {
-            bool sawDefault;
             foreach (parameter; wordParameters) {
                 if (parameter.defaultSource.length == 0) {
-                    if (sawDefault) {
-                        throw new YshError(
-                            "required parameter follows a default parameter");
-                    }
                     defaults ~= Value.nullValue();
                     hasDefaults ~= false;
                     continue;
                 }
 
-                sawDefault = true;
                 auto value = evaluate(parameter.defaultSource, definitionMemory);
-                if (value.kind == ValueKind.list ||
-                        value.kind == ValueKind.dict) {
-                    throw new YshError("Default values can't be mutable");
-                }
+                if (value.kind != ValueKind.stringValue)
+                    throw new YshTypeError("Default val for word param must be Str");
                 defaults ~= value;
                 hasDefaults ~= true;
+            }
+            evaluateProcDefaults(signature.positional, definitionMemory,
+                positionalDefaults, positionalHasDefaults);
+            evaluateProcDefaults(signature.named, definitionMemory,
+                namedDefaults, namedHasDefaults);
+            if (signature.hasBlock && signature.block.defaultSource.length) {
+                blockDefault = evaluate(signature.block.defaultSource, definitionMemory);
+                hasBlockDefault = true;
+                if (blockDefault.kind != ValueKind.nullValue && blockDefault.kind != ValueKind.commandValue)
+                    throw new YshTypeError("Default value for block should be Command or Null");
             }
         }
     }
 
-    Value invoke(string[] words, Memory callerMemory = null) {
+    private static void evaluateProcDefaults(FunctionParameter[] parameters,
+            Memory mem, ref Value[] values, ref bool[] present) {
+        foreach (parameter; parameters) {
+            bool supplied = parameter.defaultSource.length != 0;
+            auto value = supplied ? evaluate(parameter.defaultSource, mem) : Value.nullValue();
+            if (value.kind == ValueKind.list || value.kind == ValueKind.dict)
+                throw new YshError("Default values can't be mutable");
+            values ~= value;
+            present ~= supplied;
+        }
+    }
+
+    Value invoke(string[] words, Memory callerMemory = null,
+            EvaluatedArguments arguments = EvaluatedArguments.init) {
         auto memory = callerMemory is null
             ? new Memory()
             : new Memory(callerMemory.inputFile, callerMemory.outputFile,
@@ -247,6 +286,8 @@ class YshProc {
             memory.options = callerMemory.options;
             memory.errexitSuppression = callerMemory.errexitSuppression;
             memory.argumentZero = callerMemory.argumentZero;
+            memory.shellArguments = callerMemory.shellArguments;
+            memory.contextStack = callerMemory.contextStack;
         }
         scope (exit) {
             if (callerMemory !is null) {
@@ -256,6 +297,7 @@ class YshProc {
         auto root = closure;
         while (root.enclosed !is null) root = root.enclosed;
         memory.useGlobalFrame(root);
+        memory.builtins = builtins;
         memory.returnMode = ReturnMode.procValue;
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
@@ -298,6 +340,42 @@ class YshProc {
                     "proc '%s' takes %s words, but got %s",
                     name, wordParameters.length, words.length));
             }
+
+            foreach (index, parameter; signature.positional) {
+                if (index >= arguments.positional.length && !positionalHasDefaults[index])
+                    throw new YshError(format("%s wasn't passed typed param %s", name, parameter.name));
+                memory.declareLocal(parameter.name, index < arguments.positional.length
+                    ? arguments.positional[index] : positionalDefaults[index]);
+            }
+            if (signature.restPositional.length)
+                memory.declareLocal(signature.restPositional, Value.list(arguments.positional.length > signature.positional.length
+                    ? arguments.positional[signature.positional.length .. $].dup : []));
+            else if (arguments.positional.length > signature.positional.length)
+                throw new YshError(format("Proc %s takes %s typed args, but got %s",
+                    name, signature.positional.length, arguments.positional.length));
+
+            auto remaining = arguments.named is null ? new YshDict() : arguments.named.shallowCopy();
+            foreach (index, parameter; signature.named) {
+                auto supplied = remaining.find(parameter.name);
+                if (supplied is null && !namedHasDefaults[index])
+                    throw new YshError(format("%s wasn't passed named param %s", name, parameter.name));
+                memory.declareLocal(parameter.name, supplied !is null ? *supplied : namedDefaults[index]);
+                remaining.erase(parameter.name);
+            }
+            if (signature.restNamed.length)
+                memory.declareLocal(signature.restNamed, Value.dictRef(remaining));
+            // The inherited _BindNamed compares the remaining count with the
+            // declared count after erasing bound keys. Preserve that behavior.
+            else if (remaining.length > signature.named.length)
+                throw new YshError(format("Proc %s takes %s named args, but got %s",
+                    name, signature.named.length, remaining.length));
+
+            if (signature.hasBlock) {
+                if (!arguments.hasBlock && !hasBlockDefault)
+                    throw new YshError(format("%s wasn't passed block param %s", name, signature.block.name));
+                memory.declareLocal(signature.block.name, arguments.hasBlock ? arguments.block : blockDefault);
+            } else if (arguments.hasBlock)
+                throw new YshError(format("Proc %s doesn't accept a block argument", name));
         }
 
         try {

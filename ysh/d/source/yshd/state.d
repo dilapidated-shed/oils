@@ -23,6 +23,10 @@ class Cell {
     }
 }
 
+class BuiltinRegistry {
+    Cell[string] cells;
+}
+
 /// A lexical frame. The enclosed field is the D equivalent of the __E__ frame
 /// link used by core/state.py:_FrameLookup.
 class Frame {
@@ -77,10 +81,12 @@ class Memory {
     Frame globalFrame;
     Frame currentFrame;
     private Frame[] frameStack;
+    BuiltinRegistry builtins;
     private size_t loopDepth;
     int lastStatus;
     ReturnMode returnMode;
     RegexMatch regexMatch;
+    YshDict[] contextStack;
     ShellOptions options;
     @property bool errexit() const { return options.get("errexit"); }
     @property void errexit(bool enabled) { options.set("errexit", enabled); }
@@ -93,6 +99,13 @@ class Memory {
     size_t errexitSuppression;
     // core/state.py:Mem keeps $0 separate from mutable/global/local ARGV.
     string argumentZero = "ysh-d";
+    string[] shellArguments;
+
+    string shellArgument(size_t index) {
+        if (index && index <= shellArguments.length) return shellArguments[index - 1];
+        if (nounset) throw new FatalRuntimeError("Undefined positional argument");
+        return "";
+    }
 
     // Command aliases are shell parser state, not lexical-frame variables.
     // Keep them across source/eval and calls that share this Memory.
@@ -134,10 +147,14 @@ class Memory {
         globalFrame.cells["_error"] = new Cell(Value.dict());
         globalFrame.cells["NAN"] = new Cell(Value.floating(double.nan));
         globalFrame.cells["INFINITY"] = new Cell(Value.floating(double.infinity));
+        import yshd.expr : builtinNamespaces;
+        builtins = new BuiltinRegistry();
+        foreach (name, value; builtinNamespaces()) builtins.cells[name] = new Cell(value);
     }
 
     void initializeArguments(string argumentZero, string[] arguments) {
         this.argumentZero = argumentZero;
+        shellArguments = arguments.dup;
         Value[] values;
         foreach (argument; arguments) {
             values ~= Value.str(argument);
@@ -203,7 +220,14 @@ class Memory {
     string wordVariable(string name) {
         import yshd.value : stringify;
         auto cell = getCell(name);
-        if (cell !is null) return stringify(cell.value);
+        if (cell !is null) {
+            if (cell.value.kind == ValueKind.bashArrayValue || cell.value.kind == ValueKind.bashAssocValue) {
+                if (auto first = cell.value.shellContainer.find("0")) return first.stringValue;
+                if (nounset) throw new FatalRuntimeError("Undefined shell array element 0");
+                return "";
+            }
+            return stringify(cell.value);
+        }
         auto environmentValue = get("ENV").dictValue.find(name);
         if (environmentValue !is null) return stringify(*environmentValue);
         if (nounset) throw new FatalRuntimeError(format("Undefined variable '%s'", name));
@@ -310,10 +334,19 @@ class Memory {
         }
 
         if (currentFrame !is globalFrame) {
-            return lookupFrame(globalFrame, name, false, foundFrame);
+            cell = lookupFrame(globalFrame, name, false, foundFrame);
+            if (cell !is null) return cell;
         }
-
-        return null;
+        auto builtin = name in builtins.cells;
+        if (builtin is null) {
+            import yshd.expr : builtinFunctionValue;
+            auto value = builtinFunctionValue(name);
+            if (value.kind == ValueKind.builtinFunctionValue) {
+                builtins.cells[name] = new Cell(value);
+                builtin = name in builtins.cells;
+            }
+        }
+        return builtin is null ? null : *builtin;
     }
 
     private static void requireWritable(string name, Cell cell) {

@@ -138,6 +138,39 @@ enum ValueKind {
     placeValue,
     eggexValue,
     matchValue,
+    expressionValue,
+    commandValue,
+    objectValue,
+    builtinFunctionValue,
+    boundFunctionValue,
+    bashArrayValue,
+    bashAssocValue,
+}
+
+class YshObject {
+    YshObject prototype;
+    YshDict properties;
+    this(YshObject prototype, YshDict properties) {
+        this.prototype = prototype;
+        this.properties = properties;
+    }
+    Value* find(string name) {
+        for (auto current = this; current !is null; current = current.prototype)
+            if (auto value = current.properties.find(name)) return value;
+        return null;
+    }
+}
+
+string[] shellArrayValues(Value value) {
+    auto keys = value.shellContainer.keys();
+    if (value.kind == ValueKind.bashArrayValue) {
+        import std.algorithm : sort;
+        import std.conv : to;
+        sort!((left, right) => to!long(left) < to!long(right))(keys);
+    }
+    string[] values;
+    foreach (key; keys) values ~= value.shellContainer.find(key).stringValue;
+    return values;
 }
 
 abstract class YshPlace {
@@ -146,7 +179,7 @@ abstract class YshPlace {
 
 abstract class YshRegex {
     abstract string asEre();
-    abstract RegexMatch search(string subject, long position = 0, bool leftMatch = false);
+    abstract RegexMatch search(string subject, long position = 0, bool leftMatch = false, bool useNotBol = true);
 }
 
 class RegexMatch {
@@ -234,6 +267,44 @@ struct Value {
     YshPlace placeValue;
     YshRegex regexValue;
     RegexMatch matchValue;
+    YshObject objectValue;
+    YshDict shellContainer;
+
+    static Value shellArray(YshDict elements, bool associative = false) {
+        Value result;
+        result.kind = associative ? ValueKind.bashAssocValue : ValueKind.bashArrayValue;
+        result.shellContainer = elements;
+        return result;
+    }
+
+    static Value object(YshObject object) {
+        Value result;
+        result.kind = ValueKind.objectValue;
+        result.objectValue = object;
+        return result;
+    }
+
+    static Value builtin(Object callable) {
+        Value result;
+        result.kind = ValueKind.builtinFunctionValue;
+        result.callableValue = callable;
+        return result;
+    }
+
+    static Value bound(Object callable) {
+        Value result;
+        result.kind = ValueKind.boundFunctionValue;
+        result.callableValue = callable;
+        return result;
+    }
+
+    static Value closure(ValueKind kind, Object closure) {
+        assert(kind == ValueKind.expressionValue || kind == ValueKind.commandValue);
+        Value result;
+        result.kind = kind;
+        result.callableValue = closure;
+        return result;
+    }
 
     static Value eggex(YshRegex regex) {
         Value result;
@@ -372,7 +443,12 @@ bool sameIdentity(Value left, Value right) {
         return left.scalarIdentity == right.scalarIdentity;
     case ValueKind.list: return left.listValue is right.listValue;
     case ValueKind.dict: return left.dictValue is right.dictValue;
-    case ValueKind.functionValue: case ValueKind.procValue: return left.callableValue is right.callableValue;
+    case ValueKind.functionValue: case ValueKind.procValue:
+    case ValueKind.expressionValue: case ValueKind.commandValue:
+    case ValueKind.builtinFunctionValue: case ValueKind.boundFunctionValue:
+        return left.callableValue is right.callableValue;
+    case ValueKind.objectValue: return left.objectValue is right.objectValue;
+    case ValueKind.bashArrayValue: case ValueKind.bashAssocValue: return left.shellContainer is right.shellContainer;
     case ValueKind.placeValue: return left.placeValue is right.placeValue;
     case ValueKind.eggexValue: return left.regexValue is right.regexValue;
     case ValueKind.matchValue: return left.matchValue is right.matchValue;
@@ -407,6 +483,13 @@ string kindName(Value value) {
         return "Place";
     case ValueKind.eggexValue: return "Eggex";
     case ValueKind.matchValue: return "Match";
+    case ValueKind.expressionValue: return "Expr";
+    case ValueKind.commandValue: return "Command";
+    case ValueKind.objectValue: return "Obj";
+    case ValueKind.builtinFunctionValue: return "BuiltinFunc";
+    case ValueKind.boundFunctionValue: return "BoundFunc";
+    case ValueKind.bashArrayValue: return "BashArray";
+    case ValueKind.bashAssocValue: return "BashAssoc";
     }
 }
 
@@ -434,6 +517,13 @@ bool toBool(Value value) {
     case ValueKind.placeValue:
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         return true;
     }
 }
@@ -476,6 +566,14 @@ string stringify(Value value) {
         return value.regexValue.asEre();
     case ValueKind.matchValue:
         throw new YshTypeError("can't stringify Match");
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
+        throw new YshTypeError("can't stringify " ~ kindName(value));
     }
 }
 
@@ -533,6 +631,13 @@ bool exactlyEqual(Value left, Value right) {
         throw new YshTypeError("Equality isn't defined on Place values");
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         throw new YshTypeError("Equality isn't defined on " ~ kindName(left) ~ " values");
     }
 }
@@ -631,6 +736,13 @@ private string reprWithActive(Value value, ref bool[Object] active) {
         return "<Place>";
     case ValueKind.eggexValue: return "<Eggex>";
     case ValueKind.matchValue: return "<Match>";
+    case ValueKind.expressionValue: return "<Expr>";
+    case ValueKind.commandValue: return "<Command>";
+    case ValueKind.objectValue: return "<Obj>";
+    case ValueKind.builtinFunctionValue: return "<BuiltinFunc>";
+    case ValueKind.boundFunctionValue: return "<BoundFunc>";
+    case ValueKind.bashArrayValue: return "<BashArray>";
+    case ValueKind.bashAssocValue: return "<BashAssoc>";
     }
 }
 

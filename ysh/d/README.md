@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-516 assertion matches, 603 failures. The unchanged original harness, fixture
+611 assertion matches, 508 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-regex-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-native-control-2026-10-21.tsv).
 
 ## Source map
 
@@ -100,13 +100,19 @@ pretty printing for translated data values and ranges. Expression display and
 `pp value` share that printer. The inherited function fixture now passes all
 26 cases. The subsequent decoder implements strict JSON and J8 input, error
 positions, and codec functions. Captured-frame Places and here-documents now
-support the shared read paths. JSON/J8 passes 58/64 inherited cases; retained
+support the shared read paths. JSON/J8 passes 59/64 inherited cases; retained
 shell arrays/arithmetic and objects still leave failures in that fixture.
 Identity comparisons, glob comparisons and floatsEqual are translated; the
 remaining heap-value display, terminal styles and value variants need work.
-The regex fixture passes 27/29, regex APIs 23/40, and strings 28/29. Retained
-conditionals/control flow, typed proc arguments and lazy replacement expressions
-remain dependencies of those fixtures.
+The regex fixture passes 29/29, regex APIs 40/40, and strings 29/29. Native
+double-bracket conditions, retained if/then/fi, typed/named/block proc arguments,
+captured Command/Expr values, and lazy replacements now support those cases.
+Objects have own properties, prototype lookup, bound methods, and invokable
+procs; 13/15 object assertions match. The eight context cases pass. Retained
+shell arrays have distinct values and assignment/expansion paths. These are
+still partial subsystems: full arithmetic, shell grammar and builtins,
+namespaces/modules, reflection, I/O iteration, interactive behavior, and
+independent acceptance remain open.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

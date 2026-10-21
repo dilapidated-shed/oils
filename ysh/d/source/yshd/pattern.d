@@ -39,6 +39,16 @@ struct ScalarWord {
         }
         return result;
     }
+
+    string erePattern() const {
+        import std.string : indexOf;
+        string result;
+        foreach (fragment; fragments) foreach (char ch; fragment.text) {
+            if (fragment.quoted && ".^$*+?{}[]\\|()".indexOf(ch) >= 0) result ~= '\\';
+            result ~= ch;
+        }
+        return result;
+    }
 }
 
 bool matchesShellPattern(ScalarWord word, string subject, bool ignoreCase) {

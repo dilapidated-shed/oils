@@ -26,7 +26,9 @@ unittest {
         Case("proc fail { false }; fail; echo status=$?", 0, "status=1\n"),
         Case("set -e; proc condition { false; echo reached; false }; if condition { echo wrong } else { echo handled }; echo after", 0, "reached\nhandled\nafter\n"),
         Case("set -e; proc enable { set -u }; enable; echo set", 0, "set\n"),
-        Case("set -- 'one word' two; echo $[len(ARGV)] $[ARGV[0]]", 0, "2 one word\n"),
+        // SetArgv changes the shell's positional stack. It does not replace
+        // the independently mutable ARGV list (core/state.py:Mem.SetArgv).
+        Case("set -- 'one word' two; echo $[len(ARGV)] $1 \"$2\"", 0, "0 one word two\n"),
         Case("set +u; echo before${UNBOUND_IL0_CASE}after", 0, "beforeafter\n"),
         Case("setglobal ENV.IL0_CASE = 'environment'; set -u; echo $IL0_CASE", 0, "environment\n"),
         Case("var x = 'hash  path with spaces'; echo \"${x%% *}\"", 0, "hash\n"),

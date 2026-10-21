@@ -208,15 +208,32 @@ private class ValueEncoder {
         case ValueKind.placeValue:
         case ValueKind.eggexValue:
         case ValueKind.matchValue:
+        case ValueKind.expressionValue:
+        case ValueKind.commandValue:
+        case ValueKind.builtinFunctionValue:
+        case ValueKind.boundFunctionValue:
+        case ValueKind.bashArrayValue:
+        case ValueKind.bashAssocValue:
             // IDs and terminal styles await the rest of the value/display model.
             return text("<" ~ kindName(value) ~ ">");
+        case ValueKind.objectValue:
+            Object identity = value.objectValue;
+            if (identity in visiting) return text("(...)");
+            visiting[identity] = true;
+            scope (exit) visiting.remove(identity);
+            Doc[] properties;
+            foreach (key, item; value.objectValue.properties)
+                properties ~= concat([text(identifier(key) ? key : yshString(key)), text(": "), encode(item)]);
+            auto own = surrounded("(", joined(properties), ")");
+            return value.objectValue.prototype is null ? own
+                : concat([own, text(" --> "), encode(Value.object(value.objectValue.prototype))]);
         }
     }
 }
 
 string prettyValue(Value value, size_t width = 80) {
     auto doc = (new ValueEncoder()).encode(value);
-    if (value.kind <= ValueKind.dict) {
+    if (value.kind <= ValueKind.dict || value.kind == ValueKind.objectValue) {
         auto name = kindName(value);
         doc = concat([text("(" ~ name ~ ")"), lineBreak(" ".replicate(6 - name.length)), doc]);
     }

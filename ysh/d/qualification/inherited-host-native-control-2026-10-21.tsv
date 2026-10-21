@@ -1,0 +1,54 @@
+field	value
+qualification	BLOCKED
+date-utc	2026-10-21
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	8787979709fb5f81ae73f24cdd9c5a88ad3e757a
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+d-source-git-tree	cd20799cccb1d61cfbd5e84f19976bf8979a54ad
+icky-dmd	ccf61ab82659b9eadee2d05b489fb195956cef88
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+bootstrap-compiler	LDC 1.36.0 (bootstrap only)
+host	Ubuntu 24.04.3 Linux 6.18.55 x86_64 disposable container
+binary-sha256	b468cb0770654e6572a2b6943b53e29f37637914792fcb245d4bf64c4e5a7ed0
+cli-module-unittests	PASS 22 modules
+library-unittests	PASS 21 modules
+owner-workflow-smoke	PASS full existing owner sequence; declared RUNNER_TEMP supplied on host
+inherited-harness	unchanged test/sh_spec.py; host Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT; LIB_YSH; TMP per case; SH is exact mode binary
+inherited-modes	our_shell ysh selects ysh-d; absent/osh selects symlink osh-d to same executable
+inherited-timeout	3 seconds per case via original harness timeout option
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture
+inherited-cases	1119
+inherited-assertion-matches	611
+inherited-failures	508
+inherited-timeouts	0 after complete boolean-fixture repeat at original limit
+initial-full-run	610 matches; 508 failures; one TIME in ysh-expr-bool case 4
+boolean-repeat	6/7 assertion matches; case 4 passed; existing case 5 remains FAIL; unchanged fixture and 3-second limit
+inherited-qualification	FAIL; no additional expected-failure allowance
+comparison-to-published-checkpoint	95 additional assertion matches; zero prior matches regressed after original-limit boolean repeat
+earlier-checkpoint	542 matches/577 failures included eight changed expected-error outcomes; actual contexts, append, object invocation, positional parameters and shell arrays now reach reference operations
+harness-pass-boundary	assertion matches only; expected-status-only matches do not prove implementation coverage
+regex-fixture	PASS 29/29
+regex-api-fixture	PASS 40/40
+regex-bytes-chars-fixture	13/15
+string-fixture	PASS 29/29
+context-fixture	PASS 8/8
+object-fixture	13/15
+proc-fixture	27/38
+for-fixture	18/20
+json-fixture	59/64
+case-fixture	PASS 18/18
+func-fixture	PASS 26/26
+dict-fixture	PASS 7/7
+expression-arithmetic-fixture	PASS 30/30
+shared-spec-acceptance	NOT_RUN
+producer-controls-current-continuation	NOT_RERUN
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no dynamic C++ runtime
+static-transitive-AICI	UNKNOWN
+managed-FP-admission	NOT_RUN
+target-device-acceptance	NOT_RUN
+hosted-CI-at-authoring	NOT_RUN

@@ -6,6 +6,10 @@ import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, stringify
 
 /// Translate ysh/val_ops.py:ToShellArray for the D value types.
 string[] spliceArray(Value value) {
+    if (value.kind == ValueKind.bashArrayValue) {
+        import yshd.value : shellArrayValues;
+        return shellArrayValues(value);
+    }
     if (value.kind != ValueKind.list) {
         throw new YshTypeError("Splice expected List");
     }
@@ -382,6 +386,12 @@ private class DataEncoder {
         case ValueKind.placeValue:
         case ValueKind.eggexValue:
         case ValueKind.matchValue:
+        case ValueKind.expressionValue:
+        case ValueKind.commandValue:
+        case ValueKind.builtinFunctionValue:
+        case ValueKind.boundFunctionValue:
+        case ValueKind.bashArrayValue:
+        case ValueKind.bashAssocValue:
             if (diagnostic) {
                 import yshd.value : kindName;
                 return "<" ~ kindName(value) ~ ">";
@@ -389,6 +399,25 @@ private class DataEncoder {
             if (!typeErrors) return "null";
             import yshd.value : kindName;
             throw new DataEncodeError("Can't serialize object of type " ~ kindName(value));
+        case ValueKind.objectValue:
+            if (!diagnostic) {
+                if (!typeErrors) return "null";
+                throw new DataEncodeError("Can't serialize object of type Obj");
+            }
+            Object identity = value.objectValue;
+            if (identity in visiting) return "(...)";
+            visiting[identity] = true;
+            scope (exit) visiting.remove(identity);
+            string result = "(";
+            bool first = true;
+            foreach (key, item; value.objectValue.properties) {
+                if (!first) result ~= ",";
+                first = false;
+                result ~= encodeJsonString(key) ~ ":" ~ encode(item, level);
+            }
+            result ~= ")";
+            if (value.objectValue.prototype !is null) result ~= " --> " ~ encode(Value.object(value.objectValue.prototype), level);
+            return result;
         }
     }
 }

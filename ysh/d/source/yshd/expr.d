@@ -14,10 +14,10 @@ import std.uni : toLower, toUpper;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
-import yshd.state : Memory, ReturnMode;
+import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
 import yshd.io_ysh : encodeDataValue, WriteEncoding, DataEncodeError, dataOptions;
-import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, StructuredError, FatalRuntimeError,
+import yshd.value : Value, ValueKind, YshDict, YshObject, YshError, YshTypeError, StructuredError, FatalRuntimeError,
     exactlyEqual, kindName, stringify, toBool;
 
 class ParseError : YshError {
@@ -153,6 +153,13 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.placeValue:
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -185,6 +192,13 @@ private BigInt convertToInt(Value value) {
     case ValueKind.placeValue:
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -363,6 +377,45 @@ abstract class Expr {
     abstract Value eval(Memory mem);
 }
 
+/// Values retain the defining lexical and module frames, while streams,
+/// special arguments, status and options belong to the evaluating shell.
+class YshExpression {
+    private Expr expression;
+    private Frame captured;
+    private Frame moduleFrame;
+    this(Expr expression, Memory mem) {
+        this.expression = expression;
+        captured = mem.currentFrame;
+        moduleFrame = mem.globalFrame;
+    }
+    Value eval(Memory mem) {
+        auto previousGlobal = mem.globalFrame;
+        mem.globalFrame = moduleFrame;
+        mem.pushEnclosed(captured);
+        scope (exit) { mem.popFrame(); mem.globalFrame = previousGlobal; }
+        auto optionNumbers = mem.options.pushExpression();
+        scope (exit) mem.options.pop(optionNumbers);
+        return expression.eval(mem);
+    }
+}
+
+private class ExpressionClosureExpr : Expr {
+    Expr expression;
+    this(Expr expression) { this.expression = expression; }
+    override Value eval(Memory mem) {
+        return Value.closure(ValueKind.expressionValue, new YshExpression(expression, mem));
+    }
+}
+
+private class CommandClosureExpr : Expr {
+    string command;
+    this(string command) { this.command = command; }
+    override Value eval(Memory mem) {
+        import yshd.program : YshCommand;
+        return Value.closure(ValueKind.commandValue, new YshCommand(command, mem));
+    }
+}
+
 private class LiteralExpr : Expr {
     private Value value_;
 
@@ -417,6 +470,8 @@ private class VariableExpr : Expr {
     }
 
     override Value eval(Memory mem) {
+        if (mem.getCell(name_) is null && builtinFunctionName(name_))
+            return Value.builtin(new YshNativeFunction(name_));
         return mem.get(name_);
     }
 
@@ -570,6 +625,13 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.placeValue:
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -667,6 +729,13 @@ private class SubscriptExpr : Expr {
         case ValueKind.placeValue:
         case ValueKind.eggexValue:
         case ValueKind.matchValue:
+        case ValueKind.expressionValue:
+        case ValueKind.commandValue:
+        case ValueKind.objectValue:
+        case ValueKind.builtinFunctionValue:
+        case ValueKind.boundFunctionValue:
+        case ValueKind.bashArrayValue:
+        case ValueKind.bashAssocValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -683,6 +752,7 @@ private class AttributeExpr : Expr {
 
     override Value eval(Memory mem) {
         auto object = object_.eval(mem);
+        if (object.kind == ValueKind.objectValue) return objectAttribute(object, name_, false);
         if (object.kind == ValueKind.dict) {
             auto found = object.dictValue.find(name_);
             if (found !is null) {
@@ -690,7 +760,7 @@ private class AttributeExpr : Expr {
             }
         }
         if (valueMethodExists(object.kind, name_)) {
-            return Value.callable(new YshBoundMethod(object, name_, false));
+            return Value.bound(new YshBoundMethod(object, name_, false));
         }
         if (object.kind == ValueKind.dict) {
             throw new YshError(format("Dict key not found: '%s'", name_));
@@ -700,6 +770,10 @@ private class AttributeExpr : Expr {
 
     void assign(Memory mem, Value value) {
         auto object = object_.eval(mem);
+        if (object.kind == ValueKind.objectValue) {
+            object.objectValue.properties.set(name_, value);
+            return;
+        }
         if (object.kind != ValueKind.dict) {
             throw new YshTypeError("attribute assignment expected Dict in this translated slice");
         }
@@ -798,6 +872,12 @@ private bool builtinFunctionName(string name) {
     case "toJson8":
     case "fromJson":
     case "fromJson8":
+    case "Object":
+    case "prototype":
+    case "propView":
+    case "dict":
+    case "first":
+    case "rest":
         return true;
     default:
         return false;
@@ -809,6 +889,27 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     if (namedArguments !is null && namedArguments.length != 0 &&
             name != "toJson" && name != "toJson8") {
         throw new YshTypeError(format("%s() does not accept named arguments yet", name));
+    }
+
+    if (name == "Object") {
+        if (arguments.length != 2 || arguments[1].kind != ValueKind.dict ||
+                (arguments[0].kind != ValueKind.nullValue && arguments[0].kind != ValueKind.objectValue))
+            throw new YshTypeError("Object() expects Obj or Null prototype and Dict properties");
+        return Value.object(new YshObject(arguments[0].kind == ValueKind.nullValue ? null
+            : arguments[0].objectValue, arguments[1].dictValue));
+    }
+    if (name == "prototype" || name == "propView" || name == "first" || name == "rest") {
+        if (arguments.length != 1 || arguments[0].kind != ValueKind.objectValue)
+            throw new YshTypeError(name ~ "() expects Obj");
+        auto object = arguments[0].objectValue;
+        if (name == "propView" || name == "first") return Value.dictRef(object.properties);
+        return object.prototype is null ? Value.nullValue() : Value.object(object.prototype);
+    }
+    if (name == "dict") {
+        if (arguments.length != 1) throw new YshTypeError("dict() expects Dict or Obj");
+        if (arguments[0].kind == ValueKind.dict) return Value.dictRef(arguments[0].dictValue.shallowCopy());
+        if (arguments[0].kind == ValueKind.objectValue) return Value.dictRef(arguments[0].objectValue.properties.shallowCopy());
+        throw new YshTypeError("dict() expects Dict or Obj");
     }
 
     switch (name) {
@@ -1101,6 +1202,109 @@ private long normalizeSearchEnd(long end, size_t length) {
     return value > n ? n : value;
 }
 
+private string evaluateReplacement(Value replacement, Memory mem, string dollarZero,
+        string[] positional = null, YshDict variables = null, bool changePositional = false) {
+    if (replacement.kind == ValueKind.stringValue) return replacement.stringValue;
+    auto closure = cast(YshExpression)replacement.callableValue;
+    auto previousZero = mem.argumentZero;
+    auto previousArguments = mem.shellArguments;
+    mem.argumentZero = dollarZero;
+    if (changePositional) mem.shellArguments = positional;
+    auto frame = mem.currentFrame;
+    import yshd.state : Cell;
+    Cell[string] previousCells;
+    if (variables !is null) foreach (name, value; variables) {
+        auto old = name in frame.cells;
+        previousCells[name] = old is null ? null : *old;
+        frame.cells[name] = new Cell(value);
+    }
+    scope (exit) {
+        mem.argumentZero = previousZero;
+        mem.shellArguments = previousArguments;
+        foreach (name, cell; previousCells) {
+            if (cell is null) frame.cells.remove(name);
+            else frame.cells[name] = cell;
+        }
+    }
+    auto value = closure.eval(mem);
+    if (value.kind != ValueKind.stringValue) throw new YshTypeError("Expected expr to eval to a Str");
+    return value.stringValue;
+}
+
+private Value replaceString(string source, Value[] arguments, YshDict named, Memory mem) {
+    if (arguments.length != 2 || named.length > (named.contains("count") ? 1 : 0))
+        throw new YshTypeError("replace() expects pattern, substitution, and optional count");
+    auto pattern = arguments[0];
+    auto replacement = arguments[1];
+    if (pattern.kind != ValueKind.stringValue && pattern.kind != ValueKind.eggexValue)
+        throw new YshTypeError("Expected pattern to be Eggex or Str");
+    if (replacement.kind != ValueKind.stringValue && replacement.kind != ValueKind.expressionValue)
+        throw new YshTypeError("Expected substitution to be Str or Expr");
+    long count = -1;
+    if (auto supplied = named.find("count")) {
+        if (supplied.kind != ValueKind.integer) throw new YshTypeError("count should be Int");
+        count = bigIntToLong(supplied.integerValue, "count should fit Int");
+    }
+    if (!count) return Value.str(source);
+    string result;
+    size_t position;
+    long replaced;
+    if (pattern.kind == ValueKind.stringValue) {
+        auto old = pattern.stringValue;
+        // The reference evaluates a Str-pattern template once, even when
+        // there are no occurrences. Eggex templates run for each match.
+        auto substitution = evaluateReplacement(replacement, mem, old);
+        while (count < 0 || replaced < count) {
+            ptrdiff_t found = -1;
+            foreach (index; position .. source.length + 1) {
+                if (old.length <= source.length - index && source[index .. index + old.length] == old) {
+                    found = index;
+                    break;
+                }
+            }
+            if (found < 0) break;
+            result ~= source[position .. found] ~ substitution;
+            position = found + old.length;
+            ++replaced;
+            if (!old.length) {
+                if (position == source.length) break;
+                result ~= source[position++];
+            }
+        }
+    } else {
+        if (source.indexOf('\0') >= 0)
+            throw new StructuredError(3, "cannot replace by eggex on a string with NUL bytes", new YshDict());
+        while (position < source.length && (count < 0 || replaced < count)) {
+            auto match = pattern.regexValue.search(source, position, false, false);
+            if (match is null) break;
+            string[] positional;
+            string dollarZero;
+            auto variables = new YshDict();
+            foreach (index, start; match.starts) {
+                auto value = Value.str(start < 0 ? "" : source[start .. match.ends[index]]);
+                if (index && index <= match.conversions.length && match.conversions[index - 1] !is null)
+                    value = match.conversions[index - 1](value);
+                auto text = stringify(value);
+                if (!index) dollarZero = text;
+                else {
+                    positional ~= text;
+                    if (index <= match.names.length && match.names[index - 1].length)
+                        variables.set(match.names[index - 1], value);
+                }
+            }
+            auto substitution = evaluateReplacement(replacement, mem, dollarZero, positional, variables, true);
+            auto start = match.starts[0];
+            auto end = match.ends[0];
+            if (position == end)
+                throw new StructuredError(3, "eggex should never match the empty string", new YshDict());
+            result ~= source[position .. start] ~ substitution;
+            position = end;
+            ++replaced;
+        }
+    }
+    return Value.str(result ~ source[position .. $]);
+}
+
 private bool valueMethodExists(ValueKind kind, string name) {
     switch (kind) {
     case ValueKind.matchValue:
@@ -1119,6 +1323,7 @@ private bool valueMethodExists(ValueKind kind, string name) {
         case "find":
         case "findLast":
         case "contains":
+        case "replace":
         case "upper":
         case "lower":
         case "search":
@@ -1177,6 +1382,8 @@ private Value callValueMethod(Value receiver, string name,
         return Value.nullValue();
     case ValueKind.stringValue:
         auto s = receiver.stringValue;
+
+        if (name == "replace") return replaceString(s, arguments, named, mem);
 
         if (name == "search" || name == "leftMatch") {
             import yshd.eggex : searchEre;
@@ -1537,8 +1744,89 @@ private Value callValueMethod(Value receiver, string name,
     case ValueKind.functionValue:
     case ValueKind.procValue:
     case ValueKind.eggexValue:
+    case ValueKind.expressionValue:
+    case ValueKind.commandValue:
+    case ValueKind.objectValue:
+    case ValueKind.builtinFunctionValue:
+    case ValueKind.boundFunctionValue:
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
         throw new YshTypeError("value has no method " ~ name);
     }
+}
+
+private Value objectAttribute(Value receiver, string name, bool mutating) {
+    auto object = receiver.objectValue;
+    if (!mutating) if (auto own = object.properties.find(name)) return *own;
+    auto prototype = object.prototype;
+    auto inherited = prototype is null ? null : prototype.find(mutating ? "M/" ~ name : name);
+    if (inherited is null) throw new YshError("Attribute not found on Obj prototype: " ~ name);
+    if (inherited.kind == ValueKind.functionValue || inherited.kind == ValueKind.builtinFunctionValue)
+        return Value.bound(new YshObjectMethod(receiver, *inherited));
+    return *inherited;
+}
+
+private class YshObjectMethod {
+    Value receiver;
+    Value target;
+    this(Value receiver, Value target) { this.receiver = receiver; this.target = target; }
+    Value invoke(Value[] arguments, YshDict named, Memory mem) {
+        return invokeFunction(target, [receiver] ~ arguments, named, mem);
+    }
+}
+
+private class YshNativeFunction {
+    string name;
+    this(string name) { this.name = name; }
+    Value invoke(Value[] arguments, YshDict named, Memory mem) {
+        if (name == "Obj.new") {
+            if (arguments.length < 1 || arguments.length > 2 || (named !is null && named.length))
+                throw new YshTypeError("Obj.new() expects properties and optional prototype");
+            return callBuiltinFunction("Object", [arguments.length == 2 ? arguments[1] : Value.nullValue(), arguments[0]], null, mem);
+        }
+        if (name == "io.eval" || name == "io.evalExpr") {
+            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue || (named !is null && named.length))
+                throw new YshTypeError(name ~ "() expects one captured value");
+            if (name == "io.eval") {
+                if (arguments[1].kind != ValueKind.commandValue) throw new YshTypeError("io.eval() expects Command");
+                import yshd.program : YshCommand;
+                (cast(YshCommand)arguments[1].callableValue).eval(mem);
+                return Value.nullValue();
+            }
+            if (arguments[1].kind != ValueKind.expressionValue) throw new YshTypeError("io.evalExpr() expects Expr");
+            return (cast(YshExpression)arguments[1].callableValue).eval(mem);
+        }
+        return callBuiltinFunction(name, arguments, named, mem);
+    }
+}
+
+Value builtinFunctionValue(string name) {
+    return builtinFunctionName(name) ? Value.builtin(new YshNativeFunction(name)) : Value.nullValue();
+}
+
+/// Namespace objects use the same own-property/prototype rules as user Obj
+/// values. Keep them in builtin lookup, outside the user's lexical frames.
+Value[string] builtinNamespaces() {
+    Value[string] result;
+    auto objectFunctions = new YshDict();
+    objectFunctions.set("new", Value.builtin(new YshNativeFunction("Obj.new")));
+    result["Obj"] = Value.object(new YshObject(null, objectFunctions));
+    auto ioMethods = new YshDict();
+    ioMethods.set("M/eval", Value.builtin(new YshNativeFunction("io.eval")));
+    ioMethods.set("M/evalExpr", Value.builtin(new YshNativeFunction("io.evalExpr")));
+    result["io"] = Value.object(new YshObject(new YshObject(null, ioMethods), new YshDict()));
+    return result;
+}
+
+private Value invokeFunction(Value callee, Value[] arguments, YshDict named, Memory mem) {
+    if (callee.kind != ValueKind.functionValue && callee.kind != ValueKind.builtinFunctionValue && callee.kind != ValueKind.boundFunctionValue)
+        throw new YshTypeError("YSH expression call requires Func");
+    if (auto userFunction = cast(YshFunction)callee.callableValue) return userFunction.invoke(arguments, named, mem);
+    if (auto builtin = cast(YshNativeFunction)callee.callableValue) return builtin.invoke(arguments, named, mem);
+    if (auto objectMethod = cast(YshObjectMethod)callee.callableValue) return objectMethod.invoke(arguments, named, mem);
+    if (auto bound = cast(YshBoundMethod)callee.callableValue) return bound.invoke(arguments, named, mem);
+    if (auto pipeline = cast(YshPipelineFunction)callee.callableValue) return pipeline.invoke(arguments, named, mem);
+    throw new YshTypeError("Unknown callable value");
 }
 
 private class YshBoundMethod {
@@ -1571,13 +1859,14 @@ private class MethodExpr : Expr {
 
     override Value eval(Memory mem) {
         auto receiver = receiver_.eval(mem);
+        if (receiver.kind == ValueKind.objectValue) return objectAttribute(receiver, name_, mutating_);
         if (valueMethodExists(receiver.kind, name_)) {
-            return Value.callable(new YshBoundMethod(
+            return Value.bound(new YshBoundMethod(
                 receiver, name_, mutating_));
         }
 
         if (builtinFunctionName(name_)) {
-            return Value.callable(new YshPipelineFunction(receiver, name_));
+            return Value.bound(new YshPipelineFunction(receiver, name_));
         }
         throw new YshTypeError("unknown method or chained function " ~ name_);
     }
@@ -1606,10 +1895,9 @@ Value delegate(Value) resolveCaptureConversion(string name, Memory mem) {
         return (Value argument) { return callBuiltinFunction(name, [argument], null, mem); };
     }
     auto value = mem.get(name);
-    auto converter = value.kind == ValueKind.functionValue
-        ? cast(YshFunction)value.callableValue : null;
-    if (converter is null) throw new YshTypeError("Capture converter requires Func");
-    return (Value argument) { return converter.invoke([argument], null, mem); };
+    if (value.kind != ValueKind.functionValue && value.kind != ValueKind.builtinFunctionValue)
+        throw new YshTypeError("Capture converter requires Func");
+    return (Value argument) { return invokeFunction(value, [argument], null, mem); };
 }
 
 private class CallExpr : Expr {
@@ -1634,22 +1922,7 @@ private class CallExpr : Expr {
         }
         auto callee = callee_.eval(mem);
         auto args = arguments_.eval(mem);
-        if (callee.kind != ValueKind.functionValue) {
-            throw new YshTypeError("YSH expression call requires Func");
-        }
-        auto userFunction = cast(YshFunction)callee.callableValue;
-        if (userFunction !is null) {
-            return userFunction.invoke(args.positional, args.named, mem);
-        }
-        auto boundMethod = cast(YshBoundMethod)callee.callableValue;
-        if (boundMethod !is null) {
-            return boundMethod.invoke(args.positional, args.named, mem);
-        }
-        auto pipelineFunction = cast(YshPipelineFunction)callee.callableValue;
-        if (pipelineFunction !is null) {
-            return pipelineFunction.invoke(args.positional, args.named, mem);
-        }
-        throw new YshTypeError("unknown callable value");
+        return invokeFunction(callee, args.positional, args.named, mem);
     }
 }
 
@@ -1667,6 +1940,7 @@ private Value evalLeftObject(Expr expression, Memory mem,
 
     if (auto attribute = cast(AttributeExpr)expression) {
         auto object = evalLeftObject(attribute.object_, mem, assignmentScope);
+        if (object.kind == ValueKind.objectValue) return objectAttribute(object, attribute.name_, false);
         if (object.kind != ValueKind.dict) {
             throw new YshTypeError("attribute lookup expected Dict");
         }
@@ -2273,9 +2547,46 @@ private class Parser {
         return arguments;
     }
 
+    private string parseCommandFragment() {
+        auto start = current_.offset + 1;
+        auto previousStrings = lexer_.expressionStrings;
+        lexer_.expressionStrings = false;
+        advance();
+        int depth;
+        while (current_.kind != TokenKind.eof) {
+            if (current_.kind == TokenKind.rightParen && depth == 0) {
+                auto command = source_[start .. current_.offset];
+                lexer_.expressionStrings = previousStrings;
+                advance();
+                if (validateNested_) {
+                    import yshd.program : parseProgram;
+                    parseProgram(command, ReturnMode.shell, options_);
+                }
+                return command;
+            }
+            if (current_.kind == TokenKind.leftParen) ++depth;
+            else if (current_.kind == TokenKind.rightParen) --depth;
+            advance();
+        }
+        throw new ParseError("Unterminated command fragment");
+    }
+
     private Expr parseAtom() {
         auto token = current_;
         switch (token.kind) {
+        case TokenKind.caret:
+            advance();
+            if (current_.kind == TokenKind.leftBracket) {
+                advance();
+                auto expression = parseTest();
+                require(TokenKind.rightBracket, "]");
+                return new ExpressionClosureExpr(expression);
+            }
+            if (current_.kind == TokenKind.doubleQuoted)
+                return new ExpressionClosureExpr(parseAtom());
+            if (current_.kind == TokenKind.leftParen)
+                return new CommandClosureExpr(parseCommandFragment());
+            throw new ParseError("Expected [, double quote, or ( after ^");
         case TokenKind.slash:
             import yshd.eggex : parseEggex;
             auto regex = parseEggex(source_[token.offset .. $], options_);
@@ -2338,6 +2649,29 @@ private class Parser {
             return new VariableExpr(token.text);
         case TokenKind.dollar:
             advance();
+            if (current_.kind == TokenKind.name || current_.kind == TokenKind.integer) {
+                auto word = source_[token.offset .. current_.offset + current_.text.length];
+                advance();
+                return new DoubleQuotedExpr(word);
+            }
+            if (current_.kind == TokenKind.leftBrace) {
+                int depth = 1;
+                advance();
+                while (current_.kind != TokenKind.eof && depth) {
+                    if (current_.kind == TokenKind.leftBrace) ++depth;
+                    if (current_.kind == TokenKind.rightBrace) --depth;
+                    if (!depth) break;
+                    advance();
+                }
+                if (depth) throw new ParseError("Unterminated braced substitution");
+                auto word = source_[token.offset .. current_.offset + 1];
+                advance();
+                if (validateNested_) {
+                    import yshd.program : validateDoubleQuoted;
+                    validateDoubleQuoted(word, options_);
+                }
+                return new DoubleQuotedExpr(word);
+            }
             if (current_.kind == TokenKind.doubleQuoted && current_.offset == token.offset + 1) {
                 auto content = current_.text;
                 advance();
@@ -2559,6 +2893,14 @@ private class NameResolvedPlace : ResolvedPlace {
     }
 }
 
+private class ObjectAttributeResolvedPlace : ResolvedPlace {
+    Value object;
+    string name;
+    this(Value object, string name) { this.object = object; this.name = name; }
+    override Value read() { return objectAttribute(object, name, false); }
+    override void assign(Value value) { object.objectValue.properties.set(name, value); }
+}
+
 private class ContainerResolvedPlace : ResolvedPlace {
     private Value object_;
     private Value index_;
@@ -2599,6 +2941,13 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.placeValue:
         case ValueKind.eggexValue:
         case ValueKind.matchValue:
+        case ValueKind.expressionValue:
+        case ValueKind.commandValue:
+        case ValueKind.objectValue:
+        case ValueKind.builtinFunctionValue:
+        case ValueKind.boundFunctionValue:
+        case ValueKind.bashArrayValue:
+        case ValueKind.bashAssocValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -2625,6 +2974,7 @@ ResolvedPlace resolvePlace(string source, Memory mem,
     if (auto attribute = cast(AttributeExpr)target) {
         auto object = evalLeftObject(
             attribute.object_, mem, assignmentScope);
+        if (object.kind == ValueKind.objectValue) return new ObjectAttributeResolvedPlace(object, attribute.name_);
         return new ContainerResolvedPlace(object, Value.str(attribute.name_));
     }
 

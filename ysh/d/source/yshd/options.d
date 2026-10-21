@@ -80,6 +80,7 @@ class ShellOptions {
     }
 
     void setOld(string name, bool enabled) {
+        if (isGroup(name)) { set(name, enabled); return; }
         auto index = number(name);
         if (spec(index).builtin != "set") throw new UsageError("invalid set option: " ~ name);
         set(index, enabled);

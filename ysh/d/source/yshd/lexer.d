@@ -1,6 +1,7 @@
 module yshd.lexer;
 
 import std.format : format;
+import std.string : indexOf;
 
 import yshd.value : YshError;
 import yshd.options : ShellOptions;
@@ -143,6 +144,13 @@ class Lexer {
     private bool commandStart_ = true;
     private bool expressionCommand_;
     private size_t expressionDepth_;
+    private struct Boundary {
+        TokenKind close;
+        bool parameter;
+        bool expression;
+    }
+    private Boundary[] boundaries_;
+    private Token previousToken_;
     private HereDocument[] pendingDocuments_;
     HereDocument[size_t] hereDocuments;
 
@@ -172,6 +180,8 @@ class Lexer {
         auto savedStart = commandStart_;
         auto savedExpression = expressionCommand_;
         auto savedDepth = expressionDepth_;
+        auto savedBoundaries = boundaries_.dup;
+        auto savedPrevious = previousToken_;
         auto savedPending = pendingDocuments_.dup;
         auto savedDocuments = hereDocuments.dup;
         scope (exit) {
@@ -179,6 +189,8 @@ class Lexer {
             commandStart_ = savedStart;
             expressionCommand_ = savedExpression;
             expressionDepth_ = savedDepth;
+            boundaries_ = savedBoundaries;
+            previousToken_ = savedPrevious;
             pendingDocuments_ = savedPending;
             hereDocuments = savedDocuments;
         }
@@ -187,6 +199,19 @@ class Lexer {
 
     Token next() {
         auto token = nextToken();
+        auto boundary = boundaries_.length ? boundaries_[$ - 1]
+            : Boundary(TokenKind.eof, false, !emitNewlines_ || expressionCommand_);
+        bool substitution = previousToken_.kind == TokenKind.dollar && previousToken_.offset + 1 == token.offset;
+        if (token.kind == TokenKind.leftBrace || token.kind == TokenKind.leftBracket || token.kind == TokenKind.leftParen) {
+            auto close = token.kind == TokenKind.leftBrace ? TokenKind.rightBrace
+                : token.kind == TokenKind.leftBracket ? TokenKind.rightBracket : TokenKind.rightParen;
+            if (substitution) {
+                boundary.parameter = token.kind == TokenKind.leftBrace;
+                boundary.expression = token.kind == TokenKind.leftBracket;
+            }
+            boundaries_ ~= Boundary(close, boundary.parameter, boundary.expression);
+        } else if (boundaries_.length && token.kind == boundaries_[$ - 1].close) --boundaries_.length;
+        previousToken_ = token;
         if (!emitNewlines_) return token;
         if (commandStart_) {
             expressionCommand_ = token.kind == TokenKind.varKeyword || token.kind == TokenKind.constKeyword ||
@@ -516,6 +541,8 @@ class Lexer {
             return Token(TokenKind.question, "?", start);
         case ';':
             return Token(TokenKind.semicolon, ";", start);
+        case '#':
+            return Token(TokenKind.name, "#", start);
         default:
             throw new LexError(format("unexpected byte '%s' at byte %s", c, start));
         }
@@ -545,7 +572,10 @@ class Lexer {
                 continue;
             }
 
-            if (c == '#') {
+            auto boundary = boundaries_.length ? boundaries_[$ - 1]
+                : Boundary(TokenKind.eof, false, !emitNewlines_ || expressionCommand_);
+            bool wordBoundary = position_ == 0 || " \t\r\n;|&()<>".indexOf(position_ ? input_[position_ - 1] : ' ') >= 0;
+            if (c == '#' && !boundary.parameter && (boundary.expression || wordBoundary)) {
                 while (position_ < input_.length && input_[position_] != '\n') {
                     ++position_;
                 }

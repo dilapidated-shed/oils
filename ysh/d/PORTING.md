@@ -158,7 +158,83 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: Eggex values and string grammar, 2026-10-21
+## Current host checkpoint: native control, calls and objects, 2026-10-21
+
+The unchanged inherited harness now reports **611 assertion matches and 508
+failures across 1,119 cases**: 95 additional matches over published source
+`8787979709fb5f81ae73f24cdd9c5a88ad3e757a`, with no previous match regressed
+after an original-limit repeat described below. This remains an incomplete
+translation; the inherited acceptance requirement has not passed.
+
+Retained double-bracket conditions have an unevaluated command AST, lazy
+logical operands, quote-aware glob/ERE patterns, match registers and the
+BASH_REMATCH expansion. Retained if/then/elif/else/fi now shares the branch
+evaluator with brace-form if. Structural scanning treats compound commands
+as opaque spans, including nested branches and here-document data, and all
+branches receive syntax validation before evaluation. This does not complete
+retained arithmetic conditions, file operators or the entire shell grammar.
+
+Proc signatures now have word, typed positional, named and block groups,
+defaults evaluated at definition, rest arguments, annotation syntax and
+duplicate-name checks. Calls use the same typed-argument parser as functions
+and builtins. The inherited named binder's remaining-key count comparison is
+preserved. Captured Expr and Command values retain lexical/module frames.
+Native io eval/evalExpr support their default call forms; their named options,
+the remaining I/O methods and stdin iteration are not complete.
+
+Str.replace implements literal and Eggex patterns, eager strings and lazy
+expression templates, count limits, converted/named captures, temporary
+positional arguments, lexical scope, and restoration on errors. Retained
+shell arguments are distinct from ARGV. An earlier D-only producer test
+incorrectly expected set -- to overwrite ARGV; it now checks the reference's
+separate positional/list states. No inherited assertion was changed.
+
+Obj values now implement own-property/prototype lookup, bound Func/BuiltinFunc
+methods, mutating-method lookup, property mutation, property views/copies and
+invokable procs with self binding. Builtin and bound functions have separate
+value variants and stable builtin lookup across calls. Obj/ io namespaces use
+the same object rules as user values. Ctx push/set/emit and append execute
+natively; context stacks unwind after errors and propagate through calls.
+Object reflection, index metamethods, complete method chaining and namespace
+initialization remain open.
+
+Retained BashArray/BashAssoc values have distinct container representations,
+sparse assignment, compound initialization, append and expansion paths.
+Assignments on typed values are rejected by the actual retained assignment
+path. Full shell arithmetic/index grammar, declarations and array operations
+remain incomplete. Hash comment recognition now respects parameter, command
+and expression boundaries, including ${#array[@]}. For-loop grammar checks and
+the no_parse_bare_word consumer follow the retained parser.
+
+Final focused assertion results are regex **29/29**, regex API **40/40**, strings
+**29/29**, contexts **8/8**, objects **13/15**, procs **27/38**, for **18/20**,
+JSON **59/64**, case **18/18**, func **26/26**, Dict **7/7**, and expression
+arithmetic **30/30**. These are assertion counts, not complete subsystem
+qualification. Shared specs, static-transitive AI-CI, managed admission and
+physical targets remain unqualified.
+
+The first full repeat recorded 610 matches, 508 failures and one timeout in
+the boolean fixture's case 4, which launches the original Python comparison
+programs. A complete repeat of that unchanged fixture at the original three
+seconds passed case 4 and retained its existing case 5 failure. The final
+ledger substitutes that complete fixture repeat; the initial case ledger is
+preserved. An earlier intermediate run's eight changed expected-error outcomes
+were repaired by implementing their missing operations, then all 81 fixtures
+were repeated. No timeout or failure allowance was added.
+
+Pinned Icky DMD compiles D source tree
+`cd20799cccb1d61cfbd5e84f19976bf8979a54ad`; host binary SHA-256 is
+`b468cb0770654e6572a2b6943b53e29f37637914792fcb245d4bf64c4e5a7ed0`.
+All 22 CLI/module suites, 21 library suites and the full existing owner smoke
+sequence pass. Dynamic dependencies remain libc, libgcc_s and the loader.
+This is not a proof about every static/transitive dependency.
+
+See [host qualification](qualification/inherited-host-native-control-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-native-control-2026-10-21.tsv),
+[case results](qualification/inherited-cases-native-control-2026-10-21.tsv), and
+[initial full-run results](qualification/inherited-cases-native-control-initial-2026-10-21.tsv).
+
+## Previous host checkpoint: Eggex values and string grammar, 2026-10-21
 
 The unchanged inherited harness reports **516 assertion matches and 603
 failures across all 1,119 cases**, with no timeout. This adds 81 matches over

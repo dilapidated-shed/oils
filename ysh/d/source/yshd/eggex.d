@@ -15,6 +15,10 @@ import yshd.value : Value, ValueKind, YshError, YshTypeError, FatalRuntimeError,
 
 private enum NodeKind { literal, primitive, sequence, alternate, repeat, group, splice, charClass }
 
+class EreError : YshError {
+    this(string message) { super(message, 2); }
+}
+
 private class Node {
     NodeKind kind;
     string text;
@@ -117,9 +121,9 @@ class Eggex : YshRegex {
         return cachedEre;
     }
 
-    override RegexMatch search(string subject, long position = 0, bool leftMatch = false) {
+    override RegexMatch search(string subject, long position = 0, bool leftMatch = false, bool useNotBol = true) {
         auto ere = asEre();
-        return searchEre(ere, flags, subject, position, leftMatch, captures);
+        return searchEre(ere, flags, subject, position, leftMatch, captures, useNotBol);
     }
 
     bool matches(Value subject, Memory mem) {
@@ -131,7 +135,7 @@ class Eggex : YshRegex {
 }
 
 RegexMatch searchEre(string ere, int flags, string subject, long position = 0,
-        bool leftMatch = false, RegexMatch captures = null) {
+        bool leftMatch = false, RegexMatch captures = null, bool useNotBol = true) {
     if (ere.indexOf('\0') >= 0 || subject.indexOf('\0') >= 0)
         throw new YshError("POSIX regex matching cannot contain NUL bytes");
     if (position < 0) throw new YshError("Regex search position cannot be negative");
@@ -143,7 +147,7 @@ RegexMatch searchEre(string ere, int flags, string subject, long position = 0,
     scope (exit) regfree(&compiled);
     auto matches = new regmatch_t[compiled.re_nsub + 1];
     result = regexec(&compiled, subject[position .. $].toStringz(), matches.length, matches.ptr,
-        leftMatch || position == 0 ? 0 : REG_NOTBOL);
+        leftMatch || position == 0 || !useNotBol ? 0 : REG_NOTBOL);
     if (result == reg_errcode_t._REG_NOMATCH) return null;
     if (result != 0) regexError(result, &compiled);
     auto state = new RegexMatch();
@@ -162,7 +166,7 @@ RegexMatch searchEre(string ere, int flags, string subject, long position = 0,
 private void regexError(int code, regex_t* compiled) {
     auto message = new char[regerror(code, compiled, null, 0)];
     regerror(code, compiled, message.ptr, message.length);
-    throw new ParseError("Invalid ERE: " ~ message[0 .. $ - 1].idup);
+    throw new EreError("Invalid ERE: " ~ message[0 .. $ - 1].idup);
 }
 
 private string literalEre(string text) {
