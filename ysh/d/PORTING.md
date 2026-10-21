@@ -158,7 +158,53 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: attribute blocks and IFS splitting, 2026-10-21
+## Current host checkpoint: directory stack and shell bindings, 2026-10-21
+
+The inherited diagnostic now reports **714 assertion matches and 405 failures
+across 1,119 cases**. It gains eight matches over
+`8d76a06405994d2b7a4f422608e569f85381686f` and loses no prior match.
+The initial serial run recorded 713 matches, 404 failures and two timeouts.
+Whole-fixture repeats of ysh-assign and ysh-env, at the unchanged three-second
+limit, reproduced neither timeout: assignment case 20 matched and environment
+case 9 failed its assertions. Both initial and repeat rows are retained.
+Fixtures, harness, allowances and the test-only oracle are unchanged.
+
+Shvar translates builtin/pure_ysh.py's temporary LocalOnly binding context.
+It evaluates the fragment in the current frame, restores overridden variables
+across structured errors and returns, removes temporary names and retains
+other bindings created by the body. It accepts retained Command arguments.
+
+The native directory stack follows builtin/dirs_osh.py. Cd replaces its top
+entry; cd blocks push and pop through the same stack as pushd/popd. A pushd
+inside a block therefore affects restoration. Dirs implements clear, numbered,
+per-line and literal-path views with reference flag priority. Pwd uses saved
+logical state, with physical resolution on request. Tests exercise symlinks,
+stack mutation, failed restoration after dirs -c and nonlocal unwinding.
+
+Shell special parameters share native state: status, argument count, root PID,
+background PID slot, option letters and positional values. Expression status
+is a Str, unbraced numeric parameters consume one digit, and bare $name is
+rejected in expressions. Array-to-string rules distinguish quoted $* from
+scalar $@/$*, including strict_array. Root PID remains stable in captures.
+Background job execution itself remains untranslated.
+
+Eval matches **28/31**, scope **12/26**, bugs **12/20** and blocks **9/16**.
+These counts do not qualify complete subsystems or the whole translation.
+Pinned Icky DMD compiles source tree
+`49ab3699a1877b24550296135388d50826d3618f`; host binary SHA-256 is
+`cb461eb12ae88f7927f9ceec79bfa129ef8e5dcbc629a7ce64686956d1319237`.
+All 28 CLI/module suites, 27 library suites and the existing owner smoke pass.
+Shared specs, static-transitive AI-CI, managed admission and physical targets
+remain unqualified. Modules/reflection, full shell words/builtins, jobs/traps
+and interactive behavior still need translation.
+
+See [host qualification](qualification/inherited-host-directory-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-directory-2026-10-21.tsv),
+[final case results](qualification/inherited-cases-directory-2026-10-21.tsv),
+[initial case results](qualification/inherited-cases-directory-initial-2026-10-21.tsv)
+and [whole-fixture repeats](qualification/inherited-cases-directory-repeat-2026-10-21.tsv).
+
+## Previous host checkpoint: attribute blocks and IFS splitting, 2026-10-21
 
 The unchanged inherited harness reports **706 assertion matches and 413
 failures across 1,119 cases**, with no timeouts. This serial run adds 24

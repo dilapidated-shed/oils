@@ -6,6 +6,7 @@ import std.stdio : File, stderr, stdin, stdout;
 
 import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError, YshPlace;
 import yshd.options : ShellOptions;
+import yshd.dirs : DirectoryStack;
 
 enum ReturnMode { shell, functionValue, procValue }
 
@@ -134,7 +135,47 @@ class Memory {
     // core/state.py:Mem keeps $0 separate from mutable/global/local ARGV.
     string argumentZero = "ysh-d";
     string workingDirectory;
+    DirectoryStack directoryStack;
     string[] shellArguments;
+    long rootPid;
+    long lastBackgroundPid = -1;
+
+    string simpleShellVariable(char name, bool quoted = false) {
+        import std.conv : to;
+        import std.array : join;
+        switch (name) {
+        case '?': return to!string(lastStatus);
+        case '#': return to!string(shellArguments.length);
+        case '$': return to!string(rootPid);
+        case '!':
+            if (lastBackgroundPid >= 0) return to!string(lastBackgroundPid);
+            if (nounset) throw new FatalRuntimeError("Undefined special parameter $!");
+            return "";
+        case '@': case '*':
+            if (name != '*' || !quoted) {
+                if (options.get("strict_array"))
+                    throw new FatalRuntimeError("Illegal array word part (strict_array)");
+                return shellArguments.join(" ");
+            }
+            auto ifs = findDynamicCell("IFS");
+            string separator = " ";
+            if (ifs !is null) {
+                if (ifs.value.kind != ValueKind.stringValue)
+                    throw new FatalRuntimeError("IFS should be a string");
+                auto text = ifs.value.stringValue;
+                separator = text.length ? text[0 .. 1] : "";
+            }
+            return shellArguments.join(separator);
+        case '-':
+            string flags;
+            foreach (index, option; ["interactive", "errexit", "noglob", "noexec", "nounset", "verbose", "xtrace", "noclobber"])
+                if (options.get(option)) flags ~= "iefnuvxC"[index];
+            return flags;
+        default:
+            assert(name >= '0' && name <= '9');
+            return name == '0' ? argumentZero : shellArgument(name - '0');
+        }
+    }
 
     string shellArgument(size_t index) {
         if (index && index <= shellArguments.length) return shellArguments[index - 1];
@@ -168,6 +209,9 @@ class Memory {
         options = new ShellOptions();
         import std.file : getcwd;
         workingDirectory = getcwd();
+        import core.sys.posix.unistd : getpid;
+        rootPid = getpid();
+        directoryStack = new DirectoryStack();
         globalFrame = new Frame();
         currentFrame = globalFrame;
         frameStack = [globalFrame];

@@ -20,6 +20,7 @@ import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
 import yshd.var_check : VariableChecker, DefinitionKind;
 import yshd.eval_scope : EvalOptions, withEvalBindings;
+import yshd.dirs : setDirectory, popDirectory, physicalDirectory, runDirectoryBuiltin;
 import yshd.pattern : ScalarWord, matchesShellPattern;
 import yshd.eggex : Eggex, parseEggex, EreError;
 import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
@@ -1995,6 +1996,48 @@ class ProgramParser {
         }
 
         if (pipeline.length == 0) {
+            if (commandName == "shvar") {
+                try {
+                    auto arguments = evalArguments();
+                    if (!arguments.hasBlock) throw new UsageError("shvar requires a Command block");
+                    if (arguments.block.kind != ValueKind.commandValue)
+                        throw new YshTypeError("shvar block should be Command");
+                    if (arguments.positional.length || (arguments.named !is null && arguments.named.length))
+                        throw new YshTypeError("shvar expects only a block argument");
+                    size_t start = 1;
+                    if (argv.length > start && argv[start] == "--") ++start;
+                    else if (argv.length > start && argv[start].length > 1 && argv[start][0] == '-')
+                        throw new UsageError("shvar: invalid flag " ~ argv[start]);
+                    if (argv.length == start) throw new UsageError("shvar: expected name=value");
+                    EvalOptions options;
+                    options.variables = new YshDict();
+                    foreach (word; argv[start .. $]) {
+                        auto equal = word.indexOf('=');
+                        if (equal < 0) throw new UsageError("shvar: expected name=value");
+                        options.variables.set(word[0 .. equal], Value.str(word[equal + 1 .. $]));
+                    }
+                    withEvalBindings(mem, options, () {
+                        (cast(YshCommand)arguments.block.callableValue).evalInCurrentFrame(mem);
+                        return Value.nullValue();
+                    });
+                    mem.lastStatus = 0;
+                } catch (UsageError error) {
+                    mem.errorFile.writeln("ysh-d: ", error.msg);
+                    mem.lastStatus = 2;
+                }
+                return;
+            }
+            if (commandName == "pushd" || commandName == "popd" || commandName == "dirs" || commandName == "pwd") {
+                try {
+                    if (typedArguments !is null || hasBlock)
+                        throw new UsageError(commandName ~ " does not accept typed arguments");
+                    mem.lastStatus = runDirectoryBuiltin(commandName, argv[1 .. $], mem);
+                } catch (UsageError error) {
+                    mem.errorFile.writeln("ysh-d: ", error.msg);
+                    mem.lastStatus = 2;
+                }
+                return;
+            }
             if (commandName == "redir" || commandName == "fopen") {
                 auto arguments = evalArguments();
                 if (!arguments.hasBlock) throw new UsageError(commandName ~ " requires a Command block");
@@ -2312,14 +2355,7 @@ class ProgramParser {
         import std.file : getcwd;
         auto previousDirectory = mem.workingDirectory;
         auto destination = isAbsolute(target) ? buildNormalizedPath(target) : buildNormalizedPath(previousDirectory, target);
-        if (physical) {
-            // Resolve symlinks before '..', as -P requires.
-            import core.stdc.stdlib : free;
-            import core.sys.posix.stdlib : realpath;
-            import std.string : toStringz, fromStringz;
-            auto resolved = realpath((isAbsolute(target) ? target : previousDirectory ~ "/" ~ target).toStringz(), null);
-            if (resolved !is null) { destination = fromStringz(resolved).idup; free(resolved); }
-        }
+        if (physical) destination = physicalDirectory(isAbsolute(target) ? target : previousDirectory ~ "/" ~ target);
         try {
             chdir(destination);
         } catch (Exception error) {
@@ -2327,25 +2363,28 @@ class ProgramParser {
             mem.lastStatus = 1;
             return;
         }
-        void setDirectory(string directory) {
-            mem.workingDirectory = directory;
-            mem.setGlobal("PWD", Value.str(directory));
-            mem.get("ENV").dictValue.set("PWD", Value.str(directory));
-        }
-        void restoreDirectory() {
-            try { chdir(previousDirectory); setDirectory(previousDirectory); }
-            catch (Exception error) { mem.errorFile.writeln("cd: ", error.msg); mem.lastStatus = 1; }
-        }
         if (hasBlock) {
+            mem.directoryStack.push(destination);
+            bool restoreFailed, restored;
+            void restoreDirectory() {
+                if (restored) return;
+                restored = true;
+                restoreFailed = !popDirectory(mem, "cd");
+            }
             scope (exit) restoreDirectory();
-            setDirectory(destination);
+            setDirectory(mem, destination);
             .executeProgram(body, mem, bodyAttributeScope);
+            // Restore before deciding the builtin's status. Nonlocal control
+            // still runs the same cleanup through the scope guard.
+            restoreDirectory();
+            mem.lastStatus = restoreFailed ? 1 : 0;
         } else {
-            setDirectory(destination);
+            setDirectory(mem, destination);
             mem.setGlobal("OLDPWD", Value.str(previousDirectory));
             mem.get("ENV").dictValue.set("OLDPWD", Value.str(previousDirectory));
+            mem.directoryStack.replace(destination);
+            mem.lastStatus = 0;
         }
-        mem.lastStatus = 0;
     }
 
     private string collectParameterDefault() {
@@ -3809,28 +3848,8 @@ class ProgramParser {
             }
 
             if (ch == '$' && position + 1 < content.length &&
-                    content[position + 1] == '?') {
-                if (!syntaxOnly_) result ~= to!string(mem.lastStatus);
-                position += 2;
-                continue;
-            }
-
-            if (ch == '$' && position + 1 < content.length &&
-                    content[position + 1] == '0') {
-                if (!syntaxOnly_) result ~= mem.argumentZero;
-                position += 2;
-                continue;
-            }
-
-            if (ch == '$' && position + 1 < content.length &&
-                    content[position + 1] >= '1' && content[position + 1] <= '9') {
-                if (!syntaxOnly_) result ~= mem.shellArgument(content[position + 1] - '0');
-                position += 2;
-                continue;
-            }
-
-            if (ch == '$' && position + 1 < content.length && content[position + 1] == '@') {
-                if (!syntaxOnly_) result ~= mem.shellArguments.join(" ");
+                    "0123456789?!@#$*-".indexOf(content[position + 1]) >= 0) {
+                if (!syntaxOnly_) result ~= mem.simpleShellVariable(content[position + 1], true);
                 position += 2;
                 continue;
             }
@@ -4031,6 +4050,13 @@ class ProgramParser {
 
     private string parseScalarSubstitution(Memory mem, ref size_t endOffset) {
         auto dollarOffset = current_.offset;
+        if (dollarOffset + 1 < source_.length &&
+                "0123456789?!@#$*-".indexOf(source_[dollarOffset + 1]) >= 0) {
+            auto name = source_[dollarOffset + 1];
+            endOffset = dollarOffset + 2;
+            moveTo(endOffset);
+            return syntaxOnly_ ? "" : mem.simpleShellVariable(name);
+        }
         advance();
         if (current_.offset != dollarOffset + 1) {
             throw new YshError("$ substitution must follow '$' without whitespace");
@@ -4064,17 +4090,6 @@ class ProgramParser {
                 return "";
             }
             return stringify(evaluate(expression, mem));
-        }
-        if (current_.kind == TokenKind.question) {
-            endOffset = current_.offset + 1;
-            advance();
-            return syntaxOnly_ ? "" : to!string(mem.lastStatus);
-        }
-        if (current_.kind == TokenKind.integer) {
-            auto number = current_.text;
-            endOffset = current_.offset + number.length;
-            advance();
-            return syntaxOnly_ ? "" : (number[0] == '0' ? mem.argumentZero : mem.shellArgument(number[0] - '0')) ~ number[1 .. $];
         }
         if (current_.kind != TokenKind.name) {
             throw new YshError("$ substitution expects a variable name or [expression]");

@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-706 assertion matches, 413 failures. The unchanged original harness, fixture
+714 assertion matches, 405 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-attribute-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-directory-2026-10-21.tsv).
 
 ## Source map
 
@@ -134,6 +134,13 @@ deferred execution and translates the reference's byte-based IFS splitter.
 The split/shSplit/maybe functions, ordered pipeline status and frame-variable
 display now execute natively. All 1,119 inherited cases were rerun with no
 regression: eval matches 26/31, function builtins 9/10 and procs 32/38.
+
+The directory continuation adds shvar binding restoration and a shared native
+directory stack for cd blocks, pushd, popd and dirs. Pwd uses the shell's saved
+logical directory. Shell special parameters now share native evaluation between
+words and expressions. Eval matches 28/31 and scope 12/26; the full inherited
+run and unchanged repeats retain all prior matches. Two initial timeouts and
+their same-limit whole-fixture repeats are preserved in the ledger.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

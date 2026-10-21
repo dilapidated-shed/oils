@@ -429,6 +429,12 @@ private class LiteralExpr : Expr {
 }
 
 
+private class ShellParameterExpr : Expr {
+    char name;
+    this(char name) { this.name = name; }
+    override Value eval(Memory mem) { return Value.str(mem.simpleShellVariable(name)); }
+}
+
 private class DoubleQuotedExpr : Expr {
     private string content_;
 
@@ -2714,12 +2720,19 @@ private class Parser {
             advance();
             return new VariableExpr(token.text);
         case TokenKind.dollar:
-            advance();
-            if (current_.kind == TokenKind.name || current_.kind == TokenKind.integer) {
-                auto word = source_[token.offset .. current_.offset + current_.text.length];
-                advance();
-                return new DoubleQuotedExpr(word);
+            // Simple substitutions consume exactly two bytes. In particular,
+            // $# must be recognized before the expression lexer sees a comment,
+            // and $10 means $1 followed by an integer token rather than ${10}.
+            if (token.offset + 1 < source_.length && "0123456789?!@#$*-".indexOf(source_[token.offset + 1]) >= 0) {
+                auto name = source_[token.offset + 1];
+                lastConsumedEnd_ = token.offset + 2;
+                lexer_ = new Lexer(source_, false, lastConsumedEnd_, true, options_);
+                current_ = lexer_.next();
+                return new ShellParameterExpr(name);
             }
+            advance();
+            if (current_.kind == TokenKind.name)
+                throw new ParseError("In expressions, remove $ and use " ~ current_.text);
             if (current_.kind == TokenKind.leftBrace) {
                 int depth = 1;
                 advance();
