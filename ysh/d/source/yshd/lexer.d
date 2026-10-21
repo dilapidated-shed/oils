@@ -3,6 +3,7 @@ module yshd.lexer;
 import std.format : format;
 
 import yshd.value : YshError;
+import yshd.options : ShellOptions;
 
 class LexError : YshError {
     this(string message) {
@@ -136,17 +137,34 @@ class Lexer {
     private string input_;
     private size_t position_;
     private bool emitNewlines_;
+    private bool recognizeHereDocuments_;
+    private ShellOptions options_;
+    bool expressionStrings;
     private bool commandStart_ = true;
     private bool expressionCommand_;
     private size_t expressionDepth_;
     private HereDocument[] pendingDocuments_;
     HereDocument[size_t] hereDocuments;
 
-    this(string input, bool emitNewlines = false, size_t startOffset = 0) {
+    this(string input, bool emitNewlines = false, size_t startOffset = 0, bool recognizeHereDocuments = true, ShellOptions options = null) {
         input_ = input;
         emitNewlines_ = emitNewlines;
+        recognizeHereDocuments_ = recognizeHereDocuments;
+        options_ = options;
+        expressionStrings = !emitNewlines;
         assert(startOffset <= input.length);
         position_ = startOffset;
+    }
+
+    @property size_t offset() const { return position_; }
+
+    private bool tripleQuoteAllowed() const {
+        if (!emitNewlines_) return true;
+        if (options_ !is null && !options_.get("parse_triple_quote")) return false;
+        if (expressionCommand_ || expressionDepth_ || position_ == 0) return true;
+        auto previous = input_[position_ - 1];
+        return previous == ' ' || previous == '\t' || previous == '\n' || previous == ';' ||
+            previous == '(' || previous == '<' || previous == '>' || previous == '$';
     }
 
     Token peek() {
@@ -176,7 +194,7 @@ class Lexer {
                 token.kind == TokenKind.equal || (token.kind == TokenKind.name && token.text == "call");
             commandStart_ = false;
         }
-        if (token.kind == TokenKind.shiftLeft && !expressionCommand_ && expressionDepth_ == 0)
+        if (recognizeHereDocuments_ && token.kind == TokenKind.shiftLeft && !expressionCommand_ && expressionDepth_ == 0)
             registerHereDocument(token.offset);
         if (token.kind == TokenKind.leftParen || token.kind == TokenKind.leftBracket ||
                 (expressionCommand_ && token.kind == TokenKind.leftBrace)) ++expressionDepth_;
@@ -257,12 +275,16 @@ class Lexer {
         auto start = position_;
         auto c = input_[position_];
 
-        if (c == '$' && position_ + 1 < input_.length && input_[position_ + 1] == '\'')
+        if (c == '$' && position_ + 1 < input_.length && input_[position_ + 1] == '\'') {
+            if (options_ !is null && options_.get("no_parse_osh"))
+                throw new LexError("ANSI strings are disabled by no_parse_osh; use b'' or u''");
             return ansiQuotedToken();
+        }
 
         if ((c == 'u' || c == 'b' || c == 'r') &&
                 position_ + 1 < input_.length &&
-                input_[position_ + 1] == '\'') {
+                input_[position_ + 1] == '\'' &&
+                (!emitNewlines_ || options_ is null || options_.get("parse_ysh_string"))) {
             return prefixedSingleQuotedToken(c);
         }
 
@@ -342,6 +364,9 @@ class Lexer {
         }
 
         if (c == '\'') {
+            if (position_ + 2 < input_.length && input_[position_ .. position_ + 3] == "'''" &&
+                    tripleQuoteAllowed())
+                return prefixedTripleQuotedToken(0);
             ++position_;
             auto contentStart = position_;
             while (position_ < input_.length && input_[position_] != '\'') {
@@ -352,6 +377,8 @@ class Lexer {
                     "unterminated single-quoted string at byte %s", start));
             }
             auto text = input_[contentStart .. position_];
+            if (expressionStrings) foreach (ch; text)
+                if (ch == '\\') throw new LexError("Backslash is ambiguous in implicit raw expression strings; use r''");
             ++position_;
             return Token(TokenKind.stringValue, text, start);
         }
@@ -657,12 +684,13 @@ class Lexer {
         case '\n':
             // Shell line continuation contributes no byte to the word.
             break;
+        case 'x':
         case 'y':
             if (position_ + 1 >= input_.length ||
                     !hexDigit(input_[position_]) ||
                     !hexDigit(input_[position_ + 1])) {
                 throw new LexError(format(
-                    "\\y requires exactly two hex digits at byte %s", start));
+                    "hex escape requires exactly two hex digits at byte %s", start));
             }
             auto byteValue = (hexValue(input_[position_]) << 4) |
                 hexValue(input_[position_ + 1]);
@@ -974,7 +1002,7 @@ class Lexer {
 
     private Token prefixedTripleQuotedToken(char prefix) {
         auto start = position_;
-        position_ += 4; // prefix and opening '''
+        position_ += prefix ? 4 : 3;
         auto contentStart = position_;
 
         while (position_ + 2 < input_.length) {
@@ -982,8 +1010,10 @@ class Lexer {
                 auto raw = input_[contentStart .. position_];
                 position_ += 3;
                 auto trimmed = trimTripleQuoted(raw);
+                if (!prefix && expressionStrings) foreach (ch; trimmed)
+                    if (ch == '\\') throw new LexError("Backslash is ambiguous in implicit raw expression strings; use r'''");
                 auto text = decodeJ8StringContent(
-                    trimmed, prefix, contentStart);
+                    trimmed, prefix ? prefix : 'r', contentStart);
                 return Token(TokenKind.stringValue, text, start);
             }
             ++position_;
@@ -999,7 +1029,7 @@ class Lexer {
     private Token prefixedSingleQuotedToken(char prefix) {
         auto start = position_;
         if (position_ + 3 < input_.length &&
-                input_[position_ + 1 .. position_ + 4] == "'''") {
+                input_[position_ + 1 .. position_ + 4] == "'''" && tripleQuoteAllowed()) {
             return prefixedTripleQuotedToken(prefix);
         }
         position_ += 2; // prefix and opening quote
@@ -1171,7 +1201,9 @@ class Lexer {
 
     private Token doubleQuotedToken() {
         auto start = position_;
-        ++position_;
+        bool triple = position_ + 2 < input_.length && input_[position_ .. position_ + 3] == "\"\"\"" &&
+            tripleQuoteAllowed();
+        position_ += triple ? 3 : 1;
         auto contentStart = position_;
         while (position_ < input_.length) {
             if (input_[position_] == '$' &&
@@ -1182,9 +1214,11 @@ class Lexer {
                 skipDollarDelimited(open, open == '[' ? ']' : ')', position_);
                 continue;
             }
-            if (input_[position_] == '"') {
+            if (input_[position_] == '"' && (!triple ||
+                    (position_ + 2 < input_.length && input_[position_ .. position_ + 3] == "\"\"\""))) {
                 auto text = input_[contentStart .. position_];
-                ++position_;
+                position_ += triple ? 3 : 1;
+                if (triple) text = trimTripleQuoted(text);
                 return Token(TokenKind.doubleQuoted, text, start);
             }
             if (input_[position_] == '\\') {

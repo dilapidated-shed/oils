@@ -206,6 +206,8 @@ private class ValueEncoder {
         case ValueKind.functionValue:
         case ValueKind.procValue:
         case ValueKind.placeValue:
+        case ValueKind.eggexValue:
+        case ValueKind.matchValue:
             // IDs and terminal styles await the rest of the value/display model.
             return text("<" ~ kindName(value) ~ ">");
         }

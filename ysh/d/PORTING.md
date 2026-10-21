@@ -158,6 +158,59 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
+## Current host checkpoint: Eggex values and string grammar, 2026-10-21
+
+The unchanged inherited harness reports **516 assertion matches and 603
+failures across all 1,119 cases**, with no timeout. This adds 81 matches over
+published source `f89091f29b70f47a0ae1188024eb5b3f0bf446e3`; no previous match
+regressed. All remaining whole-shell requirements and independent acceptance
+boundaries remain open.
+
+Eggex literals now evaluate to D runtime values. Evaluation snapshots string
+and Eggex splices and capture-conversion functions; ERE lowering remains lazy.
+Flag compatibility is checked at evaluation, including canonical aliases and
+translation preferences. POSIX matching supplies the reference's byte offsets,
+named/positional captures, optional unmatched captures, and deferred conversion
+on each group retrieval. `~` updates or clears the match register; `!~` preserves
+it. `Str.search()`, `Str.leftMatch()` and Match group/start/end methods share
+that implementation. Character-class terms retain the distinction between
+byte escapes and Unicode escapes, including the reference's NUL/high-byte
+errors. No Python, generated C++, or other interpreter evaluates these values.
+
+Added identity and glob comparisons and floatsEqual(), preserved scalar alias
+identity, and corrected the reference status of invalid approximate equality.
+Encoding failures now identify their value type and cyclic container identity.
+Regex case matching continues to use the same Eggex implementation.
+
+Expression collectors ask the actual atom parser to consume Eggex and word
+array literals, preserving internal semicolons and multiline data. Explicit
+lexical string contexts keep shell-word quoting separate from expression
+quoting. Parse options reach the expression, command and nested validators;
+ANSI strings follow no_parse_osh, command prefixes follow parse_ysh_string,
+and command triples follow parse_triple_quote. Added implicit triples and
+explicit $-prefixed double quotes, triple-string concatenation rejection and
+the here-string rule that omits its extra newline only for a triple-quoted
+operand. String searches use byte slices rather than Unicode reverse traversal.
+
+The focused results are regex **27/29**, regex API **23/40**, regex byte/Unicode
+cases **13/15**, string **28/29**, and JSON/J8 **58/64**. Case remains 18/18 and
+func remains 26/26. The outstanding regex cases require retained [[ ... ]]
+conditions. Typed proc arguments and lazy expression replacement remain regex
+API dependencies; retained if/then/fi remains a string-fixture dependency.
+These counts are assertion matches, not a declaration of complete translation.
+
+Pinned Icky DMD compiles D source tree
+`591ccedd639bd8f9d41fe03e5ce4e7f9cb56012c`; host binary SHA-256 is
+`c645a6029d6398a299b9895c3ce7624f3434465eb1ccc0a263d6984b64c7c381`.
+All 19 CLI/module suites, 18 library suites and the full owner smoke sequence
+pass. Earlier diagnostics (504 matches, including two string regressions) are
+retained separately from the final run. Both regressions were repaired and the
+entire unchanged suite was repeated; no earlier failure is relabeled a pass.
+
+See [host qualification](qualification/inherited-host-regex-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-regex-2026-10-21.tsv), and
+[case results](qualification/inherited-cases-regex-2026-10-21.tsv).
+
 ## Current host checkpoint: decoding, Places and here-documents, 2026-10-21
 
 The unchanged inherited harness reports **435 assertion matches and 684

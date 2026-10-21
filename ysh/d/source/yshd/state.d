@@ -9,13 +9,7 @@ import yshd.options : ShellOptions;
 
 enum ReturnMode { shell, functionValue, procValue }
 
-class RegexMatch {
-    string subject;
-    ptrdiff_t[] starts;
-    ptrdiff_t[] ends;
-    string[] names;
-    Value delegate(Value)[] conversions;
-}
+public import yshd.value : RegexMatch;
 
 /// A YSH variable cell. The shape follows core/runtime.asdl's Cell closely
 /// enough for the D translation to preserve identity when a frame is enclosed.

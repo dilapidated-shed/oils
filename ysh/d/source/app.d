@@ -10,7 +10,7 @@ import yshd.expr : ParseError, evaluate;
 import yshd.lexer : LexError;
 import yshd.program : ShellExit, executeProgram, parseProgram;
 import yshd.func_proc : ProcReturn;
-import yshd.state : Memory;
+import yshd.state : Memory, ReturnMode;
 import yshd.options : ShellOptions;
 import yshd.value : UsageError, YshError, repr;
 
@@ -94,7 +94,7 @@ int main(string[] args) {
             }
 
             if (parseOnly) {
-                parseProgram(source);
+                parseProgram(source, ReturnMode.shell, options);
                 return 0;
             }
             auto mem = shellMemory(args[0], args[sourceIndex < args.length ? sourceIndex + 1 : sourceIndex .. $], options);
@@ -111,7 +111,7 @@ int main(string[] args) {
             // $0 and ARGV; they must never be joined into executable text.
             auto source = args[sourceIndex];
             if (parseOnly) {
-                parseProgram(source);
+                parseProgram(source, ReturnMode.shell, options);
                 return 0;
             }
             auto argumentZero = args.length > sourceIndex + 1 ? args[sourceIndex + 1] : args[0];
@@ -124,7 +124,7 @@ int main(string[] args) {
         if (parseOnly || literalPath || exists(args[sourceIndex]) || args.length > sourceIndex + 1) {
             auto source = cast(string)read(args[sourceIndex]);
             if (parseOnly) {
-                parseProgram(source);
+                parseProgram(source, ReturnMode.shell, options);
                 return 0;
             }
             auto mem = shellMemory(args[sourceIndex], args[sourceIndex + 1 .. $], options);

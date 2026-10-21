@@ -136,10 +136,48 @@ enum ValueKind {
     functionValue,
     procValue,
     placeValue,
+    eggexValue,
+    matchValue,
 }
 
 abstract class YshPlace {
     abstract void assign(Value value);
+}
+
+abstract class YshRegex {
+    abstract string asEre();
+    abstract RegexMatch search(string subject, long position = 0, bool leftMatch = false);
+}
+
+class RegexMatch {
+    string subject;
+    ptrdiff_t[] starts;
+    ptrdiff_t[] ends;
+    string[] names;
+    Value delegate(Value)[] conversions;
+
+    Value capture(Value selector, string action) {
+        import std.conv : to;
+        size_t index;
+        if (selector.kind == ValueKind.integer) {
+            if (selector.integerValue < 0 || selector.integerValue >= starts.length)
+                throw new YshError("Capture group index out of range");
+            index = to!size_t(selector.integerValue);
+        } else if (selector.kind == ValueKind.stringValue) {
+            bool found;
+            foreach (offset, name; names) {
+                if (name == selector.stringValue && name.length) { index = offset + 1; found = true; break; }
+            }
+            if (!found) throw new YshError("No such capture group: " ~ selector.stringValue);
+        } else throw new YshTypeError("Capture group requires Int or Str");
+        if (action == "start") return Value.integer(starts[index]);
+        if (action == "end") return Value.integer(ends[index]);
+        if (starts[index] == -1) return Value.nullValue();
+        auto result = Value.str(subject[starts[index] .. ends[index]]);
+        if (index && index <= conversions.length && conversions[index - 1] !is null)
+            result = conversions[index - 1](result);
+        return result;
+    }
 }
 
 class YshError : Exception {
@@ -175,6 +213,10 @@ class YshTypeError : YshError {
 }
 
 struct Value {
+    // Value copies preserve identity; scalar constructors and literal
+    // evaluation allocate a new identity, as reference ASDL value objects do.
+    private static size_t nextScalarIdentity = 1;
+    private size_t scalarIdentity;
     ValueKind kind = ValueKind.nullValue;
     bool booleanValue;
     BigInt integerValue;
@@ -190,6 +232,22 @@ struct Value {
     long rangeUpper;
     Object callableValue;
     YshPlace placeValue;
+    YshRegex regexValue;
+    RegexMatch matchValue;
+
+    static Value eggex(YshRegex regex) {
+        Value result;
+        result.kind = ValueKind.eggexValue;
+        result.regexValue = regex;
+        return result;
+    }
+
+    static Value match(RegexMatch match) {
+        Value result;
+        result.kind = ValueKind.matchValue;
+        result.matchValue = match;
+        return result;
+    }
 
     static Value place(YshPlace place) {
         Value result;
@@ -206,6 +264,7 @@ struct Value {
 
     static Value boolean(bool value) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.boolean;
         result.booleanValue = value;
         return result;
@@ -213,6 +272,7 @@ struct Value {
 
     static Value integer(BigInt value) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.integer;
         result.integerValue = value;
         return result;
@@ -224,6 +284,7 @@ struct Value {
 
     static Value floating(double value) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.floating;
         result.floatValue = value;
         return result;
@@ -231,6 +292,7 @@ struct Value {
 
     static Value str(string value) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.stringValue;
         result.stringValue = value;
         return result;
@@ -260,6 +322,7 @@ struct Value {
 
     static Value slice(bool hasLower, long lower, bool hasUpper, long upper) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.sliceValue;
         result.sliceHasLower = hasLower;
         result.sliceLower = lower;
@@ -271,9 +334,17 @@ struct Value {
     /// Upper is exclusive, matching core/value.asdl Range and expr_eval.py.
     static Value range(long lower, long upper) {
         Value result;
+        result.scalarIdentity = nextScalarIdentity++;
         result.kind = ValueKind.rangeValue;
         result.rangeLower = lower;
         result.rangeUpper = upper;
+        return result;
+    }
+
+    Value literalCopy() {
+        auto result = this;
+        if (kind > ValueKind.nullValue && kind <= ValueKind.stringValue)
+            result.scalarIdentity = nextScalarIdentity++;
         return result;
     }
 
@@ -289,6 +360,22 @@ struct Value {
         result.kind = ValueKind.procValue;
         result.callableValue = callable;
         return result;
+    }
+}
+
+bool sameIdentity(Value left, Value right) {
+    if (left.kind != right.kind) return false;
+    final switch (left.kind) {
+    case ValueKind.nullValue: return true;
+    case ValueKind.boolean: case ValueKind.integer: case ValueKind.floating:
+    case ValueKind.stringValue: case ValueKind.sliceValue: case ValueKind.rangeValue:
+        return left.scalarIdentity == right.scalarIdentity;
+    case ValueKind.list: return left.listValue is right.listValue;
+    case ValueKind.dict: return left.dictValue is right.dictValue;
+    case ValueKind.functionValue: case ValueKind.procValue: return left.callableValue is right.callableValue;
+    case ValueKind.placeValue: return left.placeValue is right.placeValue;
+    case ValueKind.eggexValue: return left.regexValue is right.regexValue;
+    case ValueKind.matchValue: return left.matchValue is right.matchValue;
     }
 }
 
@@ -318,6 +405,8 @@ string kindName(Value value) {
         return "Proc";
     case ValueKind.placeValue:
         return "Place";
+    case ValueKind.eggexValue: return "Eggex";
+    case ValueKind.matchValue: return "Match";
     }
 }
 
@@ -343,6 +432,8 @@ bool toBool(Value value) {
     case ValueKind.functionValue:
     case ValueKind.procValue:
     case ValueKind.placeValue:
+    case ValueKind.eggexValue:
+    case ValueKind.matchValue:
         return true;
     }
 }
@@ -381,6 +472,10 @@ string stringify(Value value) {
         throw new YshTypeError("can't stringify Proc");
     case ValueKind.placeValue:
         throw new YshTypeError("can't stringify Place");
+    case ValueKind.eggexValue:
+        return value.regexValue.asEre();
+    case ValueKind.matchValue:
+        throw new YshTypeError("can't stringify Match");
     }
 }
 
@@ -436,6 +531,9 @@ bool exactlyEqual(Value left, Value right) {
         return left.callableValue is right.callableValue;
     case ValueKind.placeValue:
         throw new YshTypeError("Equality isn't defined on Place values");
+    case ValueKind.eggexValue:
+    case ValueKind.matchValue:
+        throw new YshTypeError("Equality isn't defined on " ~ kindName(left) ~ " values");
     }
 }
 
@@ -531,6 +629,8 @@ private string reprWithActive(Value value, ref bool[Object] active) {
         return "<proc>";
     case ValueKind.placeValue:
         return "<Place>";
+    case ValueKind.eggexValue: return "<Eggex>";
+    case ValueKind.matchValue: return "<Match>";
     }
 }
 

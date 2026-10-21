@@ -14,9 +14,10 @@ import std.uni : toLower, toUpper;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
-import yshd.state : Memory;
+import yshd.state : Memory, ReturnMode;
+import yshd.options : ShellOptions;
 import yshd.io_ysh : encodeDataValue, WriteEncoding, DataEncodeError, dataOptions;
-import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, StructuredError,
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, StructuredError, FatalRuntimeError,
     exactlyEqual, kindName, stringify, toBool;
 
 class ParseError : YshError {
@@ -35,6 +36,12 @@ private enum CompareOp {
     approximateEqual,
     contains,
     notContains,
+    regexMatch,
+    notRegexMatch,
+    globMatch,
+    notGlobMatch,
+    identical,
+    notIdentical,
 }
 
 private enum NumericKind {
@@ -144,6 +151,8 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.functionValue:
     case ValueKind.procValue:
     case ValueKind.placeValue:
+    case ValueKind.eggexValue:
+    case ValueKind.matchValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -174,6 +183,8 @@ private BigInt convertToInt(Value value) {
     case ValueKind.functionValue:
     case ValueKind.procValue:
     case ValueKind.placeValue:
+    case ValueKind.eggexValue:
+    case ValueKind.matchValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -360,7 +371,7 @@ private class LiteralExpr : Expr {
     }
 
     override Value eval(Memory mem) {
-        return value_;
+        return value_.literalCopy();
     }
 }
 
@@ -423,6 +434,13 @@ private class PlaceExpr : Expr {
         import yshd.state : FramePlace;
         return Value.place(new FramePlace(mem.currentFrame, name));
     }
+}
+
+private class EggexExpr : Expr {
+    import yshd.eggex : Eggex;
+    Eggex pattern;
+    this(Eggex pattern) { this.pattern = pattern; }
+    override Value eval(Memory mem) { return Value.eggex(pattern.bind(mem)); }
 }
 
 private class DictExpr : Expr {
@@ -550,6 +568,8 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.functionValue:
     case ValueKind.procValue:
     case ValueKind.placeValue:
+    case ValueKind.eggexValue:
+    case ValueKind.matchValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -645,6 +665,8 @@ private class SubscriptExpr : Expr {
         case ValueKind.functionValue:
         case ValueKind.procValue:
         case ValueKind.placeValue:
+        case ValueKind.eggexValue:
+        case ValueKind.matchValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -767,6 +789,7 @@ private bool builtinFunctionName(string name) {
     case "keys":
     case "values":
     case "join":
+    case "floatsEqual":
     case "strcmp":
     case "_group":
     case "_start":
@@ -789,6 +812,10 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     }
 
     switch (name) {
+    case "floatsEqual":
+        if (arguments.length != 2 || arguments[0].kind != ValueKind.floating || arguments[1].kind != ValueKind.floating)
+            throw new YshTypeError("floatsEqual() expects two Float arguments");
+        return Value.boolean(arguments[0].floatValue == arguments[1].floatValue);
     case "join":
         if (arguments.length < 1 || arguments.length > 2 || arguments[0].kind != ValueKind.list)
             throw new YshTypeError("join() expects List and optional Str delimiter");
@@ -825,26 +852,7 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         if (arguments.length != 1) throw new YshTypeError(name ~ "() expects one argument");
         auto match = mem.regexMatch;
         if (match is null) throw new YshError("No regex capture groups");
-        size_t index;
-        auto argument = arguments[0];
-        if (argument.kind == ValueKind.integer) {
-            if (argument.integerValue < 0 || argument.integerValue >= match.starts.length)
-                throw new YshError("Capture group index out of range");
-            index = to!size_t(argument.integerValue);
-        } else if (argument.kind == ValueKind.stringValue) {
-            bool found;
-            foreach (offset, groupName; match.names) {
-                if (groupName == argument.stringValue) { index = offset + 1; found = true; break; }
-            }
-            if (!found) throw new YshError("No such capture group: " ~ argument.stringValue);
-        } else throw new YshTypeError("Capture group requires Int or Str");
-        if (name == "_start") return Value.integer(match.starts[index]);
-        if (name == "_end") return Value.integer(match.ends[index]);
-        if (match.starts[index] == -1) return Value.nullValue();
-        auto result = Value.str(match.subject[match.starts[index] .. match.ends[index]]);
-        if (index && match.conversions[index - 1] !is null)
-            result = match.conversions[index - 1](result);
-        return result;
+        return match.capture(arguments[0], name[1 .. $]);
     case "identity":
         if (arguments.length != 1) {
             throw new YshTypeError("identity() expects one argument");
@@ -1095,6 +1103,8 @@ private long normalizeSearchEnd(long end, size_t length) {
 
 private bool valueMethodExists(ValueKind kind, string name) {
     switch (kind) {
+    case ValueKind.matchValue:
+        return name == "group" || name == "start" || name == "end";
     case ValueKind.placeValue:
         return name == "setValue";
     case ValueKind.stringValue:
@@ -1111,6 +1121,8 @@ private bool valueMethodExists(ValueKind kind, string name) {
         case "contains":
         case "upper":
         case "lower":
+        case "search":
+        case "leftMatch":
             return true;
         default:
             return false;
@@ -1155,6 +1167,9 @@ private Value callValueMethod(Value receiver, string name,
     auto named = namedArguments is null ? new YshDict() : namedArguments;
 
     final switch (receiver.kind) {
+    case ValueKind.matchValue:
+        if (arguments.length != 1 || named.length) throw new YshTypeError("Match method expects one argument");
+        return receiver.matchValue.capture(arguments[0], name);
     case ValueKind.placeValue:
         if (name != "setValue" || arguments.length != 1 || named.length)
             throw new YshTypeError("Place.setValue() expects one argument");
@@ -1162,6 +1177,24 @@ private Value callValueMethod(Value receiver, string name,
         return Value.nullValue();
     case ValueKind.stringValue:
         auto s = receiver.stringValue;
+
+        if (name == "search" || name == "leftMatch") {
+            import yshd.eggex : searchEre;
+            if (arguments.length != 1 || named.length > (named.contains("pos") ? 1 : 0))
+                throw new YshTypeError(name ~ "() expects one pattern and optional pos");
+            long position;
+            if (auto pos = named.find("pos")) {
+                if (pos.kind != ValueKind.integer) throw new YshTypeError("pos should be Int");
+                position = bigIntToLong(pos.integerValue, "pos should fit Int");
+            }
+            auto pattern = arguments[0];
+            import yshd.value : RegexMatch;
+            RegexMatch match;
+            if (pattern.kind == ValueKind.eggexValue) match = pattern.regexValue.search(s, position, name == "leftMatch");
+            else if (pattern.kind == ValueKind.stringValue) match = searchEre(pattern.stringValue, 0, s, position, name == "leftMatch");
+            else throw new YshTypeError("search pattern should be Eggex or Str");
+            return match is null ? Value.nullValue() : Value.match(match);
+        }
 
         if (name == "startsWith" || name == "endsWith" ||
                 name == "contains") {
@@ -1276,9 +1309,19 @@ private Value callValueMethod(Value receiver, string name,
             }
 
             auto slice = s[cast(size_t)start .. cast(size_t)end];
-            auto relative = name == "find"
-                ? slice.indexOf(needle)
-                : slice.lastIndexOf(needle);
+            // YSH Str search uses byte offsets, including slice bounds that
+            // split UTF-8. D's Unicode reverse traversal is inappropriate.
+            ptrdiff_t relative = -1;
+            if (needle.length <= slice.length) {
+                auto limit = slice.length - needle.length;
+                for (size_t i = 0; i <= limit; ++i) {
+                    auto offset = name == "find" ? i : limit - i;
+                    if (slice[offset .. offset + needle.length] == needle) {
+                        relative = cast(ptrdiff_t)offset;
+                        break;
+                    }
+                }
+            }
             return Value.integer(relative < 0 ? -1 :
                 start + cast(long)relative);
         }
@@ -1493,6 +1536,7 @@ private Value callValueMethod(Value receiver, string name,
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
     case ValueKind.procValue:
+    case ValueKind.eggexValue:
         throw new YshTypeError("value has no method " ~ name);
     }
 }
@@ -1819,7 +1863,7 @@ private class CompareExpr : Expr {
                 break;
             case CompareOp.approximateEqual:
                 if (left.kind != ValueKind.stringValue)
-                    throw new YshTypeError("~== expects a string on the left");
+                    throw new FatalRuntimeError("~== expects a string on the left");
                 auto text = strip(left.stringValue);
                 switch (right.kind) {
                 case ValueKind.stringValue: result = text == right.stringValue; break;
@@ -1831,8 +1875,35 @@ private class CompareExpr : Expr {
                 case ValueKind.integer:
                     result = looksLikeYshInt(text) && BigInt(text.replace("_", "")) == right.integerValue;
                     break;
-                default: throw new YshTypeError("~== expects Str, Int, or Bool on the right");
+                default: throw new FatalRuntimeError("~== expects Str, Int, or Bool on the right");
                 }
+                break;
+            case CompareOp.regexMatch:
+            case CompareOp.notRegexMatch:
+                import yshd.eggex : searchEre;
+                import yshd.value : RegexMatch;
+                if (left.kind != ValueKind.stringValue) throw new YshTypeError("LHS of regex match must be Str");
+                RegexMatch match;
+                if (right.kind == ValueKind.eggexValue) match = right.regexValue.search(left.stringValue);
+                else if (right.kind == ValueKind.stringValue) match = searchEre(right.stringValue, 0, left.stringValue);
+                else throw new YshTypeError("RHS of regex match must be Eggex or Str");
+                if (op == CompareOp.regexMatch) mem.regexMatch = match;
+                result = (match !is null) == (op == CompareOp.regexMatch);
+                break;
+            case CompareOp.globMatch:
+            case CompareOp.notGlobMatch:
+                import yshd.libc_patterns : fnmatch;
+                import std.string : toStringz;
+                if (left.kind != ValueKind.stringValue || right.kind != ValueKind.stringValue)
+                    throw new YshTypeError("Glob comparison requires two Str values");
+                if (left.stringValue.indexOf('\0') >= 0 || right.stringValue.indexOf('\0') >= 0)
+                    throw new YshError("Glob comparison cannot contain NUL bytes");
+                result = (fnmatch(right.stringValue.toStringz(), left.stringValue.toStringz(), 0) == 0) == (op == CompareOp.globMatch);
+                break;
+            case CompareOp.identical:
+            case CompareOp.notIdentical:
+                import yshd.value : sameIdentity;
+                result = sameIdentity(left, right) == (op == CompareOp.identical);
                 break;
             case CompareOp.contains:
                 if (right.kind != ValueKind.dict) {
@@ -1867,11 +1938,14 @@ private class Parser {
     private Lexer lexer_;
     private Token current_;
     private bool validateNested_;
+    private size_t lastConsumedEnd_;
+    private ShellOptions options_;
 
-    this(string input, bool validateNested = false) {
+    this(string input, bool validateNested = false, ShellOptions options = null) {
         source_ = input;
         validateNested_ = validateNested;
-        lexer_ = new Lexer(input);
+        options_ = options;
+        lexer_ = new Lexer(input, false, 0, true, options);
         current_ = lexer_.next();
     }
 
@@ -1884,6 +1958,7 @@ private class Parser {
     }
 
     private void advance() {
+        lastConsumedEnd_ = lexer_.offset;
         current_ = lexer_.next();
     }
 
@@ -1933,8 +2008,21 @@ private class Parser {
         CompareOp[] operators;
         Expr[] comparators;
 
-        while (isComparison(current_.kind)) {
-            if (current_.kind == TokenKind.notKeyword) {
+        while (isComparison(current_.kind) || (current_.kind == TokenKind.name && current_.text == "is")) {
+            if (current_.kind == TokenKind.name && current_.text == "is") {
+                advance();
+                bool negated = current_.kind == TokenKind.notKeyword;
+                if (negated) advance();
+                operators ~= negated ? CompareOp.notIdentical : CompareOp.identical;
+            } else if (current_.kind == TokenKind.tilde || current_.kind == TokenKind.bang) {
+                bool negated = current_.kind == TokenKind.bang;
+                if (negated) { advance(); require(TokenKind.tilde, "~"); }
+                else advance();
+                bool glob = current_.kind == TokenKind.tilde;
+                if (glob) advance();
+                operators ~= glob ? (negated ? CompareOp.notGlobMatch : CompareOp.globMatch)
+                    : (negated ? CompareOp.notRegexMatch : CompareOp.regexMatch);
+            } else if (current_.kind == TokenKind.notKeyword) {
                 advance();
                 if (current_.kind != TokenKind.inKeyword) {
                     throw new ParseError(format("expected 'in' at byte %s", current_.offset));
@@ -1982,7 +2070,9 @@ private class Parser {
     }
 
     private bool isComparison(TokenKind kind) {
+        if (kind == TokenKind.bang) return lexer_.peek().kind == TokenKind.tilde;
         switch (kind) {
+        case TokenKind.tilde:
         case TokenKind.less:
         case TokenKind.greater:
         case TokenKind.lessEqual:
@@ -2186,6 +2276,13 @@ private class Parser {
     private Expr parseAtom() {
         auto token = current_;
         switch (token.kind) {
+        case TokenKind.slash:
+            import yshd.eggex : parseEggex;
+            auto regex = parseEggex(source_[token.offset .. $], options_);
+            lastConsumedEnd_ = token.offset + regex.endOffset;
+            lexer_ = new Lexer(source_, false, token.offset + regex.endOffset, true, options_);
+            current_ = lexer_.next();
+            return new EggexExpr(regex);
         case TokenKind.amp:
             advance();
             if (current_.kind != TokenKind.name) throw new ParseError("expected variable name after &");
@@ -2229,7 +2326,7 @@ private class Parser {
             advance();
             if (validateNested_) {
                 import yshd.program : validateDoubleQuoted;
-                validateDoubleQuoted(token.text);
+                validateDoubleQuoted(token.text, options_);
             }
             return new DoubleQuotedExpr(token.text);
         case TokenKind.stringValue:
@@ -2241,17 +2338,29 @@ private class Parser {
             return new VariableExpr(token.text);
         case TokenKind.dollar:
             advance();
+            if (current_.kind == TokenKind.doubleQuoted && current_.offset == token.offset + 1) {
+                auto content = current_.text;
+                advance();
+                if (validateNested_) {
+                    import yshd.program : validateDoubleQuoted;
+                    validateDoubleQuoted(content, options_);
+                }
+                return new DoubleQuotedExpr(content);
+            }
             if (current_.kind == TokenKind.leftParen) {
                 auto start = current_.offset + 1;
+                auto previousStrings = lexer_.expressionStrings;
+                lexer_.expressionStrings = false;
                 advance();
                 int depth;
                 while (current_.kind != TokenKind.eof) {
                     if (current_.kind == TokenKind.rightParen && depth == 0) {
                         auto command = source_[start .. current_.offset];
+                        lexer_.expressionStrings = previousStrings;
                         advance();
                         if (validateNested_) {
                             import yshd.program : parseProgram;
-                            parseProgram(command);
+                            parseProgram(command, ReturnMode.shell, options_);
                         }
                         return new CommandSubstitutionExpr(command);
                     }
@@ -2302,16 +2411,19 @@ private class Parser {
                 advance();
                 return new ShellArrayExpr("");
             }
+            auto previousStrings = lexer_.expressionStrings;
+            lexer_.expressionStrings = false;
             require(TokenKind.pipe, "|");
             auto start = current_.offset;
             int depth;
             while (current_.kind != TokenKind.eof) {
                 if (current_.kind == TokenKind.pipe && depth == 0) {
                     auto words = source_[start .. current_.offset];
+                    lexer_.expressionStrings = previousStrings;
                     advance();
                     if (validateNested_) {
                         import yshd.program : validateShellWords;
-                        validateShellWords(words);
+                        validateShellWords(words, options_);
                     }
                     return new ShellArrayExpr(words);
                 }
@@ -2485,6 +2597,8 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.functionValue:
         case ValueKind.procValue:
         case ValueKind.placeValue:
+        case ValueKind.eggexValue:
+        case ValueKind.matchValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -2537,12 +2651,21 @@ void augmentPlace(string target, string op, string rhs, Memory mem,
 }
 
 /// Build the expression tree without looking up names or evaluating it.
-void validateExpression(string source) {
-    (new Parser(source, true)).parse();
+void validateExpression(string source, ShellOptions options = null) {
+    (new Parser(source, true, options)).parse();
 }
 
-ParsedArguments parseTypedArguments(string source, bool validateNested = false) {
-    auto parser = new Parser(source, validateNested);
+/// Command collectors use the actual expression atom parser for constructs
+/// with their own internal delimiters, rather than interpreting their tokens
+/// as command separators (notably Eggex flags and multiline word arrays).
+size_t expressionAtomEnd(string source, ShellOptions options = null) {
+    auto parser = new Parser(source, true, options);
+    parser.parseAtom();
+    return parser.lastConsumedEnd_;
+}
+
+ParsedArguments parseTypedArguments(string source, bool validateNested = false, ShellOptions options = null) {
+    auto parser = new Parser(source, validateNested, options);
     auto arguments = parser.parseArguments(true);
     if (parser.current_.kind != TokenKind.eof) throw new ParseError("unexpected token after typed arguments");
     return arguments;
@@ -2559,7 +2682,7 @@ void validateAssignmentTarget(string source) {
 Value evaluate(string source, Memory mem) {
     auto optionNumbers = mem.options.pushExpression();
     scope (exit) mem.options.pop(optionNumbers);
-    auto parser = new Parser(source);
+    auto parser = new Parser(source, false, mem.options);
     return parser.parse().eval(mem);
 }
 

@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-435 assertion matches, 684 failures. The unchanged original harness, fixture
+516 assertion matches, 603 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-decode-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-regex-2026-10-21.tsv).
 
 ## Source map
 
@@ -90,8 +90,9 @@ The case continuation adds both YSH and retained shell-style case syntax,
 lazy expression/word patterns, fragment-level quoting and POSIX fnmatch, and
 an initial Eggex AST/ERE path with captures and conversion functions. All 18
 unchanged case fixtures pass. The unmodified list/math standard-library files
-now load. First-class Eggex values and the full regex API remain untranslated;
-case acceptance does not qualify the entire regex subsystem.
+now load. A subsequent continuation adds first-class Eggex values, frozen
+splices/converters, regex comparisons, search/leftMatch and named capture
+methods. Case acceptance does not qualify the entire regex subsystem.
 
 The data-output continuation adds reference JSON/J8 indentation and
 type/cycle handling, toJson/toJson8, diagnostic cycle markers, and measured
@@ -99,10 +100,13 @@ pretty printing for translated data values and ranges. Expression display and
 `pp value` share that printer. The inherited function fixture now passes all
 26 cases. The subsequent decoder implements strict JSON and J8 input, error
 positions, and codec functions. Captured-frame Places and here-documents now
-support the shared read paths. JSON/J8 passes 57/64 inherited cases; retained
-shell arrays/arithmetic, Eggex and objects still leave failures in that fixture.
-Reference-value identities, terminal styles and remaining value variants need
-translation.
+support the shared read paths. JSON/J8 passes 58/64 inherited cases; retained
+shell arrays/arithmetic and objects still leave failures in that fixture.
+Identity comparisons, glob comparisons and floatsEqual are translated; the
+remaining heap-value display, terminal styles and value variants need work.
+The regex fixture passes 27/29, regex APIs 23/40, and strings 28/29. Retained
+conditionals/control flow, typed proc arguments and lazy replacement expressions
+remain dependencies of those fixtures.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

@@ -335,7 +335,7 @@ private class DataEncoder {
             Object identity = value.listValue;
             if (identity in visiting) {
                 if (diagnostic) return "[...]";
-                throw new DataEncodeError("Can't encode List in object cycle");
+                throw new DataEncodeError(format("Can't encode List 0x%x in object cycle", cast(size_t)cast(void*)value.listValue));
             }
             visiting[identity] = true;
             scope (exit) visiting.remove(identity);
@@ -355,7 +355,7 @@ private class DataEncoder {
             Object identity = value.dictValue;
             if (identity in visiting) {
                 if (diagnostic) return "{...}";
-                throw new DataEncodeError("Can't encode Dict in object cycle");
+                throw new DataEncodeError(format("Can't encode Dict 0x%x in object cycle", cast(size_t)cast(void*)value.dictValue));
             }
             visiting[identity] = true;
             scope (exit) visiting.remove(identity);
@@ -380,12 +380,15 @@ private class DataEncoder {
         case ValueKind.functionValue:
         case ValueKind.procValue:
         case ValueKind.placeValue:
+        case ValueKind.eggexValue:
+        case ValueKind.matchValue:
             if (diagnostic) {
                 import yshd.value : kindName;
                 return "<" ~ kindName(value) ~ ">";
             }
             if (!typeErrors) return "null";
-            throw new DataEncodeError("value cannot be encoded as JSON/J8 data");
+            import yshd.value : kindName;
+            throw new DataEncodeError("Can't serialize object of type " ~ kindName(value));
         }
     }
 }
