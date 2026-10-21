@@ -4,7 +4,18 @@ import std.format : format;
 import std.process : environment;
 import std.stdio : File, stderr, stdin, stdout;
 
-import yshd.value : Value, ValueKind, YshDict, YshError;
+import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError;
+import yshd.options : ShellOptions;
+
+enum ReturnMode { shell, functionValue, procValue }
+
+class RegexMatch {
+    string subject;
+    ptrdiff_t[] starts;
+    ptrdiff_t[] ends;
+    string[] names;
+    Value delegate(Value)[] conversions;
+}
 
 /// A YSH variable cell. The shape follows core/runtime.asdl's Cell closely
 /// enough for the D translation to preserve identity when a frame is enclosed.
@@ -61,9 +72,15 @@ class Memory {
     private Frame[] frameStack;
     private size_t loopDepth;
     int lastStatus;
-    bool errexit;
-    bool nounset;
-    bool pipefail;
+    ReturnMode returnMode;
+    RegexMatch regexMatch;
+    ShellOptions options;
+    @property bool errexit() const { return options.get("errexit"); }
+    @property void errexit(bool enabled) { options.set("errexit", enabled); }
+    @property bool nounset() const { return options.get("nounset"); }
+    @property void nounset(bool enabled) { options.set("nounset", enabled); }
+    @property bool pipefail() const { return options.get("pipefail"); }
+    @property void pipefail(bool enabled) { options.set("pipefail", enabled); }
     // Conditions and individual pipeline stages defer errexit to their owner.
     // A counter preserves nested suppression.
     size_t errexitSuppression;
@@ -93,6 +110,7 @@ class Memory {
         this.inputFile = inputFile;
         this.outputFile = outputFile;
         this.errorFile = errorFile;
+        options = new ShellOptions();
         globalFrame = new Frame();
         currentFrame = globalFrame;
         frameStack = [globalFrame];
@@ -106,6 +124,9 @@ class Memory {
         }
         globalFrame.cells["ENV"] = new Cell(Value.dictRef(env));
         globalFrame.cells["ARGV"] = new Cell(Value.list([]));
+        globalFrame.cells["_error"] = new Cell(Value.dict());
+        globalFrame.cells["NAN"] = new Cell(Value.floating(double.nan));
+        globalFrame.cells["INFINITY"] = new Cell(Value.floating(double.infinity));
     }
 
     void initializeArguments(string argumentZero, string[] arguments) {
@@ -115,6 +136,15 @@ class Memory {
             values ~= Value.str(argument);
         }
         globalFrame.cells["ARGV"] = new Cell(Value.list(values));
+    }
+
+    /// Calls have a new local frame but retain their defining global frame.
+    /// A fresh Memory's placeholder globals must not intercept setglobal.
+    void useGlobalFrame(Frame frame) {
+        assert(frameStack.length == 1);
+        globalFrame = frame;
+        currentFrame = frame;
+        frameStack = [frame];
     }
 
     string getEnv(string name, string fallback = "") {
@@ -152,7 +182,7 @@ class Memory {
         Frame ignored;
         auto cell = lookupLocalOrGlobal(name, ignored);
         if (cell is null) {
-            throw new YshError(format("Undefined variable '%s'", name));
+            throw new FatalRuntimeError(format("Undefined variable '%s'", name));
         }
         return cell.value;
     }
@@ -169,7 +199,7 @@ class Memory {
         if (cell !is null) return stringify(cell.value);
         auto environmentValue = get("ENV").dictValue.find(name);
         if (environmentValue !is null) return stringify(*environmentValue);
-        if (nounset) throw new YshError(format("Undefined variable '%s'", name));
+        if (nounset) throw new FatalRuntimeError(format("Undefined variable '%s'", name));
         return "";
     }
 
@@ -177,7 +207,7 @@ class Memory {
         Frame ignored;
         auto cell = lookupFrame(currentFrame, name, false, ignored);
         if (cell is null) {
-            throw new YshError(format("Undefined local variable '%s'", name));
+            throw new FatalRuntimeError(format("Undefined local variable '%s'", name));
         }
         return cell.value;
     }
@@ -186,7 +216,7 @@ class Memory {
         Frame ignored;
         auto cell = lookupFrame(globalFrame, name, false, ignored);
         if (cell is null) {
-            throw new YshError(format("Undefined global variable '%s'", name));
+            throw new FatalRuntimeError(format("Undefined global variable '%s'", name));
         }
         return cell.value;
     }

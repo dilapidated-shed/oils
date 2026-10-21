@@ -2,7 +2,7 @@ module yshd.io_ysh;
 
 import std.format : format;
 
-import yshd.value : Value, ValueKind, YshTypeError, stringify;
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, stringify;
 
 /// Translate ysh/val_ops.py:ToShellArray for the D value types.
 string[] spliceArray(Value value) {
@@ -74,7 +74,7 @@ private bool isContinuation(ubyte b) {
 }
 
 /// Return the byte length of a valid UTF-8 scalar at offset, or zero.
-private size_t utf8ScalarLength(string value, size_t offset) {
+size_t utf8ScalarLength(string value, size_t offset) {
     auto first = cast(ubyte)value[offset];
 
     if (first <= 0x7f) {
@@ -211,8 +211,20 @@ string encodeJ8String(string value) {
         return encodeJsonString(value);
     }
 
+    return encodeBString(value);
+}
+
+string encodeBString(string value) {
     string result = "b'";
-    foreach (char raw; value) {
+    size_t offset;
+    while (offset < value.length) {
+        auto length = utf8ScalarLength(value, offset);
+        if (length > 1) {
+            result ~= value[offset .. offset + length];
+            offset += length;
+            continue;
+        }
+        auto raw = value[offset++];
         auto byteValue = cast(ubyte)raw;
         switch (byteValue) {
         case '\\':
@@ -230,9 +242,13 @@ string encodeJ8String(string value) {
         case '\t':
             result ~= "\\t";
             break;
+        case '\b': result ~= "\\b"; break;
+        case '\f': result ~= "\\f"; break;
         default:
-            if (byteValue >= 0x20 && byteValue <= 0x7e) {
+            if (length && byteValue >= 0x20) {
                 result ~= cast(char)byteValue;
+            } else if (length) {
+                result ~= format("\\u{%x}", byteValue);
             } else {
                 result ~= "\\y";
                 result ~= hexDigit(byteValue >> 4);
@@ -245,49 +261,126 @@ string encodeJ8String(string value) {
     return result;
 }
 
-string encodeDataValue(Value value, WriteEncoding encoding = WriteEncoding.json) {
-    final switch (value.kind) {
-    case ValueKind.nullValue:
-    case ValueKind.boolean:
-    case ValueKind.integer:
-    case ValueKind.floating:
-        return stringify(value);
+class DataEncodeError : YshError {
+    this(string message) { super(message); }
+}
 
-    case ValueKind.stringValue:
-        return encoding == WriteEncoding.j8
-            ? encodeJ8String(value.stringValue)
-            : encodeJsonString(value.stringValue);
+struct DataOptions { int space; bool typeErrors = true; }
 
-    case ValueKind.list:
-        string result = "[";
-        foreach (index, item; value.listValue.items) {
-            if (index != 0) {
-                result ~= ",";
-            }
-            result ~= encodeDataValue(item, encoding);
-        }
-        return result ~ "]";
-
-    case ValueKind.dict:
-        string result = "{";
-        bool first = true;
-        foreach (key, item; value.dictValue) {
-            if (!first) {
-                result ~= ",";
-            }
-            first = false;
-            result ~= encodeJsonString(key);
-            result ~= ":";
-            result ~= encodeDataValue(item, encoding);
-        }
-        return result ~ "}";
-
-    case ValueKind.sliceValue:
-    case ValueKind.rangeValue:
-    case ValueKind.functionValue:
-    case ValueKind.procValue:
-        throw new YshTypeError("value cannot be encoded as JSON/J8 data");
+DataOptions dataOptions(YshDict named, int defaultSpace) {
+    import std.conv : to;
+    auto result = DataOptions(defaultSpace, true);
+    if (named is null) return result;
+    foreach (name, value; named) {
+        if (name == "space" && value.kind == ValueKind.integer) {
+            if (value.integerValue < int.min || value.integerValue > int.max)
+                throw new YshError("JSON space argument is out of range");
+            result.space = to!int(value.integerValue);
+        } else if (name == "type_errors" && value.kind == ValueKind.boolean) {
+            result.typeErrors = value.booleanValue;
+        } else throw new YshTypeError("Invalid JSON named argument: " ~ name);
     }
+    return result;
+}
+
+/// data_lang/j8.py:InstancePrinter for the translated value variants.
+/// Track the active recursion path, so shared acyclic values remain legal.
+private class DataEncoder {
+    WriteEncoding encoding;
+    int indent;
+    bool typeErrors;
+    bool diagnostic;
+    bool[Object] visiting;
+
+    this(WriteEncoding encoding, int indent, bool typeErrors, bool diagnostic) {
+        this.encoding = encoding;
+        this.indent = indent;
+        this.typeErrors = typeErrors;
+        this.diagnostic = diagnostic;
+    }
+
+    string encode(Value value, size_t level = 0) {
+        import std.math : isFinite, isNaN;
+        import std.array : replicate;
+        final switch (value.kind) {
+        case ValueKind.nullValue:
+        case ValueKind.boolean:
+        case ValueKind.integer:
+            return stringify(value);
+        case ValueKind.floating:
+            if (!isFinite(value.floatValue)) {
+                if (encoding == WriteEncoding.json) return "null";
+                if (isNaN(value.floatValue)) return "NAN";
+                return value.floatValue < 0 ? "-INFINITY" : "INFINITY";
+            }
+            return stringify(value);
+
+        case ValueKind.stringValue:
+            return encoding == WriteEncoding.j8
+                ? encodeJ8String(value.stringValue)
+                : encodeJsonString(value.stringValue);
+
+        case ValueKind.list:
+            Object identity = value.listValue;
+            if (identity in visiting) {
+                if (diagnostic) return "[...]";
+                throw new DataEncodeError("Can't encode List in object cycle");
+            }
+            visiting[identity] = true;
+            scope (exit) visiting.remove(identity);
+            if (!value.listValue.length) return "[]";
+            string result = "[";
+            foreach (index, item; value.listValue.items) {
+                if (index != 0) {
+                    result ~= ",";
+                }
+                if (indent > 0) result ~= "\n" ~ " ".replicate((level + 1) * indent);
+                result ~= encode(item, level + 1);
+            }
+            if (indent > 0) result ~= "\n" ~ " ".replicate(level * indent);
+            return result ~ "]";
+
+        case ValueKind.dict:
+            Object identity = value.dictValue;
+            if (identity in visiting) {
+                if (diagnostic) return "{...}";
+                throw new DataEncodeError("Can't encode Dict in object cycle");
+            }
+            visiting[identity] = true;
+            scope (exit) visiting.remove(identity);
+            if (!value.dictValue.length) return "{}";
+            string result = "{";
+            bool first = true;
+            foreach (key, item; value.dictValue) {
+                if (!first) {
+                    result ~= ",";
+                }
+                first = false;
+                if (indent > 0) result ~= "\n" ~ " ".replicate((level + 1) * indent);
+                result ~= encoding == WriteEncoding.j8 ? encodeJ8String(key) : encodeJsonString(key);
+                result ~= indent > 0 ? ": " : ":";
+                result ~= encode(item, level + 1);
+            }
+            if (indent > 0) result ~= "\n" ~ " ".replicate(level * indent);
+            return result ~ "}";
+
+        case ValueKind.sliceValue:
+        case ValueKind.rangeValue:
+        case ValueKind.functionValue:
+        case ValueKind.procValue:
+            if (diagnostic) {
+                import yshd.value : kindName;
+                return "<" ~ kindName(value) ~ ">";
+            }
+            if (!typeErrors) return "null";
+            throw new DataEncodeError("value cannot be encoded as JSON/J8 data");
+        }
+    }
+}
+
+string encodeDataValue(Value value, WriteEncoding encoding = WriteEncoding.json,
+        int indent = -1, bool typeErrors = true, bool diagnostic = false) {
+    return (new DataEncoder(encoding, indent, typeErrors, diagnostic)).encode(value);
 }
 
 private string encodeWriteArgument(string value, WriteEncoding encoding) {

@@ -6,7 +6,7 @@ import yshd.value : YshError;
 
 class LexError : YshError {
     this(string message) {
-        super(message);
+        super(message, 2);
     }
 }
 
@@ -41,6 +41,8 @@ enum TokenKind {
     returnKeyword,
     whileKeyword,
     forKeyword,
+    caseKeyword,
+    esacKeyword,
     breakKeyword,
     continueKeyword,
 
@@ -56,6 +58,8 @@ enum TokenKind {
     thinArrow,
     amp,
     pipe,
+    andIf,
+    orIf,
     caret,
     tilde,
     shiftLeft,
@@ -71,6 +75,7 @@ enum TokenKind {
     greaterEqual,
     tripleEqual,
     notDoubleEqual,
+    approximateEqual,
     bang,
     equal,
 
@@ -122,9 +127,11 @@ class Lexer {
     private size_t position_;
     private bool emitNewlines_;
 
-    this(string input, bool emitNewlines = false) {
+    this(string input, bool emitNewlines = false, size_t startOffset = 0) {
         input_ = input;
         emitNewlines_ = emitNewlines;
+        assert(startOffset <= input.length);
+        position_ = startOffset;
     }
 
     Token peek() {
@@ -210,6 +217,10 @@ class Lexer {
                 return Token(TokenKind.whileKeyword, text, start);
             case "for":
                 return Token(TokenKind.forKeyword, text, start);
+            case "case":
+                return Token(TokenKind.caseKeyword, text, start);
+            case "esac":
+                return Token(TokenKind.esacKeyword, text, start);
             case "break":
                 return Token(TokenKind.breakKeyword, text, start);
             case "continue":
@@ -234,6 +245,24 @@ class Lexer {
             return Token(TokenKind.stringValue, text, start);
         }
 
+        if (startsWith("&&") || startsWith("∧")) {
+            auto length = startsWith("&&") ? 2 : "∧".length;
+            position_ += length;
+            return Token(TokenKind.andIf, input_[start .. position_], start);
+        }
+        if (startsWith("||") || startsWith("∨")) {
+            auto length = startsWith("||") ? 2 : "∨".length;
+            position_ += length;
+            return Token(TokenKind.orIf, input_[start .. position_], start);
+        }
+        if (startsWith("¬")) {
+            position_ += "¬".length;
+            return Token(TokenKind.bang, "¬", start);
+        }
+        if (startsWith("~==")) {
+            position_ += 3;
+            return Token(TokenKind.approximateEqual, "~==", start);
+        }
         if (startsWith("!==")) {
             position_ += 3;
             return Token(TokenKind.notDoubleEqual, "!==", start);
@@ -358,6 +387,13 @@ class Lexer {
         while (position_ < input_.length) {
             auto c = input_[position_];
 
+            // Shell line continuation disappears before word boundaries.
+            if (emitNewlines_ && c == '\\' && position_ + 1 < input_.length &&
+                    input_[position_ + 1] == '\n') {
+                position_ += 2;
+                continue;
+            }
+
             if (c == ' ' || c == '\t' || c == '\r') {
                 ++position_;
                 continue;
@@ -411,6 +447,30 @@ class Lexer {
 
     private Token numberToken() {
         auto start = position_;
+        if (position_ + 1 < input_.length && input_[position_] == '0' &&
+                (input_[position_ + 1] == 'b' || input_[position_ + 1] == 'o' ||
+                 input_[position_ + 1] == 'x')) {
+            auto prefix = input_[position_ + 1];
+            uint radix = prefix == 'b' ? 2 : prefix == 'o' ? 8 : 16;
+            position_ += 2;
+            bool digit;
+            bool separator;
+            while (position_ < input_.length) {
+                auto ch = input_[position_];
+                if (ch == '_') {
+                    if (!digit || separator) throw new LexError("invalid integer separator");
+                    separator = true;
+                    ++position_;
+                    continue;
+                }
+                if (!hexDigit(ch) || hexValue(ch) >= radix) break;
+                digit = true;
+                separator = false;
+                ++position_;
+            }
+            if (!digit || separator) throw new LexError("invalid base-prefixed integer");
+            return Token(TokenKind.integer, input_[start .. position_], start);
+        }
         scanDecimalIntPart();
         bool isFloat = false;
 

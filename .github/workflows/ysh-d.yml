@@ -5,10 +5,14 @@ on:
     branches: [d/ysh-first-slice]
     paths:
       - 'ysh/d/**'
+      - 'frontend/option_def.py'
+      - 'frontend/option_gen.py'
       - '.github/workflows/ysh-d.yml'
   pull_request:
     paths:
       - 'ysh/d/**'
+      - 'frontend/option_def.py'
+      - 'frontend/option_gen.py'
       - '.github/workflows/ysh-d.yml'
 
 permissions:
@@ -28,6 +32,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Verify generated D option metadata
+        shell: bash
+        run: |
+          PYTHONPATH=. python3 frontend/option_gen.py d > "$RUNNER_TEMP/ysh-d-option-data.d"
+          cmp ysh/d/source/yshd/option_data.d "$RUNNER_TEMP/ysh-d-option-data.d"
 
       - name: Install Icky DMD bootstrap dependencies
         shell: bash
@@ -101,6 +111,7 @@ jobs:
           phobos="$GITHUB_WORKSPACE/.runtime-phobos/generated/linux/release/64/libphobos2.a"
           common_flags=(
             -conf= -fPIC -w
+            -Iysh/d/source
             -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import"
             -I"$GITHUB_WORKSPACE/.runtime-phobos"
             "$phobos"
@@ -213,7 +224,7 @@ jobs:
           expected=$(printf 'here value\n')
           test "$actual" = "$expected"
 
-          actual=$(ysh/d/.build/ysh-d -c "sh -c 'exit 7'; echo status=\$?")
+          actual=$(ysh/d/.build/ysh-d +e -c "sh -c 'exit 7'; echo status=\$?")
           expected=$(printf 'status=7\n')
           test "$actual" = "$expected"
 
@@ -230,8 +241,7 @@ jobs:
           alias ll='echo alias-ok'
           ll
           unalias ll
-          alias ll
-          echo status=\$?")
+          if alias ll { echo wrong } else { echo status=\$? }")
           expected=$(printf 'alias-ok\nstatus=1\n')
           test "$actual" = "$expected"
 
@@ -240,7 +250,7 @@ jobs:
           expected=$(printf 'first\nsecond\nblock\n')
           test "$actual" = "$expected"
 
-          actual=$(ysh/d/.build/ysh-d -c "x=assigned; echo x=\$x; true; echo true=\$?; false; echo false=\$?; assert [1 + 1 === 2]")
+          actual=$(ysh/d/.build/ysh-d +e -c "x=assigned; echo x=\$x; true; echo true=\$?; false; echo false=\$?; assert [1 + 1 === 2]")
           expected=$(printf 'x=assigned\ntrue=0\nfalse=1\n')
           test "$actual" = "$expected"
 
@@ -248,7 +258,7 @@ jobs:
           expected=$(printf 'list=1,2,3,9,4\nkeys=a/seen\nstarts=true trim=abc upper=AB\n')
           test "$actual" = "$expected"
 
-          actual=$(ysh/d/.build/ysh-d -c "var d = {a: 1, b: [2, 3]}; json write (d); pp test_ (d)")
+          actual=$(ysh/d/.build/ysh-d -c "var d = {a: 1, b: [2, 3]}; json write (d, space=0); pp test_ (d)")
           expected=$(printf '{"a":1,"b":[2,3]}\n(Dict)   {"a":1,"b":[2,3]}\n')
           test "$actual" = "$expected"
 

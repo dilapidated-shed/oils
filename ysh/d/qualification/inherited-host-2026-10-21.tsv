@@ -1,0 +1,46 @@
+field	value
+qualification	BLOCKED
+date-utc	2026-10-21
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	61c0c19b0bdd79a8955db634200a26ea4af408c8
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+d-source-git-tree	b182639e78b78aa7a040254dc88fc67feac600a5
+icky-dmd	ccf61ab82659b9eadee2d05b489fb195956cef88
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+bootstrap-compiler	LDC 1.36.0 (bootstrap only)
+host	Ubuntu 24.04.3 Linux 6.18.55 x86_64 disposable container
+binary-sha256	0f96197088f3486227be3023806dbce98d58404ce7d3985284cfac82b816052d
+cli-module-unittests	PASS 17 modules
+library-unittests	PASS 16 modules
+owner-workflow-smoke	PASS; expected failed-command statuses handled explicitly
+option-generator-consistency	PASS Python 3 output byte-equal to committed D metadata
+option-def-sha256	fd5d69445250cd1ea8924b904bfb44820ae1e14eaa3af34790c845f26128daa1
+option-generator-sha256	5e9aaf5b8861d2397551d6a7b258a66dbfd9dc360304d9ecfbbc17fa25849df8
+owner-workflow-sha256	78f71bef53c20b00613d0b75777e38e7317db3005149684de7ac8187b7f9630d
+inherited-harness	unchanged test/sh_spec.py; host Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT; LIB_YSH; TMP per case; SH is exact mode binary
+inherited-modes	our_shell ysh selects ysh-d; absent/osh selects symlink osh-d to same executable
+inherited-timeout	3 seconds per case via original harness timeout option
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture
+inherited-cases	1119
+inherited-assertion-matches	388
+inherited-failures	731
+inherited-qualification	FAIL; no additional expected-failure allowance
+harness-pass-boundary	assertion matches only; expected-status-only matches do not prove implementation coverage
+shared-spec-acceptance	NOT_RUN
+producer-controls-current-continuation	NOT_RERUN
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no dynamic C++ runtime
+static-transitive-AICI	UNKNOWN
+managed-FP-admission	NOT_RUN
+target-device-acceptance	NOT_RUN
+hosted-CI-current-continuation	NOT_RUN
+publication	NOT_PUBLISHED
+case-fixture	PASS 18/18
+func-fixture	PASS 26/26
+printing-fixture	10/18; object and Bash value variants remain incomplete
+inherited-repeat	Initial ysh-builtin-error:17 TIME; isolated and full-fixture reruns FAIL, no timeout. Initial diagnostics retained separately.
+comparison-to-2026-10-20	62 additional assertion matches; zero prior passes regressed

@@ -4,7 +4,7 @@ import std.format : format;
 
 import yshd.expr : evaluate;
 import yshd.program : executeProgram;
-import yshd.state : Frame, Memory;
+import yshd.state : Frame, Memory, ReturnMode;
 import yshd.value : Value, ValueKind, YshDict, YshError;
 
 struct FunctionParameter {
@@ -21,6 +21,11 @@ class FunctionReturn : Exception {
         super("YSH function returned");
         this.value = value;
     }
+}
+
+class ProcReturn : Exception {
+    int status;
+    this(int status) { super("YSH proc returned"); this.status = status; }
 }
 
 /// User function closure and argument binding translated from ysh/func_proc.py.
@@ -117,12 +122,14 @@ class YshFunction {
             : new Memory(callerMemory.inputFile, callerMemory.outputFile,
                 callerMemory.errorFile);
         if (callerMemory !is null) {
-            memory.errexit = callerMemory.errexit;
-            memory.nounset = callerMemory.nounset;
-            memory.pipefail = callerMemory.pipefail;
+            memory.options = callerMemory.options;
             memory.errexitSuppression = callerMemory.errexitSuppression;
             memory.argumentZero = callerMemory.argumentZero;
         }
+        auto root = closure;
+        while (root.enclosed !is null) root = root.enclosed;
+        memory.useGlobalFrame(root);
+        memory.returnMode = ReturnMode.functionValue;
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
@@ -237,20 +244,19 @@ class YshProc {
             : new Memory(callerMemory.inputFile, callerMemory.outputFile,
                 callerMemory.errorFile);
         if (callerMemory !is null) {
-            memory.errexit = callerMemory.errexit;
-            memory.nounset = callerMemory.nounset;
-            memory.pipefail = callerMemory.pipefail;
+            memory.options = callerMemory.options;
             memory.errexitSuppression = callerMemory.errexitSuppression;
             memory.argumentZero = callerMemory.argumentZero;
         }
         scope (exit) {
             if (callerMemory !is null) {
                 callerMemory.lastStatus = memory.lastStatus;
-                callerMemory.errexit = memory.errexit;
-                callerMemory.nounset = memory.nounset;
-                callerMemory.pipefail = memory.pipefail;
             }
         }
+        auto root = closure;
+        while (root.enclosed !is null) root = root.enclosed;
+        memory.useGlobalFrame(root);
+        memory.returnMode = ReturnMode.procValue;
         memory.pushEnclosed(closure);
         scope (exit) memory.popFrame();
 
@@ -296,10 +302,11 @@ class YshProc {
 
         try {
             executeProgram(bodySource, memory);
-        } catch (FunctionReturn returned) {
-            return returned.value;
+        } catch (ProcReturn returned) {
+            memory.lastStatus = returned.status;
+            return Value.integer(returned.status);
         }
-        return Value.integer(0);
+        return Value.integer(memory.lastStatus);
     }
 }
 
@@ -337,20 +344,21 @@ unittest {
     assert(namedRest.invoke([], extras).integerValue == 9);
 
     auto openProc = new YshProc("open",
-        "return (ARGV[1])\n", memory);
-    assert(openProc.invoke(["a", "b", "c"]).stringValue == "b");
+        "assert [ARGV[1] === 'b']; return 42\n", memory);
+    assert(openProc.invoke(["a", "b", "c"], memory).integerValue == 42);
+    assert(memory.lastStatus == 42);
 
     auto closedProc = new YshProc("closed",
-        "return (rest[0])\n", memory, false, [
+        "assert [rest[0] === 'b']; return 23\n", memory, false, [
             FunctionParameter("first", ""),
         ], "rest");
-    assert(closedProc.invoke(["a", "b", "c"]).stringValue == "b");
+    assert(closedProc.invoke(["a", "b", "c"]).integerValue == 23);
 
     auto defaultProc = new YshProc("defaulted",
-        "return (word)\n", memory, false, [
+        "assert [word === 'fallback']; return 0\n", memory, false, [
             FunctionParameter("word", "'fallback'"),
         ]);
-    assert(defaultProc.invoke([]).stringValue == "fallback");
+    assert(defaultProc.invoke([]).integerValue == 0);
 
     bool rejectedMutableDefault;
     try {

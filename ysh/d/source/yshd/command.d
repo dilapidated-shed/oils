@@ -2,7 +2,7 @@ module yshd.command;
 
 import std.format : format;
 
-import yshd.expr : AssignmentScope, ResolvedPlace, evaluate, resolvePlace;
+import yshd.expr : AssignmentScope, ResolvedPlace, evaluate, resolvePlace, augmentPlace;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError;
 
@@ -22,6 +22,7 @@ struct Mutation {
     string[] targets;
     AssignmentScope assignmentScope = AssignmentScope.local;
     string rhsSource;
+    string operation;
 }
 
 private Value[] destructure(Value right, size_t count, string description) {
@@ -75,6 +76,12 @@ void executeVarDecl(VarDecl declaration, Memory mem) {
 void executeMutation(Mutation mutation, Memory mem) {
     if (mutation.targets.length == 0) {
         throw new YshError("mutation needs at least one target");
+    }
+    if (mutation.operation.length) {
+        if (mutation.targets.length != 1) throw new YshError("augmented mutation needs one target");
+        augmentPlace(mutation.targets[0], mutation.operation, mutation.rhsSource,
+            mem, mutation.assignmentScope);
+        return;
     }
 
     auto right = evaluate(mutation.rhsSource, mem);

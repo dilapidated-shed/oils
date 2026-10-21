@@ -1,21 +1,27 @@
 module yshd.program;
 
-import std.algorithm : sort;
+import std.algorithm : sort, endsWith;
 import std.conv : to;
-import std.file : chdir, readText;
+import std.file : FileException, chdir, read;
 import std.format : format;
 import std.stdio : File;
 import std.string : indexOf, join, split, strip;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
-import yshd.expr : AssignmentScope, evaluate;
-import yshd.func_proc : FunctionParameter, FunctionReturn, YshFunction, YshProc;
+import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
+    validateAssignmentTarget, parseTypedArguments;
+import yshd.func_proc : FunctionParameter, FunctionReturn, ProcReturn, YshFunction, YshProc;
 import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
-    renderWrite, spliceArray;
+    renderWrite, spliceArray, DataEncodeError, dataOptions;
+import yshd.pretty : prettyValue, terminalWidth;
 import yshd.lexer : Lexer, Token, TokenKind;
-import yshd.process : runExternal, runPipeline;
-import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshError, kindName, stringify, toBool;
+import yshd.process : runExternal, runPipeline, runSourcePipeline, captureSourceOutput;
+import yshd.state : Memory, ReturnMode;
+import yshd.options : ShellOptions;
+import yshd.pattern : ScalarWord, matchesShellPattern;
+import yshd.eggex : Eggex, parseEggex;
+import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
+    StructuredError, YshError, YshTypeError, kindName, stringify, toBool, exactlyEqual;
 
 private class IfCommand {
     string conditionSource;
@@ -26,6 +32,48 @@ private class IfCommand {
     bool hasElse;
 }
 
+private enum CasePatternKind { words, expressions, eggex, otherwise }
+private enum CaseTerminator { stop, fallThrough, retest }
+private struct CaseArm {
+    CasePatternKind kind;
+    string[] patterns;
+    Eggex regex;
+    string body;
+    CaseTerminator terminator;
+}
+
+/// Operator discovery treats a parsed case as one compound command. Its
+/// pattern parentheses, pipes and bracket expressions are not shell grouping
+/// or pipeline operators. Reuse the structural parser rather than balancing
+/// case syntax with a second, approximate grammar.
+private class CommandScanner {
+    private string source;
+    private Lexer lexer;
+    private ReturnMode returnMode;
+    private bool commandStart = true;
+    this(string source, ReturnMode returnMode) {
+        this.source = source;
+        this.returnMode = returnMode;
+        lexer = new Lexer(source, true);
+    }
+    Token next() {
+        auto token = lexer.next();
+        if (commandStart && token.kind == TokenKind.caseKeyword) {
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode);
+            parser.parseCase(null);
+            auto end = token.offset + parser.current_.offset;
+            lexer = new Lexer(source, true, end);
+            commandStart = false;
+            return Token(TokenKind.caseKeyword, source[token.offset .. end], token.offset);
+        }
+        commandStart = token.kind == TokenKind.newline || token.kind == TokenKind.semicolon ||
+            token.kind == TokenKind.leftBrace || token.kind == TokenKind.pipe ||
+            token.kind == TokenKind.andIf || token.kind == TokenKind.orIf ||
+            token.kind == TokenKind.bang;
+        return token;
+    }
+}
+
 class ShellExit : Exception {
     int status;
 
@@ -33,6 +81,12 @@ class ShellExit : Exception {
         super("YSH exit");
         this.status = status;
     }
+}
+
+/// Automatic failure propagation is catchable by try. An explicit exit still
+/// terminates the shell even inside try, as in the reference error model.
+class Errexit : ShellExit {
+    this(int status) { super(status); }
 }
 
 private class LoopControl : Exception {
@@ -59,14 +113,106 @@ class ProgramParser {
     private Token current_;
     private Memory activeMemory_;
     private string[string] visibleAliases_;
+    private bool syntaxOnly_;
+    private ReturnMode returnMode_;
+    private bool executedCommand_;
 
-    this(string source) {
+    this(string source, bool syntaxOnly = false, ReturnMode returnMode = ReturnMode.shell) {
         source_ = source;
+        returnMode_ = returnMode;
+        syntaxOnly_ = syntaxOnly;
         lexer_ = new Lexer(source, true);
         current_ = lexer_.next();
     }
 
+    /// Syntax checking shares the structural and word parsers with execution,
+    /// but has no Memory, streams, variable lookup or evaluator invocation.
+    /// Builtin arguments are words: their runtime arity/option checks do not
+    /// run under -n. Bodies and substitutions are checked unconditionally.
+    void parse() {
+        assert(syntaxOnly_);
+        skipEndStatements();
+        while (current_.kind != TokenKind.eof) {
+            if (tryExecuteAndOr(null) || tryExecuteTopLevelPipeline(null) ||
+                    tryExecuteTopLevelRedirect(null)) {
+                skipEndStatements();
+                continue;
+            }
+            switch (current_.kind) {
+            case TokenKind.varKeyword: parseDeclaration(null, false); break;
+            case TokenKind.constKeyword: parseDeclaration(null, true); break;
+            case TokenKind.setvarKeyword: parseMutation(null, AssignmentScope.local); break;
+            case TokenKind.setglobalKeyword: parseMutation(null, AssignmentScope.global); break;
+            case TokenKind.funcKeyword: parseFunction(null); break;
+            case TokenKind.procKeyword: parseProc(null); break;
+            case TokenKind.ifKeyword: parseIf(null); break;
+            case TokenKind.whileKeyword: parseWhile(null); break;
+            case TokenKind.forKeyword: parseFor(null); break;
+            case TokenKind.caseKeyword: parseCase(null); break;
+            case TokenKind.equal:
+                advance();
+                validateExpression(collectRhs());
+                break;
+            case TokenKind.returnKeyword:
+                parseReturn(null);
+                break;
+            case TokenKind.bang:
+                advance();
+                if (isEndStatement(current_.kind)) throw new YshError("expected command after '!'");
+                parseProgram(collectRhs(false));
+                break;
+            case TokenKind.name:
+                if (current_.text == "try") {
+                    advance();
+                    parseProgram(collectBlock());
+                } else if (current_.text == "call") {
+                    advance();
+                    validateExpression(collectRhs());
+                } else if (current_.text == "assert") {
+                    advance();
+                    validateExpression(current_.kind == TokenKind.leftBracket
+                        ? collectBracketedExpression("assert") : collectRhs());
+                } else if (current_.text == "shopt") {
+                    parseShopt(null);
+                } else {
+                    parseCommandWords();
+                }
+                break;
+            case TokenKind.trueKeyword:
+            case TokenKind.falseKeyword:
+            case TokenKind.breakKeyword:
+            case TokenKind.continueKeyword:
+            case TokenKind.colon:
+            case TokenKind.stringValue:
+            case TokenKind.doubleQuoted:
+            case TokenKind.dollar:
+            case TokenKind.slash:
+                parseCommandWords();
+                break;
+            default:
+                throw new YshError(format("unexpected command token '%s' at byte %s",
+                    current_.text, current_.offset));
+            }
+            skipEndStatements();
+        }
+    }
+
+    private void parseCommandWords() {
+        while (!isEndStatement(current_.kind)) {
+            if (current_.kind == TokenKind.leftParen) {
+                parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true);
+            } else {
+                readCommandWord(null);
+            }
+        }
+    }
+
+    private void parseProgram(string source) {
+        .parseProgram(source, returnMode_);
+    }
+
     void execute(Memory mem) {
+        assert(!syntaxOnly_);
         activeMemory_ = mem;
         // Command aliases expand while parsing, not while invoking arbitrary
         // argument words. Definitions following a semicolon become visible
@@ -75,6 +221,17 @@ class ProgramParser {
         skipEndStatements();
 
         while (current_.kind != TokenKind.eof) {
+            if (mem.options.get("noexec")) {
+                parseProgram(source_[current_.offset .. $]);
+                return;
+            }
+            executedCommand_ = true;
+            if (tryExecuteAndOr(mem)) {
+                // Each eligible command owns its errexit decision. A failed
+                // nonfinal operand and a negated final operand stay exempt.
+                skipEndStatements();
+                continue;
+            }
             if (tryExecuteTopLevelPipeline(mem)) {
                 checkErrexit(mem);
                 skipEndStatements();
@@ -128,6 +285,9 @@ class ProgramParser {
             case TokenKind.forKeyword:
                 parseFor(mem);
                 break;
+            case TokenKind.caseKeyword:
+                parseCase(mem);
+                break;
             case TokenKind.breakKeyword:
                 parseLoopControl(mem, true);
                 break;
@@ -136,16 +296,12 @@ class ProgramParser {
                 break;
             case TokenKind.trueKeyword:
                 advance();
-                if (!isEndStatement(current_.kind)) {
-                    throw new YshError("true does not accept arguments");
-                }
+                while (!isEndStatement(current_.kind)) readCommandWord(mem);
                 mem.lastStatus = 0;
                 break;
             case TokenKind.falseKeyword:
                 advance();
-                if (!isEndStatement(current_.kind)) {
-                    throw new YshError("false does not accept arguments");
-                }
+                while (!isEndStatement(current_.kind)) readCommandWord(mem);
                 mem.lastStatus = 1;
                 break;
             case TokenKind.colon:
@@ -171,11 +327,26 @@ class ProgramParser {
                     parseTry(mem);
                     break;
                 }
+                if (current_.text == "error") {
+                    parseErrorBuiltin(mem);
+                    break;
+                }
+                if (current_.text == "failed") {
+                    advance();
+                    if (!isEndStatement(current_.kind)) {
+                        consumeStatement();
+                        mem.lastStatus = 2;
+                    } else {
+                        auto code = mem.get("_error").dictValue.find("code");
+                        mem.lastStatus = code !is null && code.integerValue != 0 ? 0 : 1;
+                    }
+                    break;
+                }
                 if (current_.text == "assert") {
                     parseAssert(mem);
                     break;
                 }
-                if (current_.text == "json") {
+                if (current_.text == "json" || current_.text == "json8") {
                     parseJson(mem);
                     break;
                 }
@@ -245,7 +416,7 @@ class ProgramParser {
 
     private static void checkErrexit(Memory mem) {
         if (mem.errexit && mem.errexitSuppression == 0 && mem.lastStatus != 0) {
-            throw new ShellExit(mem.lastStatus);
+            throw new Errexit(mem.lastStatus);
         }
     }
 
@@ -271,6 +442,7 @@ class ProgramParser {
                 switch (flag) {
                 case 'e': mem.errexit = enabled; break;
                 case 'u': mem.nounset = enabled; break;
+                case 'n': mem.options.setOld("noexec", enabled); break;
                 case 'o':
                     if (flagIndex + 2 != word.length || index + 1 >= words.length) {
                         throw new YshError("set -o/+o requires a supported option name");
@@ -307,6 +479,7 @@ class ProgramParser {
     /// This is a first alias slice. The more general upstream trailing-space
     /// and compound-language alias expansion remains untranslated.
     private bool tryExpandCommandAlias(Memory mem) {
+        if (!mem.options.get("expand_aliases")) return false;
         if (current_.kind != TokenKind.name) {
             return false;
         }
@@ -323,7 +496,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new Lexer(source_[statementStart .. $], true);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_);
         size_t statementEnd = source_.length;
         int depth;
         while (true) {
@@ -358,11 +531,65 @@ class ProgramParser {
         return true;
     }
 
+    private bool tryExecuteAndOr(Memory mem) {
+        if (!pipelineStatementStart(current_.kind) && current_.kind != TokenKind.bang &&
+                current_.kind != TokenKind.ifKeyword) return false;
+        auto start = current_.offset;
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_);
+        Token[] operators;
+        int depth;
+        size_t end;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof) {
+                if (depth != 0) throw new YshError("unterminated command delimiter");
+                end = token.offset;
+                break;
+            }
+            if (depth == 0 && isEndStatement(token.kind)) {
+                end = token.offset;
+                break;
+            }
+            if (depth == 0 && (token.kind == TokenKind.andIf || token.kind == TokenKind.orIf))
+                operators ~= token;
+            adjustDepth(depth, token.kind);
+        }
+        if (operators.length == 0) return false;
+        string[] clauses;
+        size_t begin;
+        foreach (op; operators) {
+            clauses ~= strip(source_[start + begin .. start + op.offset]);
+            begin = op.offset + op.text.length;
+        }
+        clauses ~= strip(source_[start + begin .. start + end]);
+        foreach (clause; clauses) {
+            if (clause.length == 0) throw new YshError("expected command in &&/|| list");
+            parseProgram(clause);
+        }
+        if (!syntaxOnly_) {
+            foreach (index, clause; clauses) {
+                if (index > 0) {
+                    auto previous = operators[index - 1].kind;
+                    if (previous == TokenKind.andIf && mem.lastStatus != 0) continue;
+                    if (previous == TokenKind.orIf && mem.lastStatus == 0) continue;
+                }
+                bool suppress = index + 1 < clauses.length;
+                if (suppress) ++mem.errexitSuppression;
+                scope (exit) { if (suppress) --mem.errexitSuppression; }
+                executeProgram(clause, mem);
+            }
+        }
+        consumeStatement();
+        return true;
+    }
+
     private bool pipelineStatementStart(TokenKind kind) const {
         return kind == TokenKind.name ||
             kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
+            kind == TokenKind.colon ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
             kind == TokenKind.dollar || kind == TokenKind.slash ||
+            kind == TokenKind.caseKeyword ||
             kind == TokenKind.whileKeyword ||
             kind == TokenKind.forKeyword;
     }
@@ -373,7 +600,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new Lexer(source_[statementStart .. $], true);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_);
         int depth;
         size_t[] separators;
         size_t statementEnd = source_.length - statementStart;
@@ -419,61 +646,29 @@ class ProgramParser {
         }
         stages ~= last;
 
-        auto originalInput = mem.inputFile;
-        auto originalOutput = mem.outputFile;
-        File[] links;
-        scope (exit) {
-            mem.inputFile = originalInput;
-            mem.outputFile = originalOutput;
-            foreach (ref link; links) {
-                link.close();
-            }
+        if (syntaxOnly_) {
+            foreach (stage; stages) parseProgram(stage);
+            consumeStatement();
+            return true;
         }
 
-        int rightmostFailure;
-        ++mem.errexitSuppression;
-        scope (exit) --mem.errexitSuppression;
-        foreach (index, stage; stages) {
-            if (index == 0) {
-                mem.inputFile = originalInput;
-            } else {
-                links[index - 1].rewind();
-                mem.inputFile = links[index - 1];
-            }
+        mem.lastStatus = runSourcePipeline(stages, mem,
+            (string stage, Memory stageMemory) {
+                executeProgram(stage, stageMemory);
+                return stageMemory.lastStatus;
+            });
 
-            if (index + 1 == stages.length) {
-                mem.outputFile = originalOutput;
-            } else {
-                links ~= File.tmpfile();
-                mem.outputFile = links[$ - 1];
-            }
-
-            executeProgram(stage, mem);
-            if (mem.lastStatus != 0) rightmostFailure = mem.lastStatus;
-            if (index + 1 != stages.length) {
-                mem.outputFile.flush();
-            }
-        }
-
-        if (mem.pipefail && rightmostFailure != 0) mem.lastStatus = rightmostFailure;
-
-        int consumeDepth;
-        while (current_.kind != TokenKind.eof) {
-            if (consumeDepth == 0 &&
-                    (current_.kind == TokenKind.newline ||
-                     current_.kind == TokenKind.semicolon)) {
-                break;
-            }
-            adjustDepth(consumeDepth, current_.kind);
-            advance();
-        }
+        consumeStatement();
         return true;
     }
 
     private bool redirectableStatementStart(TokenKind kind) const {
         return kind == TokenKind.name ||
+            kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
+            kind == TokenKind.colon ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
             kind == TokenKind.dollar || kind == TokenKind.slash ||
+            kind == TokenKind.caseKeyword ||
             kind == TokenKind.ifKeyword ||
             kind == TokenKind.whileKeyword ||
             kind == TokenKind.forKeyword;
@@ -494,12 +689,12 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new Lexer(source_[statementStart .. $], true);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_);
         int depth;
         size_t statementEnd = source_.length - statementStart;
         Token[] tokens;
-        bool compound = current_.kind == TokenKind.ifKeyword;
-        bool suffixReady;
+        bool compound = current_.kind == TokenKind.ifKeyword || current_.kind == TokenKind.caseKeyword;
+        bool suffixReady = current_.kind == TokenKind.caseKeyword;
         while (true) {
             auto token = scanner.next();
             if (token.kind == TokenKind.eof) {
@@ -541,11 +736,11 @@ class ProgramParser {
                 begin = tokens[index - 1].offset;
                 descriptor = to!int(tokens[index - 1].text);
             }
-            if (descriptor < 0 || descriptor > 2)
+            if (!syntaxOnly_ && (descriptor < 0 || descriptor > 2))
                 throw new YshError("only descriptors 0, 1 and 2 are translated");
             auto operandStart = token.offset + token.text.length;
             auto operandParser = new ProgramParser(source_[statementStart + operandStart ..
-                statementStart + statementEnd]);
+                statementStart + statementEnd], syntaxOnly_);
             bool duplicate = operandParser.current_.kind == TokenKind.amp;
             if (duplicate) operandParser.advance();
             auto parts = operandParser.readCommandWord(mem);
@@ -556,6 +751,12 @@ class ProgramParser {
         }
         if (redirects.length == 0) return false;
         commandSource ~= source_[statementStart + copiedThrough .. statementStart + statementEnd];
+
+        if (syntaxOnly_) {
+            if (strip(commandSource).length) parseProgram(commandSource);
+            consumeStatement();
+            return true;
+        }
 
         File[] opened;
         auto previousInput = mem.inputFile;
@@ -602,17 +803,24 @@ class ProgramParser {
         mem.outputFile.flush();
         mem.errorFile.flush();
 
-        int consumeDepth;
-        while (current_.kind != TokenKind.eof) {
-            if (consumeDepth == 0 &&
-                    (current_.kind == TokenKind.newline ||
-                     current_.kind == TokenKind.semicolon)) {
+        consumeStatement();
+        return true;
+    }
+
+    private void consumeStatement() {
+        auto start = current_.offset;
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_);
+        int depth;
+        size_t end;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof || (depth == 0 && isEndStatement(token.kind))) {
+                end = start + token.offset;
                 break;
             }
-            adjustDepth(consumeDepth, current_.kind);
-            advance();
+            adjustDepth(depth, token.kind);
         }
-        return true;
+        while (current_.kind != TokenKind.eof && current_.offset < end) advance();
     }
 
     private void parseDeclaration(Memory mem, bool readOnly) {
@@ -636,11 +844,16 @@ class ProgramParser {
         if (current_.kind == TokenKind.equal) {
             advance();
             auto rhs = collectRhs();
+            if (syntaxOnly_) {
+                validateExpression(rhs);
+                return;
+            }
             executeVarDecl(VarDecl(names, readOnly, true, rhs), mem);
             return;
         }
 
         if (isEndStatement(current_.kind)) {
+            if (syntaxOnly_) return;
             executeVarDecl(VarDecl(names, readOnly, false, ""), mem);
             return;
         }
@@ -655,6 +868,7 @@ class ProgramParser {
         advance(); // setvar / setglobal
 
         string[] targets;
+        string operation;
         size_t targetStart = current_.offset;
         int depth;
 
@@ -667,6 +881,13 @@ class ProgramParser {
 
             if (depth == 0 && current_.kind == TokenKind.equal) {
                 auto target = strip(source_[targetStart .. current_.offset]);
+                foreach (op; ["**", "//", "<<", ">>", "++", "+", "-", "*", "/", "%", "&", "|", "^"]) {
+                    if (target.endsWith(op)) {
+                        operation = op;
+                        target = strip(target[0 .. $ - op.length]);
+                        break;
+                    }
+                }
                 if (target.length == 0) {
                     throw new YshError("empty assignment target");
                 }
@@ -691,7 +912,14 @@ class ProgramParser {
         }
 
         auto rhs = collectRhs();
-        executeMutation(Mutation(targets, assignmentScope, rhs), mem);
+        if (operation.length && targets.length != 1)
+            throw new ParseError("augmented mutation needs one target");
+        if (syntaxOnly_) {
+            foreach (target; targets) validateAssignmentTarget(target);
+            validateExpression(rhs);
+            return;
+        }
+        executeMutation(Mutation(targets, assignmentScope, rhs, operation), mem);
     }
 
     private void parseFunction(Memory mem) {
@@ -771,6 +999,7 @@ class ProgramParser {
                 if (defaultSource.length == 0) {
                     throw new YshError("expected parameter default expression");
                 }
+                if (syntaxOnly_) validateExpression(defaultSource);
             } else if (sawDefault) {
                 throw new YshError("required parameter follows a default parameter");
             }
@@ -815,6 +1044,8 @@ class ProgramParser {
         auto body = source_[bodyStart .. bodyEnd];
         advance(); // closing brace
 
+        .parseProgram(body, ReturnMode.functionValue);
+        if (syntaxOnly_) return;
         auto userFunction = new YshFunction(name, parameters, body, mem,
             restPositionalName, namedParameters, restNamedName);
         mem.declareLocal(name, Value.callable(userFunction));
@@ -894,6 +1125,7 @@ class ProgramParser {
                         throw new YshError(
                             "expected proc parameter default expression");
                     }
+                    if (syntaxOnly_) validateExpression(defaultSource);
                 } else if (sawDefault) {
                     throw new YshError(
                         "required parameter follows a default parameter");
@@ -917,6 +1149,8 @@ class ProgramParser {
         }
 
         auto body = collectBlock();
+        .parseProgram(body, ReturnMode.procValue);
+        if (syntaxOnly_) return;
         auto userProc = new YshProc(name, body, mem, openSignature,
             wordParameters, restWordName);
         mem.declareLocal(name, Value.proc(userProc));
@@ -1153,30 +1387,94 @@ class ProgramParser {
         mem.lastStatus = runPipeline(pipeline, mem);
     }
 
-    /// Accept the option-setting forms that gate YSH syntax in the upstream
-    /// spec suite.  The translated parser already speaks YSH directly, so
-    /// these settings do not need to switch parser modes here.
     private void parseShopt(Memory mem) {
         advance(); // shopt
-        while (!isEndStatement(current_.kind)) {
-            readCommandWord(mem);
+        string[] words;
+        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftBrace)
+            words ~= readCommandWord(mem);
+        bool hasBlock = current_.kind == TokenKind.leftBrace;
+        auto body = hasBlock ? collectBlock() : "";
+        if (syntaxOnly_) {
+            if (hasBlock) parseProgram(body);
+            return;
         }
-        mem.lastStatus = 0;
+        try {
+            bool setting, enabled, query, setOptions;
+            size_t index;
+            for (; index < words.length; ++index) {
+                auto word = words[index];
+                if (word == "--") { ++index; break; }
+                if (word == "--set") { setting = true; enabled = true; continue; }
+                if (word == "--unset") { setting = true; enabled = false; continue; }
+                if (word.length < 2 || word[0] != '-') break;
+                foreach (flag; word[1 .. $]) {
+                    switch (flag) {
+                    case 's': setting = true; enabled = true; break;
+                    case 'u': setting = true; enabled = false; break;
+                    case 'q': query = true; break;
+                    case 'p': break;
+                    case 'o': setOptions = true; break;
+                    default: throw new UsageError("shopt: invalid flag " ~ word);
+                    }
+                }
+            }
+            auto names = words[index .. $];
+            if (query) {
+                if (hasBlock) throw new UsageError("shopt -q does not accept a block");
+                mem.lastStatus = 0;
+                foreach (name; names) {
+                    auto number = ShellOptions.number(name, mem.options.get("ignore_shopt_not_impl"));
+                    if (!mem.options.get(number)) { mem.lastStatus = 1; break; }
+                }
+                return;
+            }
+            if (setting) {
+                if (hasBlock) {
+                    size_t[] numbers;
+                    foreach (name; names) numbers ~= mem.options.expand(name);
+                    mem.options.push(numbers, enabled);
+                    scope (exit) mem.options.pop(numbers);
+                    executeProgram(body, mem);
+                } else {
+                    foreach (name; names) mem.options.set(name, enabled);
+                }
+                mem.lastStatus = 0;
+                return;
+            }
+            if (hasBlock) throw new UsageError("shopt requires --set or --unset with a block");
+            size_t[] numbers;
+            bool singleNames;
+            if (names.length == 0) numbers = mem.options.visible(setOptions);
+            else foreach (name; names) {
+                numbers ~= mem.options.expand(name);
+                if (!ShellOptions.isGroup(name)) singleNames = true;
+            }
+            bool anyFalse;
+            foreach (number; numbers) {
+                bool value = mem.options.get(number);
+                anyFalse = anyFalse || !value;
+                auto name = ShellOptions.spec(number).name;
+                if (setOptions) mem.outputFile.writeln("set ", value ? "-o " : "+o ", name);
+                else mem.outputFile.writeln("shopt -", value ? "s " : "u ", name);
+            }
+            mem.lastStatus = singleNames && anyFalse ? 1 : 0;
+        } catch (UsageError error) {
+            mem.errorFile.writeln("ysh-d: ", error.msg);
+            mem.lastStatus = 2;
+        }
     }
 
     private void parseExpressionDisplay(Memory mem) {
         advance(); // =
         auto expression = collectRhs();
         auto value = evaluate(expression, mem);
-        mem.outputFile.write(encodeDataValue(value, WriteEncoding.j8), "\n");
+        mem.outputFile.writeln(prettyValue(value, terminalWidth(mem.outputFile.fileno())));
         mem.lastStatus = 0;
     }
 
     private void parseNoOp(Memory mem) {
         advance(); // :
-        if (!isEndStatement(current_.kind)) {
-            throw new YshError(": does not accept arguments");
-        }
+        while (!isEndStatement(current_.kind)) readCommandWord(mem);
         mem.lastStatus = 0;
     }
 
@@ -1190,14 +1488,21 @@ class ProgramParser {
             throw new YshError("source accepts exactly one path");
         }
 
-        try {
-            executeProgram(readText(words[0]), mem);
-        } catch (YshError error) {
-            throw error;
-        } catch (Exception error) {
-            throw new YshError(format("source %s: %s", words[0], error.msg));
+        string source;
+        try { source = cast(string)read(words[0]); }
+        catch (FileException error) {
+            mem.errorFile.writeln("ysh-d: ", error.msg);
+            mem.lastStatus = 1;
+            return;
         }
-        mem.lastStatus = 0;
+        auto savedMode = mem.returnMode;
+        mem.returnMode = ReturnMode.shell;
+        scope (exit) mem.returnMode = savedMode;
+        try {
+            executeProgram(source, mem);
+        } catch (ProcReturn control) {
+            mem.lastStatus = control.status;
+        }
     }
 
     private void parseEval(Memory mem) {
@@ -1206,8 +1511,12 @@ class ProgramParser {
         while (!isEndStatement(current_.kind)) {
             words ~= readCommandWord(mem);
         }
+        if (mem.options.get("simple_eval_builtin") && words.length != 1) {
+            mem.errorFile.writeln("ysh-d: eval requires exactly one argument");
+            mem.lastStatus = 2;
+            return;
+        }
         executeProgram(words.join(" "), mem);
-        mem.lastStatus = 0;
     }
 
     private void parseExit(Memory mem) {
@@ -1272,17 +1581,247 @@ class ProgramParser {
 
     private void parseReturn(Memory mem) {
         advance(); // return
-        if (mem.currentFrame.enclosed is null) {
-            throw new YshError("return is only valid inside a function");
+        if (returnMode_ == ReturnMode.functionValue) {
+            if (current_.kind != TokenKind.leftParen)
+                throw new ParseError("func return requires one typed argument in parentheses");
+            auto arguments = parseTypedArguments("(" ~ collectParenthesizedExpression() ~ ")", true);
+            auto expression = arguments.singleExpression();
+            if (!isEndStatement(current_.kind)) throw new ParseError("unexpected argument after typed return");
+            if (syntaxOnly_) return;
+            auto optionNumbers = mem.options.pushExpression();
+            scope (exit) mem.options.pop(optionNumbers);
+            throw new FunctionReturn(expression.eval(mem));
         }
-        if (isEndStatement(current_.kind)) {
-            throw new YshError("return requires a value expression");
+        if (current_.kind == TokenKind.leftParen)
+            throw new ParseError("typed return is only allowed inside func");
+        string[] words;
+        while (!isEndStatement(current_.kind)) words ~= readCommandWord(mem);
+        if (words.length > 1) throw new ParseError("return accepts at most one status word");
+        if (syntaxOnly_) return;
+        int status = mem.lastStatus;
+        if (words.length) {
+            try { status = to!int(words[0]); }
+            catch (Exception error) { throw new FatalRuntimeError("return status must be an integer"); }
         }
-        throw new FunctionReturn(evaluate(collectRhs(), mem));
+        throw new ProcReturn(status & 255);
+    }
+
+    private void parseCase(Memory mem) {
+        advance(); // case
+        if (current_.kind != TokenKind.leftParen) {
+            parseOldCase(mem);
+            return;
+        }
+        string subjectSource;
+        CaseArm[] arms;
+        try {
+            subjectSource = collectParenthesizedExpression();
+            validateExpression(subjectSource);
+            require(TokenKind.leftBrace, "{");
+            skipCaseNewlines();
+            while (current_.kind != TokenKind.rightBrace) {
+                if (current_.kind == TokenKind.eof) throw new ParseError("Unterminated case statement");
+                CaseArm arm;
+                if (current_.kind == TokenKind.leftParen) {
+                    arm.kind = CasePatternKind.expressions;
+                    while (true) {
+                        auto pattern = collectParenthesizedExpression();
+                        if (pattern == "else") {
+                            if (arm.patterns.length) throw new ParseError("(else) must be the sole pattern");
+                            arm.kind = CasePatternKind.otherwise;
+                        } else {
+                            validateExpression(pattern);
+                            arm.patterns ~= pattern;
+                        }
+                        skipCaseNewlines();
+                        if (current_.kind != TokenKind.pipe) break;
+                        if (arm.kind == CasePatternKind.otherwise) throw new ParseError("(else) cannot have alternatives");
+                        advance();
+                        skipCaseNewlines();
+                        if (current_.kind != TokenKind.leftParen)
+                            throw new ParseError("Expression case patterns must be parenthesized");
+                    }
+                } else if (current_.kind == TokenKind.slash) {
+                    arm.kind = CasePatternKind.eggex;
+                    auto start = current_.offset;
+                    arm.regex = parseEggex(source_[start .. $]);
+                    auto end = start + arm.regex.endOffset;
+                    while (current_.kind != TokenKind.eof && current_.offset < end) advance();
+                    skipCaseNewlines();
+                } else {
+                    arm.kind = CasePatternKind.words;
+                    while (true) {
+                        arm.patterns ~= collectPatternWord();
+                        skipCaseNewlines();
+                        if (current_.kind != TokenKind.pipe) break;
+                        advance();
+                        skipCaseNewlines();
+                        if (current_.kind == TokenKind.leftParen || current_.kind == TokenKind.slash)
+                            throw new ParseError("Word case patterns cannot mix with expressions or Eggex");
+                    }
+                }
+                arm.body = collectBlock();
+                // Even unreachable bodies and patterns must have valid syntax.
+                parseProgram(arm.body);
+                arms ~= arm;
+                skipCaseNewlines();
+            }
+            advance(); // }
+        } catch (YshError error) {
+            if (error.status == 2) throw error;
+            throw new ParseError(error.msg);
+        }
+        if (!syntaxOnly_) executeCase(evaluate(subjectSource, mem), arms, mem);
+    }
+
+    private void executeCase(Value subject, CaseArm[] arms, Memory mem) {
+        int status;
+        bool fallThrough;
+        foreach (arm; arms) {
+            bool selected = fallThrough;
+            if (!fallThrough) {
+                final switch (arm.kind) {
+            case CasePatternKind.otherwise: selected = true; break;
+            case CasePatternKind.expressions:
+                foreach (pattern; arm.patterns) {
+                    if (exactlyEqual(evaluate(pattern, mem), subject)) { selected = true; break; }
+                }
+                break;
+            case CasePatternKind.words:
+                if (subject.kind != ValueKind.stringValue) break;
+                foreach (pattern; arm.patterns) {
+                    auto parser = new ProgramParser(pattern);
+                    auto word = parser.readScalarWord(mem, true);
+                    if (matchesShellPattern(word, subject.stringValue, mem.options.get("nocasematch"))) {
+                        selected = true;
+                        break;
+                    }
+                }
+                break;
+            case CasePatternKind.eggex: selected = arm.regex.matches(subject, mem); break;
+                }
+            }
+            if (selected) {
+                executeProgram(arm.body, mem);
+                status = mem.lastStatus;
+                if (arm.terminator == CaseTerminator.stop) return;
+            }
+            fallThrough = selected && arm.terminator == CaseTerminator.fallThrough;
+        }
+        // Pattern substitutions may change $?. They do not replace the
+        // status of the last selected action (or zero when none matched).
+        mem.lastStatus = status;
+    }
+
+    private string collectPatternWord(bool pattern = true) {
+        auto start = current_.offset;
+        auto previousMode = syntaxOnly_;
+        syntaxOnly_ = true;
+        scope (exit) syntaxOnly_ = previousMode;
+        readScalarWord(null, pattern);
+        return source_[start .. current_.offset];
+    }
+
+    private void parseOldCase(Memory mem) {
+        string subjectSource;
+        CaseArm[] arms;
+        try {
+            subjectSource = collectPatternWord(false);
+            skipCaseNewlines();
+            require(TokenKind.inKeyword, "in");
+            skipCaseNewlines();
+            while (current_.kind != TokenKind.esacKeyword) {
+                if (current_.kind == TokenKind.eof) throw new ParseError("Unterminated old case statement");
+                CaseArm arm;
+                arm.kind = CasePatternKind.words;
+                if (current_.kind == TokenKind.leftParen) advance();
+                while (true) {
+                    arm.patterns ~= collectPatternWord();
+                    if (current_.kind != TokenKind.pipe) break;
+                    advance();
+                }
+                require(TokenKind.rightParen, ")");
+                skipCaseNewlines();
+                arm.body = collectOldCaseBody();
+                parseProgram(arm.body);
+                if (current_.kind == TokenKind.semicolon) {
+                    auto offset = current_.offset;
+                    advance();
+                    if (current_.offset != offset + 1)
+                        throw new ParseError("Expected ;; or ;& after old case arm");
+                    if (current_.kind == TokenKind.amp) {
+                        arm.terminator = CaseTerminator.fallThrough;
+                        advance();
+                    } else {
+                        require(TokenKind.semicolon, ";;");
+                        if (current_.kind == TokenKind.amp && current_.offset == offset + 2) {
+                            arm.terminator = CaseTerminator.retest;
+                            advance();
+                        }
+                    }
+                } else if (current_.kind != TokenKind.esacKeyword) {
+                    throw new ParseError("Expected ;; or esac after old case arm");
+                }
+                arms ~= arm;
+                skipCaseNewlines();
+            }
+            advance();
+        } catch (YshError error) {
+            if (error.status == 2) throw error;
+            throw new ParseError(error.msg);
+        }
+        if (!syntaxOnly_) {
+            auto subject = (new ProgramParser(subjectSource)).readScalarWord(mem).text();
+            executeCase(Value.str(subject), arms, mem);
+        }
+    }
+
+    private string collectOldCaseBody() {
+        auto start = current_.offset;
+        int depth;
+        bool commandStart = true;
+        while (current_.kind != TokenKind.eof) {
+            if (depth == 0) {
+                if (commandStart && current_.kind == TokenKind.esacKeyword) break;
+                if (current_.kind == TokenKind.semicolon) {
+                    auto next = lexer_.peek();
+                    if (next.offset == current_.offset + 1 &&
+                            (next.kind == TokenKind.semicolon || next.kind == TokenKind.amp)) break;
+                }
+                if (commandStart && current_.kind == TokenKind.caseKeyword) {
+                    // Let the structural parser consume nested case syntax;
+                    // its pattern ')' is not a command grouping delimiter.
+                    auto previousMode = syntaxOnly_;
+                    syntaxOnly_ = true;
+                    { scope (exit) syntaxOnly_ = previousMode; parseCase(null); }
+                    commandStart = false;
+                    continue;
+                }
+            }
+            auto kind = current_.kind;
+            adjustDepth(depth, kind);
+            advance();
+            commandStart = isEndStatement(kind) || kind == TokenKind.pipe ||
+                kind == TokenKind.andIf || kind == TokenKind.orIf;
+        }
+        return source_[start .. current_.offset];
+    }
+
+    private void skipCaseNewlines() {
+        while (current_.kind == TokenKind.newline) advance();
     }
 
     private void parseIf(Memory mem) {
         auto command = parseIfCommand();
+        if (syntaxOnly_) {
+            for (auto arm = command; arm !is null; arm = arm.elseIf) {
+                if (arm.expressionCondition) validateExpression(arm.conditionSource);
+                else parseProgram(arm.conditionSource);
+                parseProgram(arm.thenSource);
+                if (arm.hasElse && arm.elseIf is null) parseProgram(arm.elseSource);
+            }
+            return;
+        }
         while (command !is null) {
             bool selected;
             if (command.expressionCondition) {
@@ -1342,12 +1881,30 @@ class ProgramParser {
 
     private void parseWhile(Memory mem) {
         advance(); // while
-        auto conditionSource = current_.kind == TokenKind.leftParen
+        bool expressionCondition = current_.kind == TokenKind.leftParen;
+        auto conditionSource = expressionCondition
             ? collectParenthesizedExpression()
             : collectConditionThroughBlock();
         auto bodySource = collectBlock();
 
-        while (toBool(evaluate(conditionSource, mem))) {
+        if (syntaxOnly_) {
+            if (expressionCondition) validateExpression(conditionSource);
+            else parseProgram(conditionSource);
+            parseProgram(bodySource);
+            return;
+        }
+        int bodyStatus;
+        while (true) {
+            bool selected;
+            if (expressionCondition) {
+                selected = toBool(evaluate(conditionSource, mem));
+            } else {
+                ++mem.errexitSuppression;
+                scope (exit) --mem.errexitSuppression;
+                executeProgram(conditionSource, mem);
+                selected = mem.lastStatus == 0;
+            }
+            if (!selected) break;
             mem.enterLoop();
             scope (exit) mem.leaveLoop();
             try {
@@ -1358,10 +1915,13 @@ class ProgramParser {
                     throw control;
                 }
                 if (control.shouldBreak) {
+                    bodyStatus = 0;
                     break;
                 }
             }
+            bodyStatus = mem.lastStatus;
         }
+        mem.lastStatus = bodyStatus;
     }
 
     /// First expression-iterator and literal shell-word forms of YSH `for`.
@@ -1396,6 +1956,10 @@ class ProgramParser {
                 words ~= readCommandWord(mem);
             }
             auto bodySource = collectBlock();
+            if (syntaxOnly_) {
+                parseProgram(bodySource);
+                return;
+            }
             mem.enterLoop();
             scope (exit) mem.leaveLoop();
             foreach (index, word; words) {
@@ -1420,6 +1984,11 @@ class ProgramParser {
 
         auto iterableSource = collectParenthesizedExpression();
         auto bodySource = collectBlock();
+        if (syntaxOnly_) {
+            validateExpression(iterableSource);
+            parseProgram(bodySource);
+            return;
+        }
         auto iterable = evaluate(iterableSource, mem);
 
         mem.enterLoop();
@@ -1515,29 +2084,57 @@ class ProgramParser {
     /// YSH `call f(...)` evaluates a function-call expression for its
     /// side effects and discards the returned value.
     private void parseJson(Memory mem) {
+        auto encoding = current_.text == "json8" ? WriteEncoding.j8 : WriteEncoding.json;
         advance(); // json
-        if (current_.kind != TokenKind.name || current_.text != "write") {
-            throw new YshError("json currently supports 'json write'");
+        string[] words;
+        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen) {
+            words ~= readCommandWord(mem);
         }
-        advance();
-
-        auto expression = collectRhs();
-        auto value = evaluate(expression, mem);
-        mem.outputFile.write(encodeDataValue(value, WriteEncoding.json), "\n");
+        auto arguments = current_.kind == TokenKind.leftParen
+            ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
+            : parseTypedArguments("()", true);
+        if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after JSON typed arguments");
+        if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) && words[0] == "write")) {
+            mem.errorFile.writeln("json: expected write with no word arguments; read is not translated yet");
+            mem.lastStatus = 2;
+            return;
+        }
+        auto values = arguments.eval(mem);
+        if (values.positional.length != 1 || values.hasBlock)
+            throw new YshTypeError("json write expects one typed argument");
+        auto options = dataOptions(values.named, 2);
+        // Buffer before writing so errors never leave an incomplete document.
+        try {
+            auto message = encodeDataValue(values.positional[0], encoding, options.space, options.typeErrors);
+            mem.outputFile.writeln(message);
+        } catch (DataEncodeError error) {
+            mem.errorFile.writeln("json write: ", error.msg);
+            mem.lastStatus = 1;
+            return;
+        }
         mem.lastStatus = 0;
     }
 
     private void parsePrettyPrint(Memory mem) {
         advance(); // pp
-        if (current_.kind != TokenKind.name || current_.text != "test_") {
-            throw new YshError("pp currently supports 'pp test_'");
+        if (current_.kind != TokenKind.name || (current_.text != "test_" && current_.text != "value")) {
+            throw new UsageError("pp currently supports test_ and value");
         }
+        auto action = current_.text;
         advance();
-
-        auto expression = collectRhs();
-        auto value = evaluate(expression, mem);
-        mem.outputFile.write("(", kindName(value), ")   ",
-            encodeDataValue(value, WriteEncoding.j8), "\n");
+        auto parsed = current_.kind == TokenKind.leftParen
+            ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
+            : parseTypedArguments("()", true);
+        if (!isEndStatement(current_.kind)) throw new UsageError("pp: unexpected word arguments");
+        auto values = parsed.eval(mem);
+        if (values.positional.length != 1 || values.named.length || values.hasBlock)
+            throw new YshTypeError("pp expects one typed argument");
+        auto value = values.positional[0];
+        if (action == "value") mem.outputFile.writeln(prettyValue(value, terminalWidth(mem.outputFile.fileno())));
+        else {
+            if (value.kind <= ValueKind.dict) mem.outputFile.write("(", kindName(value), ")   ");
+            mem.outputFile.writeln(encodeDataValue(value, WriteEncoding.j8, -1, false, true));
+        }
         mem.lastStatus = 0;
     }
 
@@ -1592,16 +2189,62 @@ class ProgramParser {
         auto body = collectBlock();
 
         auto error = Value.dict();
+        auto optionNumbers = mem.options.expand("errexit");
+        mem.options.push(optionNumbers, true);
+        scope (exit) mem.options.pop(optionNumbers);
+        auto savedSuppression = mem.errexitSuppression;
+        mem.errexitSuppression = 0;
+        scope (exit) mem.errexitSuppression = savedSuppression;
         try {
             executeProgram(body, mem);
             error.dictValue.set("code", Value.integer(0));
-            error.dictValue.set("message", Value.str(""));
+        } catch (Errexit caught) {
+            error.dictValue.set("code", Value.integer(caught.status));
+        } catch (StructuredError caught) {
+            error = Value.dictRef(caught.properties);
         } catch (YshError caught) {
+            // Syntax errors aren't runtime exceptions and aren't catchable.
+            if (caught.status != 3) throw caught;
             error.dictValue.set("code", Value.integer(3));
-            error.dictValue.set("message", Value.str(caught.msg));
         }
-        mem.setVar("_error", error);
+        mem.setGlobal("_error", error);
+        mem.setGlobal("_status", error.dictValue.get("code"));
         mem.lastStatus = 0;
+    }
+
+    private void parseErrorBuiltin(Memory mem) {
+        advance();
+        string[] words;
+        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen)
+            words ~= readCommandWord(mem);
+        auto properties = new YshDict();
+        int code = 10;
+        if (current_.kind == TokenKind.leftParen) {
+            auto parsed = parseTypedArguments("(" ~ collectParenthesizedExpression() ~ ")");
+            // The reference checks the required word message before any typed
+            // argument is evaluated, including an otherwise invalid code.
+            if (words.length == 0) {
+                mem.errorFile.writeln("ysh-d: error requires a message");
+                mem.lastStatus = 2;
+                return;
+            }
+            auto arguments = parsed.eval(mem);
+            if (arguments.positional.length || arguments.hasBlock)
+                throw new YshError("error accepts only named typed arguments");
+            properties = arguments.named;
+            auto codeValue = properties.find("code");
+            if (codeValue !is null) {
+                if (codeValue.kind != ValueKind.integer) throw new YshError("error code must be Int");
+                code = to!int(codeValue.integerValue);
+                properties.erase("code");
+            }
+        }
+        if (words.length == 0 || code == 0) {
+            mem.errorFile.writeln("ysh-d: error requires a message and a nonzero code");
+            mem.lastStatus = 2;
+            return;
+        }
+        throw new StructuredError(code, words[0], properties);
     }
 
     private void parseAssert(Memory mem) {
@@ -1742,34 +2385,45 @@ class ProgramParser {
         if (current_.kind == TokenKind.at) {
             return parseArraySplice(mem);
         }
+        return [readScalarWord(mem).text()];
+    }
 
+    private ScalarWord readScalarWord(Memory mem, bool pattern = false) {
         auto end = current_.offset;
-        string result;
+        ScalarWord result;
         bool consumed;
-        while (current_.offset == end && isCommandWordToken(current_.kind)) {
+        while (true) {
+            // The lexer removes a backslash-newline, including in a word.
+            while (end + 1 < source_.length && source_[end .. end + 2] == "\\\n") end += 2;
+            bool patternToken = pattern && (current_.kind == TokenKind.star ||
+                current_.kind == TokenKind.starStar || current_.kind == TokenKind.leftBracket ||
+                current_.kind == TokenKind.rightBracket || current_.kind == TokenKind.caret ||
+                current_.kind == TokenKind.bang || current_.kind == TokenKind.percent ||
+                current_.kind == TokenKind.tilde);
+            if (current_.offset != end || !(isCommandWordToken(current_.kind) || patternToken)) break;
             if (current_.kind == TokenKind.charValue) {
-                result ~= current_.text;
+                result.append(current_.text, true);
                 end = characterEscapeEnd(current_.offset);
                 consumed = true;
                 advance();
             } else if (current_.kind == TokenKind.stringValue) {
-                result ~= current_.text;
+                result.append(current_.text, true);
                 end = quotedTokenEnd(current_.offset, '\'');
                 consumed = true;
                 advance();
             } else if (current_.kind == TokenKind.doubleQuoted) {
-                result ~= evaluateDoubleQuoted(current_.text, mem);
+                result.append(evaluateDoubleQuoted(current_.text, mem), true);
                 end = quotedTokenEnd(current_.offset, '"');
                 consumed = true;
                 advance();
             } else if (current_.kind == TokenKind.dollar) {
                 size_t substitutionEnd;
-                result ~= parseScalarSubstitution(mem, substitutionEnd);
+                result.append(parseScalarSubstitution(mem, substitutionEnd), false);
                 end = substitutionEnd;
                 consumed = true;
             } else {
                 end += literalTokenLength(current_);
-                result ~= source_[current_.offset .. end];
+                result.append(source_[current_.offset .. end], false);
                 consumed = true;
                 advance();
             }
@@ -1778,7 +2432,7 @@ class ProgramParser {
             throw new YshError(format("untranslated command word '%s' at byte %s",
                 current_.text, current_.offset));
         }
-        return [result];
+        return result;
     }
 
     private size_t characterEscapeEnd(size_t start) const {
@@ -1908,7 +2562,8 @@ class ProgramParser {
                     content[position + 1] == '[') {
                 auto close = substitutionClose(content, position + 1, '[', ']');
                 auto expression = content[position + 2 .. close];
-                result ~= stringify(evaluate(expression, mem));
+                if (syntaxOnly_) validateExpression(expression);
+                else result ~= stringify(evaluate(expression, mem));
                 position = close + 1;
                 continue;
             }
@@ -1929,14 +2584,14 @@ class ProgramParser {
 
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '?') {
-                result ~= to!string(mem.lastStatus);
+                if (!syntaxOnly_) result ~= to!string(mem.lastStatus);
                 position += 2;
                 continue;
             }
 
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '0') {
-                result ~= mem.argumentZero;
+                if (!syntaxOnly_) result ~= mem.argumentZero;
                 position += 2;
                 continue;
             }
@@ -1949,7 +2604,7 @@ class ProgramParser {
                         asciiIdentifierContinue(content[nameEnd])) {
                     ++nameEnd;
                 }
-                result ~= mem.wordVariable(content[nameStart .. nameEnd]);
+                if (!syntaxOnly_) result ~= mem.wordVariable(content[nameStart .. nameEnd]);
                 position = nameEnd;
                 continue;
             }
@@ -1967,9 +2622,46 @@ class ProgramParser {
         while (nameEnd < parameter.length && asciiIdentifierContinue(parameter[nameEnd])) ++nameEnd;
         if (nameEnd == 0 || !asciiIdentifierStart(parameter[0]))
             throw new YshError("unsupported braced parameter");
-        auto value = mem.wordVariable(parameter[0 .. nameEnd]);
-        if (nameEnd == parameter.length) return value;
-        auto operation = parameter[nameEnd];
+        auto name = parameter[0 .. nameEnd];
+        if (nameEnd == parameter.length) return syntaxOnly_ ? "" : mem.wordVariable(name);
+        char operation = parameter[nameEnd];
+        bool colon = operation == ':';
+        auto operatorOffset = nameEnd + (colon ? 1 : 0);
+        if (operatorOffset < parameter.length &&
+                (parameter[operatorOffset] == '-' || parameter[operatorOffset] == '+' ||
+                 parameter[operatorOffset] == '=' || parameter[operatorOffset] == '?')) {
+            operation = parameter[operatorOffset];
+            auto word = parameter[operatorOffset + 1 .. $];
+            auto wordParser = new ProgramParser(word, syntaxOnly_);
+            if (syntaxOnly_) {
+                // Syntax is checked even when the default would be unused,
+                // while nested commands and assignments remain unevaluated.
+                if (word.length) {
+                    wordParser.readCommandWord(null);
+                    if (wordParser.current_.kind != TokenKind.eof)
+                        throw new YshError("parameter default requires one translated word");
+                }
+                return "";
+            }
+            auto cell = mem.getCell(name);
+            auto environmentValue = mem.get("ENV").dictValue.find(name);
+            bool defined = cell !is null || environmentValue !is null;
+            auto existing = defined ? mem.wordVariable(name) : "";
+            bool useDefault = !defined || (colon && existing.length == 0);
+            if (operation == '+') useDefault = !useDefault;
+            if (!useDefault) return operation == '+' ? "" : existing;
+            string replacement;
+            if (word.length) {
+                auto parts = wordParser.readCommandWord(mem);
+                if (parts.length != 1 || wordParser.current_.kind != TokenKind.eof)
+                    throw new YshError("parameter default requires one translated word");
+                replacement = parts[0];
+            }
+            if (operation == '?') throw new YshError(replacement.length ? replacement : name ~ " is unset");
+            if (operation == '=') mem.setVar(name, Value.str(replacement));
+            return replacement;
+        }
+        auto value = syntaxOnly_ ? "" : mem.wordVariable(name);
         if (operation != '%' && operation != '#')
             throw new YshError("untranslated parameter operation");
         auto patternStart = nameEnd + 1;
@@ -2003,6 +2695,7 @@ class ProgramParser {
 
     private static bool isCommandWordToken(TokenKind kind) {
         return isLiteralWordToken(kind) || kind == TokenKind.equal ||
+            kind == TokenKind.plusPlus ||
             kind == TokenKind.slashSlash || kind == TokenKind.bang ||
             kind == TokenKind.comma ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
@@ -2024,13 +2717,23 @@ class ProgramParser {
         }
         if (current_.kind == TokenKind.leftBracket) {
             auto expression = collectBracketedExpression("@ splice");
+            if (syntaxOnly_) {
+                validateExpression(expression);
+                return [""];
+            }
             return spliceArray(evaluate(expression, mem));
         }
         if (current_.kind != TokenKind.name) {
             throw new YshError("@ splice expects a variable name or [expression]");
         }
-        auto value = mem.get(current_.text);
+        auto value = Value.nullValue();
+        if (!syntaxOnly_) {
+            auto cell = mem.getCell(current_.text);
+            if (cell is null) throw new YshError("Undefined splice variable '" ~ current_.text ~ "'");
+            value = cell.value;
+        }
         advance();
+        if (syntaxOnly_) return [""];
         return spliceArray(value);
     }
 
@@ -2059,46 +2762,44 @@ class ProgramParser {
         }
         if (current_.kind == TokenKind.leftBracket) {
             auto expression = collectBracketedExpression("$ expression", endOffset);
+            if (syntaxOnly_) {
+                validateExpression(expression);
+                return "";
+            }
             return stringify(evaluate(expression, mem));
         }
         if (current_.kind == TokenKind.question) {
             endOffset = current_.offset + 1;
             advance();
-            return to!string(mem.lastStatus);
+            return syntaxOnly_ ? "" : to!string(mem.lastStatus);
         }
         if (current_.kind == TokenKind.integer && current_.text == "0") {
             endOffset = current_.offset + 1;
             advance();
-            return mem.argumentZero;
+            return syntaxOnly_ ? "" : mem.argumentZero;
         }
         if (current_.kind != TokenKind.name) {
             throw new YshError("$ substitution expects a variable name or [expression]");
         }
-        auto value = mem.wordVariable(current_.text);
+        auto value = syntaxOnly_ ? "" : mem.wordVariable(current_.text);
         endOffset = current_.offset + current_.text.length;
         advance();
         return value;
     }
 
     private string captureCommandOutput(string command, Memory mem) {
-        auto capture = File.tmpfile();
-        auto previous = mem.outputFile;
-        mem.outputFile = capture;
-        scope (exit) mem.outputFile = previous;
-
-        executeProgram(command, mem);
-        capture.flush();
-        capture.rewind();
-
-        string output;
-        while (true) {
-            auto line = capture.readln();
-            if (line.length == 0) {
-                break;
-            }
-            output ~= line;
+        if (syntaxOnly_) {
+            parseProgram(command);
+            return "";
         }
-        return output;
+        auto result = captureSourceOutput(command, mem,
+            (string source, Memory childMemory) {
+                executeProgram(source, childMemory);
+                return childMemory.lastStatus;
+            });
+        if (mem.options.get("command_sub_errexit") && mem.lastStatus != 0)
+            throw new Errexit(mem.lastStatus);
+        return result;
     }
 
     private static string[] splitCommandOutput(string output) {
@@ -2228,6 +2929,8 @@ class ProgramParser {
         case TokenKind.returnKeyword:
         case TokenKind.whileKeyword:
         case TokenKind.forKeyword:
+        case TokenKind.caseKeyword:
+        case TokenKind.esacKeyword:
         case TokenKind.breakKeyword:
         case TokenKind.continueKeyword:
         case TokenKind.minus:
@@ -2312,7 +3015,7 @@ class ProgramParser {
         throw new LoopControl(shouldBreak, levels);
     }
 
-    private string collectParenthesizedExpression() {
+    private string collectParenthesizedExpression(bool allowEmpty = false) {
         require(TokenKind.leftParen, "(");
         auto start = current_.offset;
         auto end = start;
@@ -2323,7 +3026,7 @@ class ProgramParser {
                 end = current_.offset;
                 advance();
                 auto expression = strip(source_[start .. end]);
-                if (expression.length == 0) {
+                if (expression.length == 0 && !allowEmpty) {
                     throw new YshError("if condition cannot be empty");
                 }
                 return expression;
@@ -2454,8 +3157,47 @@ string evaluateCommandSubstitution(string command, Memory mem) {
 }
 
 void executeProgram(string source, Memory mem) {
-    auto parser = new ProgramParser(source);
+    auto parser = new ProgramParser(source, false, mem.returnMode);
     parser.execute(mem);
+    // Batch and command-list evaluation return zero for an empty program.
+    // Do this afterward so a first command's $? still sees its caller's status.
+    if (!parser.executedCommand_) mem.lastStatus = 0;
+}
+
+/// Parse with no interpreter state. No command or expression is evaluated.
+void parseProgram(string source, ReturnMode returnMode = ReturnMode.shell) {
+    try {
+        (new ProgramParser(source, true, returnMode)).parse();
+    } catch (ParseError error) {
+        throw error;
+    } catch (YshError error) {
+        // Structural parsers do not execute code. Their diagnostics are parse
+        // failures even when invoked by source, a function definition, or
+        // dynamic noexec rather than the CLI's -n path.
+        throw new ParseError(error.msg);
+    }
+}
+
+void validateDoubleQuoted(string content) {
+    (new ProgramParser("", true)).evaluateDoubleQuoted(content, null);
+}
+
+string[] evaluateShellWords(string source, Memory mem) {
+    auto parser = new ProgramParser(source);
+    string[] words;
+    while (parser.current_.kind != TokenKind.eof) {
+        if (parser.current_.kind == TokenKind.newline) parser.advance();
+        else words ~= parser.readCommandWord(mem);
+    }
+    return words;
+}
+
+void validateShellWords(string source) {
+    auto parser = new ProgramParser(source, true);
+    while (parser.current_.kind != TokenKind.eof) {
+        if (parser.current_.kind == TokenKind.newline) parser.advance();
+        else parser.readCommandWord(null);
+    }
 }
 
 unittest {
@@ -2717,12 +3459,16 @@ unittest {
     auto output = File.tmpfile();
     auto errors = File.tmpfile();
     auto mem = new Memory(output, errors);
-    executeProgram(
-        "shopt -s ysh:all\n" ~
-        "alias ll='echo alias-ok'\n" ~
-        "ll\n" ~
-        "unalias ll\n" ~
-        "alias ll\n", mem);
+    bool stopped;
+    try {
+        executeProgram(
+            "shopt -s ysh:all\n" ~
+            "alias ll='echo alias-ok'\n" ~
+            "ll\n" ~
+            "unalias ll\n" ~
+            "alias ll\n", mem);
+    } catch (Errexit error) { stopped = error.status == 1; }
+    assert(stopped);
     output.rewind();
     assert(output.readln() == "alias-ok\n");
     assert(output.readln().length == 0);

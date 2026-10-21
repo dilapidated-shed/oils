@@ -138,8 +138,28 @@ enum ValueKind {
 }
 
 class YshError : Exception {
-    this(string message) {
+    int status;
+    this(string message, int status = 3) {
         super(message);
+        this.status = status;
+    }
+}
+
+class UsageError : YshError {
+    this(string message) { super(message, 2); }
+}
+
+class FatalRuntimeError : YshError {
+    this(string message) { super(message, 1); }
+}
+
+class StructuredError : YshError {
+    YshDict properties;
+    this(int status, string message, YshDict properties) {
+        super(message, status);
+        this.properties = properties;
+        properties.set("code", Value.integer(status));
+        properties.set("message", Value.str(message));
     }
 }
 
@@ -320,7 +340,14 @@ string stringify(Value value) {
     case ValueKind.integer:
         return toDecimalString(value.integerValue);
     case ValueKind.floating:
-        return format("%s", value.floatValue);
+        import std.math : isNaN, isInfinity;
+        import std.string : indexOf;
+        if (isNaN(value.floatValue)) return "NAN";
+        if (isInfinity(value.floatValue)) return value.floatValue < 0 ? "-INFINITY" : "INFINITY";
+        // Match the reference FloatToStr precision before preserving .0.
+        auto text = format("%.16g", value.floatValue);
+        if (text.indexOf('.') < 0 && text.indexOf('e') < 0 && text.indexOf('E') < 0) text ~= ".0";
+        return text;
     case ValueKind.stringValue:
         return value.stringValue;
     case ValueKind.list:

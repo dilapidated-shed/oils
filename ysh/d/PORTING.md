@@ -217,12 +217,12 @@ passed nine module test suites, and passed the full existing CLI smoke sequence:
 The bounded repairs corrected a D identifier shadow, subprocess stream ownership,
 redirect lifetime, and shared double-quoted expression interpolation.
 
-The single surviving runtime acceptance dependency is the inherited YSH spec
-suite running against this D executable. Its immediate entrypoint gap is a real
-`-n FILE` parse-only mode that performs no execution; the current CLI only
-provides expression, `-c`, file, and stdin execution. This also prevents a valid
-parse-only benchmark comparison. Do not implement `-n` by executing the program
-or by passing its parse to Python/C++.
+The surviving whole-shell runtime acceptance dependency is the inherited YSH
+spec suite running against this D executable. The earlier immediate entrypoint
+gap, nonexecuting `-n FILE`, is repaired in the continuation below. The parser
+does not execute source or pass its parse to Python/C++. Full parser and runtime
+compatibility remain open; no paired benchmark acceptance follows from this
+bounded repair.
 
 The full parser, alias expansion, options, proc/function signature and closure
 parity, jobs/signals/traps, modules, regex/Eggex, interactive behavior, and
@@ -274,15 +274,195 @@ focused inherited Grease alias case executes unchanged and yields its expected
 transcript. This does not prove that the still-partial `shopt` implementation
 enables every option in `ysh:all`.
 
-The whole-shell boundary remains open. `--ast-format none -n FILE` still lacks a
-real nonexecuting parser entrypoint; the inherited suite has not passed. Existing
-staged-file pipelines do not establish concurrent process/pipeline parity, and
-command-substitution isolation, complete options/aliases, jobs, signals, traps,
-modules, regex and interactive behavior remain unfinished. Unsupported `set`
-flags/names and descriptor operations fail rather than becoming no-ops.
+At that producer checkpoint, the whole-shell boundary remained open: parse-only
+execution, concurrent source pipelines and command-substitution isolation were
+still missing. Those three paths now have D implementations and bounded tests,
+as described below. The inherited suite has not passed. Complete options and
+aliases, jobs, signals, traps, modules, regex and interactive behavior remain
+unfinished. Unsupported `set` flags/names and descriptor operations fail rather
+than becoming no-ops.
 
 Keep the executable named `ysh-d`. No complete Grease package, static/transitive
 C++ exclusion verdict by independent AICI, Cat Food admission, managed FP
 receipt, consumer migration, Android or physical-device PASS follows from these
 host results. The retained runtime branch remains the sole successor; do not
 reopen or merge the parked PR as completed whole-hog translation on this evidence.
+
+## Parser, process and option continuation, 2026-10-20
+
+The current continuation compiles directly with the same pinned Icky DMD,
+druntime and Phobos. A fresh disposable Ubuntu 24.04.3 Linux x86_64 host passed
+14 CLI/module suites, 13 library-module suites, generated-option consistency
+and the owner workflow's smoke sequence. Two smoke cases now explicitly disable
+errexit while inspecting an expected failed-command status; the alias smoke
+handles a missing alias in a command condition. Their old assumptions depended
+on the previous no-op `shopt`. The inherited fixtures and their assertions were
+not edited.
+
+The translated behavior includes:
+
+- a shared nonexecuting parser entry for file, stdin and `-c`, including
+  uncalled bodies, untaken branches, defaults and nested substitutions;
+- short-circuit command lists, command-form while conditions and final status;
+- concurrent POSIX producer processes, streaming pipes, last-stage bindings,
+  rightmost pipefail status, SIGPIPE normalization and child reaping; a proc
+  still stops at its first failed command within each stage under errexit;
+- process-isolated command substitution, with concurrent draining and no
+  variable/container/cwd leakage;
+- native execution using the shell's actual `ENV.PATH` and environment,
+  descriptor snapshots before remapping, and native 126/127 failures;
+- D option metadata generated directly from `frontend/option_def.py`, YSH
+  startup defaults, CLI overrides, actual shopt set/unset/query/printing and
+  scoped overlays;
+- the reference's stricter option overlay during expression and assignment
+  evaluation, distinct automatic failure versus explicit exit, catchable
+  structured errors and the shared `_error` register;
+- distinct proc status returns and func typed returns, syntax checks at
+  definition time, callee-before-argument evaluation and shared typed-argument
+  parsing for the translated paths;
+- source/eval final status, zero status for empty programs and explicit exits
+  that propagate through source rather than being rewritten as runtime errors;
+- single-resolution augmented places, base-prefixed integer literals,
+  approximate scalar equality, initial shell-array literals, lazy braced
+  defaults and floating-point overflow/underflow.
+
+The option metadata's `implemented` flag belongs to the reference definitions.
+It is not a D completeness flag. Many parser and evaluator consumers of those
+options are still untranslated. The retained source is still named `ysh-d`.
+
+The **unchanged original** `test/sh_spec.py` ran all 1,119 cases from 80
+`spec/ysh-*.test.sh` fixtures plus `spec/grease-alias.test.sh`, with each file's
+declared YSH or default OSH mode. Its host-only Python 2.7.13 and the original
+`spec/bin` helpers are test prerequisites, not D-shell runtime dependencies.
+The results are **326 assertion matches and 793 failures**. No expected-failure
+allowance was added. PASS is the harness's assertion result, not a claim that
+every covered implementation path has been reviewed or translated.
+
+The source tree, executable digest and test boundaries are in
+[`inherited-host-2026-10-20.tsv`](qualification/inherited-host-2026-10-20.tsv).
+The fixture hashes and totals are in
+[`inherited-suites-2026-10-20.tsv`](qualification/inherited-suites-2026-10-20.tsv),
+and every failing case remains explicit in
+[`inherited-cases-2026-10-20.tsv`](qualification/inherited-cases-2026-10-20.tsv).
+The earlier handwritten spec diagnostic is preserved as an experiment under
+`examples/autogenerated/grease-d-spec-diagnostic`; its single-mode counts are
+not comparable to the restored original harness.
+
+At the 2026-10-20 checkpoint, remaining blockers included:
+
+- command/word grammar: `case` prevents the unmodified list and math standard
+  libraries from loading; quote-sensitive word/glob/splitting behavior,
+  here-documents and multiline commands remain incomplete;
+- funcs/procs/closures: the inherited func suite is 24/26; typed/named/block
+  proc parameters and command/expression/place closures remain untranslated;
+- data/display: full JSON/J8 decoding and formatting, typed values and pretty
+  printing are incomplete;
+- objects/type objects/prototypes, module/source semantics and reflection;
+- Eggex/regex, jobs, traps, completion, prompt/history and interactive behavior.
+
+The augmented-assignment suite is 12/12, the Grease alias fixture is 1/1, and
+shopt is 8/9. Its remaining `--table` fixture is an upstream TODO with a declared
+failure allowance; the D run still records it as FAIL rather than making the
+request a no-op. Definition-time syntax validation and corrected missing-name
+statuses also expose earlier apparent passes that failed for the wrong reason,
+including missing builtins and unparsed standard-library function bodies.
+Those gaps have not been hidden by restoring permissive behavior.
+
+Whole-shell and shared-spec acceptance remain BLOCKED. This continuation has no
+hosted CI receipt, managed FP/AICI acceptance, release/package admission or
+target-device acceptance. The earlier producer controls have not been rerun
+against this continuation. No completion, migration, merge or reopening of the
+parked integration request follows from these local results.
+
+## Case continuation, 2026-10-21
+
+Both case syntaxes now parse and execute in D. YSH arms support exact typed
+expression equality, lazy alternatives, shell patterns with per-fragment
+quoting and libc fnmatch, Eggex patterns, and `(else)`. Retained shell syntax
+supports optional pattern parentheses, empty actions, nested case commands,
+`;;`, `;&`, and `;;&`. Structural operator discovery reuses the case parser
+instead of counting pattern pipes/parentheses as command operators. Every
+arm's syntax is checked even when another arm is selected.
+
+Eggex case patterns have a D AST and a lazy POSIX ERE lowering/matching path:
+literal strings, primitive and named classes, character classes/ranges,
+string splices, alternation, groups, captures, repeat counts and reference
+flags. Match registers retain byte offsets and names; capture conversion
+functions resolve before matching and run on group retrieval. ImportC reads
+the target's libc declarations from `<regex.h>` and `<fnmatch.h>`; no regex
+ABI layout is guessed and no shell source is delegated to another runtime.
+First-class Eggex values, Eggex-value splices, the full regex API and the full
+word grammar remain open. This is not complete regex acceptance.
+
+The original inherited case fixture passes **18/18**. The unmodified
+`stdlib/ysh/list.ysh` and `math.ysh` files now load. The recursive LRU-cache
+function test now computes the expected values and fails only on compact
+versus indented JSON output; the other function-suite failure is the missing
+typed prefix in expression display. These remain real failures.
+
+Pinned Icky DMD passed 16 CLI/module suites, 15 library-module suites, generated
+option consistency, and the existing owner smoke body. The unchanged original
+harness reran all 1,119 cases: **356 assertion matches, 763 failures**, with
+30 additional assertion matches and no regression from the 2026-10-20 ledger.
+Five complete fixtures pass: case, augmented assignment, dictionaries, reserved
+syntax, and Grease aliases. Expected-status-only matches still do not prove
+that their implementation paths are complete.
+
+Exact source/binary identities, fixture hashes and all per-case results are in
+[`inherited-host-case-2026-10-21.tsv`](qualification/inherited-host-case-2026-10-21.tsv),
+[`inherited-suites-case-2026-10-21.tsv`](qualification/inherited-suites-case-2026-10-21.tsv),
+and [`inherited-cases-case-2026-10-21.tsv`](qualification/inherited-cases-case-2026-10-21.tsv).
+The larger acceptance gaps remain word expansion and multiline/heredoc syntax,
+full proc signatures and closures, JSON/J8 and display, object/type/module
+behavior, regex values/APIs, jobs/traps and interactive execution. Shared-spec,
+producer, managed/AICI and physical-device acceptance have not been rerun.
+The continuation remains incomplete and unpublished.
+
+## Data output and display continuation, 2026-10-21
+
+JSON and J8 output now share a D translation of the reference instance printer
+for translated values. The command default is two-space indentation, with
+typed `space` and `type_errors` options; `toJson`/`toJson8` default to compact
+output. The encoder rejects active container cycles while permitting shared
+acyclic values. It buffers messages before writing, reports builtin codec
+failures with status 1, and exposes function codec failures as structured
+status 4. JSON maps nonfinite floats to null; J8 retains NAN/INFINITY. Diagnostic
+printing shows cycle markers and non-data type tags.
+
+The expression display path and `pp value` now use measured documents derived
+from `display/pretty.py` and `pp_value.py`. The document algebra includes
+groups, breaks, indentation, flat alternatives, suffix-width measures and the
+reference list tabulation rule. Supported values use YSH string syntax,
+identifier-aware dictionary keys and aligned type prefixes. Terminal width
+comes from the output descriptor, with the reference fallback of 80 columns.
+Locale startup initializes LC_CTYPE, and LC_COLLATE for OSH mode, while keeping
+numeric conversion in the C locale. A CLI test verifies a multibyte regex
+capture; string tests cover mixed Unicode/invalid bytes and control escapes.
+
+The unchanged inherited function suite now passes **26/26**, including its
+recursive LRU-cache computation and full indented JSON transcript. Case remains
+18/18. The current source passed 17 CLI/module suites, 16 library-module suites,
+generated metadata consistency and the owner workflow smoke. The smoke now
+requests `space=0` explicitly for its intentionally compact JSON example.
+
+The unchanged original inherited harness reports **388 assertion matches and
+731 failures** across all 1,119 cases: 62 additional matches and no previous
+pass lost relative to 2026-10-20. One initial run of
+`ysh-builtin-error:17` timed out; both its isolated and complete-fixture
+reruns produced an assertion failure without timing out. The initial timeout
+diagnostic is retained separately. Its assertion diagnostic formatting remains
+unfinished. The final per-case ledger retains the rerun's FAIL.
+
+Current identities and complete case results are recorded in
+[`inherited-host-2026-10-21.tsv`](qualification/inherited-host-2026-10-21.tsv),
+[`inherited-suites-2026-10-21.tsv`](qualification/inherited-suites-2026-10-21.tsv),
+and [`inherited-cases-2026-10-21.tsv`](qualification/inherited-cases-2026-10-21.tsv).
+The earlier case-only ledgers remain separate above.
+
+This does not complete JSON/J8 decoding or the entire value/display model.
+JSON reading/fromJson, heredocs/word grammar, proc signatures/closures, object
+and type values, module/reflection behavior, regex values/APIs, jobs/traps,
+terminal styles and interactive behavior remain open. Reference object IDs
+are not synthesized by the initial D pretty printer. No hosted CI,
+shared-spec acceptance, managed/AICI admission or target-device acceptance
+follows from this continuation. Publication remains blocked.

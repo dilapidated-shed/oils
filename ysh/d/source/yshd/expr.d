@@ -15,12 +15,13 @@ import std.uni : toLower, toUpper;
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
 import yshd.state : Memory;
-import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError,
+import yshd.io_ysh : encodeDataValue, WriteEncoding, DataEncodeError, dataOptions;
+import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError, StructuredError,
     exactlyEqual, kindName, stringify, toBool;
 
 class ParseError : YshError {
     this(string message) {
-        super(message);
+        super(message, 2);
     }
 }
 
@@ -31,6 +32,7 @@ private enum CompareOp {
     greaterEqual,
     exactEqual,
     notExactEqual,
+    approximateEqual,
     contains,
     notContains,
 }
@@ -130,7 +132,7 @@ private Numeric convertToNumber(Value value) {
         }
         if (looksLikeYshFloat(value.stringValue)) {
             auto cleaned = strip(value.stringValue).replace("_", "");
-            return Numeric(NumericKind.floating, BigInt(0), to!double(cleaned));
+            return Numeric(NumericKind.floating, BigInt(0), parseFloating(cleaned));
         }
         throw new YshTypeError("expected Int, Float, or numeric Str");
     case ValueKind.nullValue:
@@ -143,6 +145,13 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.procValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
+}
+
+private double parseFloating(string text) {
+    import core.stdc.stdlib : strtod;
+    import std.string : toStringz;
+    // YSH permits overflow to infinity and underflow to signed zero.
+    return strtod(text.toStringz(), null);
 }
 
 private BigInt convertToInt(Value value) {
@@ -373,6 +382,17 @@ private class CommandSubstitutionExpr : Expr {
     override Value eval(Memory mem) {
         import yshd.program : evaluateCommandSubstitution;
         return Value.str(evaluateCommandSubstitution(command_, mem));
+    }
+}
+
+private class ShellArrayExpr : Expr {
+    private string words_;
+    this(string words) { words_ = words; }
+    override Value eval(Memory mem) {
+        import yshd.program : evaluateShellWords;
+        Value[] values;
+        foreach (word; evaluateShellWords(words_, mem)) values ~= Value.str(word);
+        return Value.list(values);
     }
 }
 
@@ -663,6 +683,58 @@ private struct NamedCallArgument {
     bool spread;
 }
 
+struct EvaluatedArguments {
+    Value[] positional;
+    YshDict named;
+    Value block;
+    bool hasBlock;
+}
+
+/// Function calls and command typed arguments share one grammar and one
+/// left-to-right evaluator. Parsing never evaluates an argument or spread.
+class ParsedArguments {
+    private PositionalCallArgument[] positional_;
+    private NamedCallArgument[] named_;
+    private Expr block_;
+
+    Expr singleExpression() {
+        if (positional_.length != 1 || positional_[0].spread ||
+                named_.length || block_ !is null)
+            throw new ParseError("typed return expects exactly one positional argument");
+        return positional_[0].expression;
+    }
+
+    EvaluatedArguments eval(Memory mem) {
+        auto optionNumbers = mem.options.pushExpression();
+        scope (exit) mem.options.pop(optionNumbers);
+        EvaluatedArguments result;
+        result.named = new YshDict();
+        foreach (argument; positional_) {
+            auto value = argument.expression.eval(mem);
+            if (!argument.spread) result.positional ~= value;
+            else {
+                if (value.kind != ValueKind.list)
+                    throw new YshTypeError("positional ... spread requires List");
+                result.positional ~= value.listValue.items;
+            }
+        }
+        foreach (argument; named_) {
+            auto value = argument.expression.eval(mem);
+            if (!argument.spread) result.named.set(argument.name, value);
+            else {
+                if (value.kind != ValueKind.dict)
+                    throw new YshTypeError("named ... spread requires Dict");
+                foreach (key, item; value.dictValue) result.named.set(key, item);
+            }
+        }
+        if (block_ !is null) {
+            result.hasBlock = true;
+            result.block = block_.eval(mem);
+        }
+        return result;
+    }
+}
+
 private bool builtinFunctionName(string name) {
     switch (name) {
     case "identity":
@@ -682,6 +754,11 @@ private bool builtinFunctionName(string name) {
     case "keys":
     case "values":
     case "strcmp":
+    case "_group":
+    case "_start":
+    case "_end":
+    case "toJson":
+    case "toJson8":
         return true;
     default:
         return false;
@@ -690,11 +767,49 @@ private bool builtinFunctionName(string name) {
 
 private Value callBuiltinFunction(string name, Value[] arguments,
         YshDict namedArguments, Memory mem) {
-    if (namedArguments !is null && namedArguments.length != 0) {
+    if (namedArguments !is null && namedArguments.length != 0 &&
+            name != "toJson" && name != "toJson8") {
         throw new YshTypeError(format("%s() does not accept named arguments yet", name));
     }
 
     switch (name) {
+    case "toJson":
+    case "toJson8":
+        if (arguments.length != 1) throw new YshTypeError(name ~ "() expects one argument");
+        auto options = dataOptions(namedArguments, 0);
+        try {
+            return Value.str(encodeDataValue(arguments[0],
+                name == "toJson" ? WriteEncoding.json : WriteEncoding.j8,
+                options.space, options.typeErrors));
+        } catch (DataEncodeError error) {
+            throw new StructuredError(4, error.msg, new YshDict());
+        }
+    case "_group":
+    case "_start":
+    case "_end":
+        if (arguments.length != 1) throw new YshTypeError(name ~ "() expects one argument");
+        auto match = mem.regexMatch;
+        if (match is null) throw new YshError("No regex capture groups");
+        size_t index;
+        auto argument = arguments[0];
+        if (argument.kind == ValueKind.integer) {
+            if (argument.integerValue < 0 || argument.integerValue >= match.starts.length)
+                throw new YshError("Capture group index out of range");
+            index = to!size_t(argument.integerValue);
+        } else if (argument.kind == ValueKind.stringValue) {
+            bool found;
+            foreach (offset, groupName; match.names) {
+                if (groupName == argument.stringValue) { index = offset + 1; found = true; break; }
+            }
+            if (!found) throw new YshError("No such capture group: " ~ argument.stringValue);
+        } else throw new YshTypeError("Capture group requires Int or Str");
+        if (name == "_start") return Value.integer(match.starts[index]);
+        if (name == "_end") return Value.integer(match.ends[index]);
+        if (match.starts[index] == -1) return Value.nullValue();
+        auto result = Value.str(match.subject[match.starts[index] .. match.ends[index]]);
+        if (index && match.conversions[index - 1] !is null)
+            result = match.conversions[index - 1](result);
+        return result;
     case "identity":
         if (arguments.length != 1) {
             throw new YshTypeError("identity() expects one argument");
@@ -1398,73 +1513,55 @@ private class YshPipelineFunction {
     }
 }
 
+/// Resolve a capture converter when its Eggex is evaluated, preserving the
+/// callable even if the name is rebound before _group() retrieves the match.
+Value delegate(Value) resolveCaptureConversion(string name, Memory mem) {
+    if (mem.getCell(name) is null && builtinFunctionName(name)) {
+        return (Value argument) { return callBuiltinFunction(name, [argument], null, mem); };
+    }
+    auto value = mem.get(name);
+    auto converter = value.kind == ValueKind.functionValue
+        ? cast(YshFunction)value.callableValue : null;
+    if (converter is null) throw new YshTypeError("Capture converter requires Func");
+    return (Value argument) { return converter.invoke([argument], null, mem); };
+}
+
 private class CallExpr : Expr {
     private Expr callee_;
-    private PositionalCallArgument[] positional_;
-    private NamedCallArgument[] named_;
+    private ParsedArguments arguments_;
 
-    this(Expr callee, PositionalCallArgument[] positional,
-            NamedCallArgument[] named) {
+    this(Expr callee, ParsedArguments arguments) {
         callee_ = callee;
-        positional_ = positional;
-        named_ = named;
+        arguments_ = arguments;
     }
 
     override Value eval(Memory mem) {
-        Value[] arguments;
-        foreach (argument; positional_) {
-            auto value = argument.expression.eval(mem);
-            if (!argument.spread) {
-                arguments ~= value;
-                continue;
-            }
-            if (value.kind != ValueKind.list) {
-                throw new YshTypeError("positional ... spread requires List");
-            }
-            arguments ~= value.listValue.items;
-        }
-
-        YshDict namedArguments;
-        if (named_.length != 0) {
-            namedArguments = new YshDict();
-        }
-        foreach (argument; named_) {
-            auto value = argument.expression.eval(mem);
-            if (!argument.spread) {
-                namedArguments.set(argument.name, value);
-                continue;
-            }
-            if (value.kind != ValueKind.dict) {
-                throw new YshTypeError("named ... spread requires Dict");
-            }
-            foreach (key, item; value.dictValue) {
-                namedArguments.set(key, item);
-            }
-        }
-
+        string builtinName;
         if (auto variable = cast(VariableExpr)callee_) {
             auto cell = mem.getCell(variable.name_);
-            if (cell is null && builtinFunctionName(variable.name_)) {
-                return callBuiltinFunction(variable.name_, arguments,
-                    namedArguments, mem);
-            }
+            if (cell is null && builtinFunctionName(variable.name_)) builtinName = variable.name_;
         }
-
+        // Resolve the callee before evaluating arguments, which may rebind it.
+        if (builtinName.length) {
+            auto args = arguments_.eval(mem);
+            return callBuiltinFunction(builtinName, args.positional, args.named, mem);
+        }
         auto callee = callee_.eval(mem);
+        auto args = arguments_.eval(mem);
         if (callee.kind != ValueKind.functionValue) {
             throw new YshTypeError("YSH expression call requires Func");
         }
         auto userFunction = cast(YshFunction)callee.callableValue;
         if (userFunction !is null) {
-            return userFunction.invoke(arguments, namedArguments, mem);
+            return userFunction.invoke(args.positional, args.named, mem);
         }
         auto boundMethod = cast(YshBoundMethod)callee.callableValue;
         if (boundMethod !is null) {
-            return boundMethod.invoke(arguments, namedArguments, mem);
+            return boundMethod.invoke(args.positional, args.named, mem);
         }
         auto pipelineFunction = cast(YshPipelineFunction)callee.callableValue;
         if (pipelineFunction !is null) {
-            return pipelineFunction.invoke(arguments, namedArguments, mem);
+            return pipelineFunction.invoke(args.positional, args.named, mem);
         }
         throw new YshTypeError("unknown callable value");
     }
@@ -1678,6 +1775,23 @@ private class CompareExpr : Expr {
             case CompareOp.notExactEqual:
                 result = !exactlyEqual(left, right);
                 break;
+            case CompareOp.approximateEqual:
+                if (left.kind != ValueKind.stringValue)
+                    throw new YshTypeError("~== expects a string on the left");
+                auto text = strip(left.stringValue);
+                switch (right.kind) {
+                case ValueKind.stringValue: result = text == right.stringValue; break;
+                case ValueKind.boolean:
+                    auto lower = toLower(text);
+                    result = (lower == "true" || lower == "false") &&
+                        (lower == "true") == right.booleanValue;
+                    break;
+                case ValueKind.integer:
+                    result = looksLikeYshInt(text) && BigInt(text.replace("_", "")) == right.integerValue;
+                    break;
+                default: throw new YshTypeError("~== expects Str, Int, or Bool on the right");
+                }
+                break;
             case CompareOp.contains:
                 if (right.kind != ValueKind.dict) {
                     throw new YshTypeError("RHS of 'in' should be Dict");
@@ -1710,9 +1824,11 @@ private class Parser {
     private string source_;
     private Lexer lexer_;
     private Token current_;
+    private bool validateNested_;
 
-    this(string input) {
+    this(string input, bool validateNested = false) {
         source_ = input;
+        validateNested_ = validateNested;
         lexer_ = new Lexer(input);
         current_ = lexer_.next();
     }
@@ -1803,6 +1919,9 @@ private class Parser {
                 case TokenKind.notDoubleEqual:
                     operators ~= CompareOp.notExactEqual;
                     break;
+                case TokenKind.approximateEqual:
+                    operators ~= CompareOp.approximateEqual;
+                    break;
                 case TokenKind.inKeyword:
                     operators ~= CompareOp.contains;
                     break;
@@ -1828,6 +1947,7 @@ private class Parser {
         case TokenKind.greaterEqual:
         case TokenKind.tripleEqual:
         case TokenKind.notDoubleEqual:
+        case TokenKind.approximateEqual:
         case TokenKind.inKeyword:
         case TokenKind.notKeyword:
             return true;
@@ -1957,61 +2077,7 @@ private class Parser {
                 require(TokenKind.rightBracket, "]");
                 left = new SubscriptExpr(left, index);
             } else if (current_.kind == TokenKind.leftParen) {
-                advance();
-                PositionalCallArgument[] positionalArguments;
-                NamedCallArgument[] namedArguments;
-                bool namedGroup;
-
-                while (current_.kind != TokenKind.rightParen) {
-                    if (current_.kind == TokenKind.semicolon) {
-                        if (namedGroup) {
-                            throw new ParseError(
-                                "function call has more than one named-argument separator");
-                        }
-                        namedGroup = true;
-                        advance();
-                        continue;
-                    }
-
-                    if (current_.kind == TokenKind.ellipsis) {
-                        advance();
-                        auto expression = parseTest();
-                        if (namedGroup) {
-                            namedArguments ~= NamedCallArgument(
-                                "", expression, true);
-                        } else {
-                            positionalArguments ~= PositionalCallArgument(
-                                expression, true);
-                        }
-                    } else if (current_.kind == TokenKind.name &&
-                            lexer_.peek().kind == TokenKind.equal) {
-                        auto name = current_.text;
-                        advance();
-                        require(TokenKind.equal, "=");
-                        namedArguments ~= NamedCallArgument(
-                            name, parseTest(), false);
-                    } else {
-                        if (namedGroup) {
-                            throw new ParseError(format(
-                                "expected named argument at byte %s",
-                                current_.offset));
-                        }
-                        positionalArguments ~= PositionalCallArgument(
-                            parseTest(), false);
-                    }
-
-                    if (current_.kind == TokenKind.comma) {
-                        advance();
-                        continue;
-                    }
-                    if (current_.kind == TokenKind.semicolon) {
-                        continue;
-                    }
-                    break;
-                }
-
-                require(TokenKind.rightParen, ")");
-                left = new CallExpr(left, positionalArguments, namedArguments);
+                left = new CallExpr(left, parseArguments(false));
             } else {
                 auto accessKind = current_.kind;
                 advance();
@@ -2039,6 +2105,42 @@ private class Parser {
         return left;
     }
 
+    ParsedArguments parseArguments(bool allowBlock) {
+        require(TokenKind.leftParen, "(");
+        auto arguments = new ParsedArguments();
+        size_t group;
+        while (current_.kind != TokenKind.rightParen) {
+            if (current_.kind == TokenKind.semicolon) {
+                ++group;
+                if (group > (allowBlock ? 2 : 1))
+                    throw new ParseError("too many typed-argument groups");
+                advance();
+                continue;
+            }
+            if (group == 2) {
+                if (arguments.block_ !is null) throw new ParseError("expected one block argument");
+                arguments.block_ = parseTest();
+            } else if (current_.kind == TokenKind.ellipsis) {
+                advance();
+                auto expression = parseTest();
+                if (group == 1) arguments.named_ ~= NamedCallArgument("", expression, true);
+                else arguments.positional_ ~= PositionalCallArgument(expression, true);
+            } else if (current_.kind == TokenKind.name && lexer_.peek().kind == TokenKind.equal) {
+                auto name = current_.text;
+                advance();
+                require(TokenKind.equal, "=");
+                arguments.named_ ~= NamedCallArgument(name, parseTest(), false);
+            } else {
+                if (group == 1) throw new ParseError("expected named argument");
+                arguments.positional_ ~= PositionalCallArgument(parseTest(), false);
+            }
+            if (current_.kind == TokenKind.comma) { advance(); continue; }
+            if (current_.kind != TokenKind.semicolon) break;
+        }
+        require(TokenKind.rightParen, ")");
+        return arguments;
+    }
+
     private Expr parseAtom() {
         auto token = current_;
         switch (token.kind) {
@@ -2053,12 +2155,34 @@ private class Parser {
             return new LiteralExpr(Value.boolean(false));
         case TokenKind.integer:
             advance();
-            return new LiteralExpr(Value.integer(BigInt(token.text)));
+            auto digits = token.text.replace("_", "");
+            BigInt integer = 0;
+            uint radix = 10;
+            size_t first;
+            if (digits.length > 2 && digits[0] == '0') {
+                switch (digits[1]) {
+                case 'b': radix = 2; first = 2; break;
+                case 'o': radix = 8; first = 2; break;
+                case 'x': radix = 16; first = 2; break;
+                default: break;
+                }
+            }
+            foreach (digit; digits[first .. $]) {
+                uint value = digit >= '0' && digit <= '9' ? digit - '0'
+                    : digit >= 'a' && digit <= 'f' ? digit - 'a' + 10 : digit - 'A' + 10;
+                integer = integer * radix + value;
+            }
+            if (integer > BigInt(long.max)) throw new ParseError("integer constant is too large");
+            return new LiteralExpr(Value.integer(integer));
         case TokenKind.floating:
             advance();
-            return new LiteralExpr(Value.floating(to!double(token.text.replace("_", ""))));
+            return new LiteralExpr(Value.floating(parseFloating(token.text.replace("_", ""))));
         case TokenKind.doubleQuoted:
             advance();
+            if (validateNested_) {
+                import yshd.program : validateDoubleQuoted;
+                validateDoubleQuoted(token.text);
+            }
             return new DoubleQuotedExpr(token.text);
         case TokenKind.stringValue:
         case TokenKind.charValue:
@@ -2077,6 +2201,10 @@ private class Parser {
                     if (current_.kind == TokenKind.rightParen && depth == 0) {
                         auto command = source_[start .. current_.offset];
                         advance();
+                        if (validateNested_) {
+                            import yshd.program : parseProgram;
+                            parseProgram(command);
+                        }
                         return new CommandSubstitutionExpr(command);
                     }
                     if (current_.kind == TokenKind.leftParen) ++depth;
@@ -2120,6 +2248,30 @@ private class Parser {
             return new ListExpr(items);
         case TokenKind.leftBracket:
             return parseList();
+        case TokenKind.colon:
+            advance();
+            if (current_.kind == TokenKind.orIf) {
+                advance();
+                return new ShellArrayExpr("");
+            }
+            require(TokenKind.pipe, "|");
+            auto start = current_.offset;
+            int depth;
+            while (current_.kind != TokenKind.eof) {
+                if (current_.kind == TokenKind.pipe && depth == 0) {
+                    auto words = source_[start .. current_.offset];
+                    advance();
+                    if (validateNested_) {
+                        import yshd.program : validateShellWords;
+                        validateShellWords(words);
+                    }
+                    return new ShellArrayExpr(words);
+                }
+                if (current_.kind == TokenKind.leftParen || current_.kind == TokenKind.leftBracket) ++depth;
+                if (current_.kind == TokenKind.rightParen || current_.kind == TokenKind.rightBracket) --depth;
+                advance();
+            }
+            throw new ParseError("unterminated shell array");
         case TokenKind.leftBrace:
             return parseDict();
         default:
@@ -2166,6 +2318,10 @@ private class Parser {
                     } else {
                         value = new VariableExpr(name);
                     }
+                } else if (current_.kind == TokenKind.doubleQuoted) {
+                    key = parseAtom();
+                    require(TokenKind.colon, ":");
+                    value = parseTest();
                 } else if (current_.kind == TokenKind.stringValue ||
                         current_.kind == TokenKind.charValue) {
                     key = new LiteralExpr(Value.str(current_.text));
@@ -2215,6 +2371,7 @@ enum AssignmentScope {
 
 abstract class ResolvedPlace {
     abstract void assign(Value value);
+    abstract Value read();
 }
 
 private class NameResolvedPlace : ResolvedPlace {
@@ -2235,6 +2392,11 @@ private class NameResolvedPlace : ResolvedPlace {
             mem_.setVar(name_, value);
         }
     }
+
+    override Value read() {
+        return assignmentScope_ == AssignmentScope.global
+            ? mem_.getGlobal(name_) : mem_.get(name_);
+    }
 }
 
 private class ContainerResolvedPlace : ResolvedPlace {
@@ -2244,6 +2406,10 @@ private class ContainerResolvedPlace : ResolvedPlace {
     this(Value object, Value index) {
         object_ = object;
         index_ = index;
+    }
+
+    override Value read() {
+        return (new SubscriptExpr(new LiteralExpr(object_), new LiteralExpr(index_))).eval(null);
     }
 
     override void assign(Value value) {
@@ -2277,6 +2443,8 @@ private class ContainerResolvedPlace : ResolvedPlace {
 
 ResolvedPlace resolvePlace(string source, Memory mem,
         AssignmentScope assignmentScope = AssignmentScope.local) {
+    auto optionNumbers = mem.options.pushExpression();
+    scope (exit) mem.options.pop(optionNumbers);
     auto parser = new Parser(source);
     auto target = parser.parse();
 
@@ -2310,7 +2478,38 @@ Value evaluate(string source) {
     return evaluate(source, new Memory());
 }
 
+void augmentPlace(string target, string op, string rhs, Memory mem,
+        AssignmentScope assignmentScope) {
+    auto place = resolvePlace(target, mem, assignmentScope);
+    auto left = place.read();
+    auto right = evaluate(rhs, mem);
+    auto result = (new BinaryExpr(op, new LiteralExpr(left), new LiteralExpr(right))).eval(mem);
+    place.assign(result);
+}
+
+/// Build the expression tree without looking up names or evaluating it.
+void validateExpression(string source) {
+    (new Parser(source, true)).parse();
+}
+
+ParsedArguments parseTypedArguments(string source, bool validateNested = false) {
+    auto parser = new Parser(source, validateNested);
+    auto arguments = parser.parseArguments(true);
+    if (parser.current_.kind != TokenKind.eof) throw new ParseError("unexpected token after typed arguments");
+    return arguments;
+}
+
+void validateAssignmentTarget(string source) {
+    auto target = (new Parser(source, true)).parse();
+    if (cast(VariableExpr)target !is null ||
+            cast(SubscriptExpr)target !is null ||
+            cast(AttributeExpr)target !is null) return;
+    throw new ParseError("assignment target must be a variable, subscript, or attribute");
+}
+
 Value evaluate(string source, Memory mem) {
+    auto optionNumbers = mem.options.pushExpression();
+    scope (exit) mem.options.pop(optionNumbers);
     auto parser = new Parser(source);
     return parser.parse().eval(mem);
 }

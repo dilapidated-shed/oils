@@ -2,7 +2,11 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The first slice deliberately starts in expression/value land. It is small enough to execute and compare while still exercising real YSH semantics.
+The translation remains incomplete. The latest host qualification ran all 1,119
+cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
+388 assertion matches, 731 failures. The unchanged original harness, fixture
+hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
+[the qualification ledger](qualification/inherited-host-2026-10-21.tsv).
 
 ## Source map
 
@@ -55,9 +59,9 @@ now execute unchanged. This focused transcript is **not** a full spec-suite pass
 or proof of complete option-group semantics.
 
 The remaining acceptance dependency and current source ownership are recorded
-in [PORTING.md](PORTING.md). In particular, the D CLI does not yet provide a
-nonexecuting `-n FILE` path, and the inherited YSH behavior suite has not passed
-against it. Conventional aliases must follow the Grease reference frontend;
+in [PORTING.md](PORTING.md). The D CLI now provides a nonexecuting `-n FILE`
+path, but the inherited YSH behavior suite has not passed against it.
+Conventional aliases must follow the Grease reference frontend;
 readable spellings must remain separate from changes in runtime meaning.
 
 The CLI now keeps `-c` program text separate from its following argument words.
@@ -70,8 +74,37 @@ now implements `set -e/-u/-o pipefail` and their disabling forms, command
 conditions and negation, ordered descriptor redirections, expression command
 substitution, and braced parameter/pattern removal. The unchanged FP IL-0
 qualifier and its thirteen runtime/source-substitution controls execute through
-the partial D runtime on Linux x86_64. These results do not qualify a managed
+the earlier partial D runtime on Linux x86_64; that producer receipt has not
+been rerun for the current continuation. These results do not qualify a managed
 Grease package or discharge the remaining inherited-spec dependency.
+
+The latest continuation adds real concurrent source pipelines and isolated
+command substitutions, reference-derived option metadata and scoped option
+cells, YSH startup defaults, expression-context failure propagation, and
+distinct proc-status versus function-value returns. `ENV.PATH` and the exact
+child environment now control native execution. The option table describes
+reference availability; storing an option cell is not a claim that all of its
+parser or runtime consumers have been translated.
+
+The case continuation adds both YSH and retained shell-style case syntax,
+lazy expression/word patterns, fragment-level quoting and POSIX fnmatch, and
+an initial Eggex AST/ERE path with captures and conversion functions. All 18
+unchanged case fixtures pass. The unmodified list/math standard-library files
+now load. First-class Eggex values and the full regex API remain untranslated;
+case acceptance does not qualify the entire regex subsystem.
+
+The data-output continuation adds reference JSON/J8 indentation and
+type/cycle handling, toJson/toJson8, diagnostic cycle markers, and measured
+pretty printing for translated data values and ranges. Expression display and
+`pp value` share that printer. The inherited function fixture now passes all
+26 cases. JSON/J8 decoding, reference-value identities, terminal styles and
+the remaining value variants still need translation.
+
+The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
+binary, invoked as `osh-d`, supplies the reference's default OSH option state
+for inherited tests that explicitly enable YSH features. This diagnostic mode
+does not establish a complete OSH port. `shopt` prints and queries real option
+cells, and scoped blocks unwind them across returns and errors.
 
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 
