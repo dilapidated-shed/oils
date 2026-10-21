@@ -112,6 +112,7 @@ int runSourcePipeline(string[] stages, Memory mem,
             child = 0;
         }
         children = [];
+        mem.pipelineStatus = statuses.dup;
         if (mem.pipefail) {
             foreach_reverse (status; statuses) if (status != 0) return status;
         }
@@ -348,14 +349,17 @@ int runPipeline(string[][] commands, Memory mem) {
     }
 
     int status;
+    int[] statuses;
     foreach (index, child; children) {
         auto childStatus = waitSourceChild(child);
         if (childStatus == 141 && mem.options.get("sigpipe_status_ok")) childStatus = 0;
+        statuses ~= childStatus;
         if ((mem.pipefail && childStatus != 0) ||
                 (!mem.pipefail && index + 1 == children.length)) {
             status = childStatus;
         }
     }
+    mem.pipelineStatus = statuses;
     return status;
 }
 

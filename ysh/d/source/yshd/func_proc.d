@@ -57,6 +57,7 @@ class YshFunction {
     bool[] namedHasDefaults;
 
     string bodySource;
+    bool attributeScope;
     Frame closure;
     Frame moduleFrame;
     BuiltinRegistry builtins;
@@ -64,13 +65,14 @@ class YshFunction {
     this(string name, FunctionParameter[] parameters, string bodySource,
             Memory definitionMemory, string restPositionalName = "",
             FunctionParameter[] namedParameters = [],
-            string restNamedName = "") {
+            string restNamedName = "", bool attributeScope = false) {
         this.name = name;
         this.parameters = parameters;
         this.restPositionalName = restPositionalName;
         this.namedParameters = namedParameters;
         this.restNamedName = restNamedName;
         this.bodySource = bodySource;
+        this.attributeScope = attributeScope;
         closure = definitionMemory.currentFrame;
         moduleFrame = definitionMemory.globalFrame;
         builtins = definitionMemory.builtins;
@@ -189,7 +191,7 @@ class YshFunction {
         }
 
         try {
-            executeProcedureBody(bodySource, memory);
+            executeProcedureBody(bodySource, memory, attributeScope);
         } catch (FunctionReturn returned) {
             return returned.value;
         }
@@ -213,6 +215,7 @@ class YshProc {
     Value[] defaults;
     bool[] hasDefaults;
     string bodySource;
+    bool attributeScope;
     Frame closure;
     BuiltinRegistry builtins;
     ProcSignature signature;
@@ -227,7 +230,7 @@ class YshProc {
             bool openSignature = true,
             FunctionParameter[] wordParameters = [],
             string restWordName = "", ProcSignature signature = ProcSignature.init,
-            bool shellCompatible = false) {
+            bool shellCompatible = false, bool attributeScope = false) {
         this.name = name;
         this.shellCompatible = shellCompatible;
         moduleFrame = definitionMemory.globalFrame;
@@ -235,6 +238,7 @@ class YshProc {
         this.wordParameters = wordParameters;
         this.restWordName = restWordName;
         this.bodySource = bodySource;
+        this.attributeScope = attributeScope;
         this.signature = signature;
         closure = shellCompatible ? null : definitionMemory.currentFrame;
         builtins = definitionMemory.builtins;
@@ -380,7 +384,7 @@ class YshProc {
         }
 
         try {
-            executeProcedureBody(bodySource, memory);
+            executeProcedureBody(bodySource, memory, attributeScope);
         } catch (ProcReturn returned) {
             memory.lastStatus = returned.status;
             return Value.integer(returned.status);
@@ -409,7 +413,7 @@ class YshProc {
             memory.shellArguments = previousArguments;
             memory.returnMode = previousMode;
         }
-        try { executeProcedureBody(bodySource, memory); }
+        try { executeProcedureBody(bodySource, memory, attributeScope); }
         catch (ProcReturn returned) { memory.lastStatus = returned.status; }
         return Value.integer(memory.lastStatus);
     }

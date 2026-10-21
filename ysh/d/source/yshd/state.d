@@ -117,6 +117,7 @@ class Memory {
     BuiltinRegistry builtins;
     private size_t loopDepth;
     int lastStatus;
+    int[] pipelineStatus;
     ReturnMode returnMode;
     RegexMatch regexMatch;
     YshDict[] contextStack;
@@ -180,6 +181,8 @@ class Memory {
         }
         globalFrame.cells.set("ENV", new Cell(Value.dictRef(env)));
         globalFrame.cells.set("ARGV", new Cell(Value.list([])));
+        // InitDefaultVars sets IFS even when no_init_globals is enabled.
+        globalFrame.cells.set("IFS", new Cell(Value.str(" \t\n")));
         globalFrame.cells.set("_error", new Cell(Value.dict()));
         globalFrame.cells.set("NAN", new Cell(Value.floating(double.nan)));
         globalFrame.cells.set("INFINITY", new Cell(Value.floating(double.infinity)));
@@ -247,6 +250,11 @@ class Memory {
     }
 
     Value get(string name) {
+        if (name == "_pipeline_status") {
+            Value[] statuses;
+            foreach (status; pipelineStatus) statuses ~= Value.integer(status);
+            return Value.list(statuses);
+        }
         Frame ignored;
         auto cell = lookupLocalOrGlobal(name, ignored);
         if (cell is null) {
@@ -258,6 +266,18 @@ class Memory {
     Cell getCell(string name) {
         Frame ignored;
         return lookupLocalOrGlobal(name, ignored, options.get("dynamic_scope"));
+    }
+
+    Cell findDynamicCell(string name) {
+        Frame found;
+        foreach_reverse (frame; frameStack)
+            if (auto cell = lookupFrame(frame, name, false, found)) return cell;
+        return null;
+    }
+
+    Cell findGlobalCell(string name) {
+        Frame found;
+        return lookupFrame(globalFrame, name, false, found);
     }
 
     /// Shell-word lookup differs from a YSH expression's required binding.

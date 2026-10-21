@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-682 assertion matches, 437 failures. The unchanged original harness, fixture
+706 assertion matches, 413 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-io-stream-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-attribute-2026-10-21.tsv).
 
 ## Source map
 
@@ -128,6 +128,12 @@ parseCommand, stdin iteration, and descriptor-based raw/byte reads. The I/O
 method fixture matches 9/9 cases, eval 17/31, for 19/20 and assignment 19/22.
 The test-only Python reference build is now available to fixtures that
 explicitly request it; it is separate from the D language-execution path.
+
+The attribute continuation preserves capitalized-command attribute blocks through
+deferred execution and translates the reference's byte-based IFS splitter.
+The split/shSplit/maybe functions, ordered pipeline status and frame-variable
+display now execute natively. All 1,119 inherited cases were rerun with no
+regression: eval matches 26/31, function builtins 9/10 and procs 32/38.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

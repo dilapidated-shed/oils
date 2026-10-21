@@ -884,6 +884,9 @@ private bool builtinFunctionName(string name) {
     case "fromJson":
     case "fromJson8":
     case "parseCommand":
+    case "split":
+    case "shSplit":
+    case "maybe":
     case "Object":
     case "prototype":
     case "propView":
@@ -925,6 +928,24 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     }
 
     switch (name) {
+    case "split": case "shSplit":
+        if (arguments.length < 1 || arguments.length > 2 || arguments[0].kind != ValueKind.stringValue ||
+                (arguments.length == 2 && arguments[1].kind != ValueKind.stringValue))
+            throw new YshTypeError(name ~ "() expects a Str and optional Str IFS");
+        string ifs = " \t\n";
+        if (arguments.length == 2) ifs = arguments[1].stringValue;
+        else if (auto cell = mem.findDynamicCell("IFS")) {
+            if (cell.value.kind != ValueKind.stringValue) throw new YshTypeError("IFS should be Str");
+            ifs = cell.value.stringValue;
+        }
+        import yshd.split : splitWords;
+        Value[] words;
+        foreach (word; splitWords(arguments[0].stringValue, ifs)) words ~= Value.str(word);
+        return Value.list(words);
+    case "maybe":
+        if (arguments.length != 1 || (arguments[0].kind != ValueKind.stringValue && arguments[0].kind != ValueKind.nullValue))
+            throw new YshTypeError("maybe() expects Str or Null");
+        return Value.list(arguments[0].kind == ValueKind.nullValue || !arguments[0].stringValue.length ? [] : [arguments[0]]);
     case "parseCommand":
         if (arguments.length != 1 || arguments[0].kind != ValueKind.stringValue)
             throw new YshTypeError("parseCommand() expects one Str");

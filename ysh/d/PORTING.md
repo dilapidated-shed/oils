@@ -158,7 +158,52 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: native I/O and evaluation scopes, 2026-10-21
+## Current host checkpoint: attribute blocks and IFS splitting, 2026-10-21
+
+The unchanged inherited harness reports **706 assertion matches and 413
+failures across 1,119 cases**, with no timeouts. This serial run adds 24
+matches over `26d556166350bab093c1fc654864f1f880444f91` and loses no previous
+match. The fixtures, three-second limit, expected failures and test-only
+reference environment are unchanged. The full translation remains incomplete.
+
+Literal command blocks retain the reference's first-word attribute classification:
+a static initial uppercase word with a lowercase character enables bare
+declarations. Quoted static names and leading environment bindings follow the
+same rule; dynamically expanded names do not enable it. Branches, loops,
+functions and retained Command values preserve the parsed lexical context.
+Dynamic eval, source and command substitution start their own context.
+
+The native IFS splitter follows osh/split.py's incremental byte state machine,
+including whitespace/non-whitespace delimiters, escaped bytes, invalid UTF-8,
+empty literal fragments and split limits. split/shSplit use explicit IFS or
+reference dynamic cell lookup; maybe converts Null/Str into a word list. The
+reference's default global IFS is initialized. Ordinary shell-word expansion
+does not yet consume this splitter on every path.
+
+Foreground pipelines retain their ordered per-stage statuses. Ordinary commands
+do not overwrite that array, and isolated capture changes remain in the child.
+Frame-variable display uses insertion order and exposes the enclosure marker.
+Tests cover parser boundaries, deferred execution, dynamic IFS lookup with
+dynamic_scope disabled, pipeline isolation and quoted/temporary-binding names.
+
+Eval matches **26/31**, function builtins **9/10**, procs **32/38**, namespaces
+**3/7** and assignment options **4/5**. Previous complete fixture matches are
+retained. These are assertion counts, not complete subsystem qualification.
+
+Pinned Icky DMD compiles source tree
+`c0a06982f05642edf8f708a7a4d8ed34f598baf8`; host binary SHA-256 is
+`5e32adc4f6be1bdaab4cc03c9c39d305e0e4494a570db7ffaef7ff24caef14b8`.
+All 27 CLI/module suites, 26 library suites and the existing owner smoke pass.
+Dynamic dependencies remain libc, libgcc_s and the loader. Shared specs,
+static-transitive AI-CI, managed admission and physical targets remain
+unqualified. Full shell words/builtins, modules/reflection, jobs/traps and
+interactive behavior still need work.
+
+See [host qualification](qualification/inherited-host-attribute-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-attribute-2026-10-21.tsv), and
+[case results](qualification/inherited-cases-attribute-2026-10-21.tsv).
+
+## Previous host checkpoint: native I/O and evaluation scopes, 2026-10-21
 
 The unchanged inherited harness reports **682 assertion matches and 437
 failures across 1,119 cases**, with no timeouts. This serial run adds 33

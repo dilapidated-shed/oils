@@ -13,7 +13,7 @@ string[] globPaths(string pattern, Memory mem, bool shellFilters = true) {
     string[] ignored;
     bool hasIgnore;
     if (shellFilters) {
-        auto cell = mem.globalFrame.cells.get("GLOBIGNORE", null);
+        auto cell = mem.findGlobalCell("GLOBIGNORE");
         if (cell !is null && cell.value.kind == ValueKind.stringValue && cell.value.stringValue.length) {
             hasIgnore = true;
             string part;
