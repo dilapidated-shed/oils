@@ -19,6 +19,7 @@ import yshd.process : runExternal, runPipeline, runSourcePipeline, captureSource
 import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
 import yshd.var_check : VariableChecker, DefinitionKind;
+import yshd.eval_scope : EvalOptions, withEvalBindings;
 import yshd.pattern : ScalarWord, matchesShellPattern;
 import yshd.eggex : Eggex, parseEggex, EreError;
 import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
@@ -84,11 +85,20 @@ class YshCommand {
         moduleFrame = mem.globalFrame;
     }
     int eval(Memory mem) {
-        auto previousGlobal = mem.setActiveGlobalFrame(moduleFrame);
-        mem.pushEnclosed(captured);
-        scope (exit) { mem.popFrame(); mem.setActiveGlobalFrame(previousGlobal); }
-        executeProgram(source, mem);
+        evalValue(mem);
         return mem.lastStatus;
+    }
+    Value evalValue(Memory mem, EvalOptions options = EvalOptions.init) {
+        auto previousGlobal = mem.setActiveGlobalFrame(moduleFrame);
+        Frame frame;
+        if (options.inCapturedFrame) { frame = captured; mem.pushFrame(frame); }
+        else frame = mem.pushEnclosed(captured);
+        scope (exit) { mem.popFrame(); mem.setActiveGlobalFrame(previousGlobal); }
+        withEvalBindings(mem, options, () { executeProgram(source, mem); return Value.nullValue(); });
+        if (!options.toDict) return Value.nullValue();
+        auto dictionary = new YshDict();
+        foreach (name, cell; frame.cells) if (!name.endsWith("_")) dictionary.set(name, cell.value);
+        return Value.dictRef(dictionary);
     }
 }
 
@@ -405,10 +415,10 @@ class ProgramParser {
     private void parseCommandWords() {
         bool hasTyped;
         while (!isEndStatement(current_.kind)) {
-            if (current_.kind == TokenKind.leftParen) {
+            if (atTypedArguments()) {
                 if (hasTyped) throw new ParseError("Unexpected second typed argument list");
                 hasTyped = true;
-                parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true);
+                parseCommandArguments();
             } else if (current_.kind == TokenKind.leftBrace) {
                 parseProgram(collectBlock());
                 if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after block argument");
@@ -427,6 +437,17 @@ class ProgramParser {
     private void validateExpression(string source) { .validateExpression(source, parserOptions_); }
     private auto parseTypedArguments(string source, bool validateNested = false) {
         return .parseTypedArguments(source, validateNested, parserOptions_);
+    }
+
+    private bool atTypedArguments() {
+        return current_.kind == TokenKind.leftParen ||
+            (current_.kind == TokenKind.leftBracket && (parserOptions_ is null || parserOptions_.get("parse_bracket")));
+    }
+
+    private auto parseCommandArguments() {
+        if (current_.kind == TokenKind.leftParen)
+            return parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true);
+        return parseTypedArguments("[" ~ collectBracketedExpression("lazy argument list", true) ~ "]", true);
     }
 
     void execute(Memory mem) {
@@ -1610,7 +1631,7 @@ class ProgramParser {
         Cell cell;
         if (!syntaxOnly_) {
             if (declaration) {
-                if (auto local = name in mem.currentFrame.cells) cell = *local;
+                if (auto local = mem.currentFrame.cells.find(name)) cell = *local;
             } else cell = mem.getShellAssignmentCell(name);
         }
         if (!syntaxOnly_ && append && !indexed && !compound && cell !is null &&
@@ -1888,10 +1909,10 @@ class ProgramParser {
                 if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after block argument");
                 break;
             }
-            if (current_.kind == TokenKind.leftParen) {
+            if (atTypedArguments()) {
                 if (typedArguments !is null || pipeline.length)
                     throw new ParseError("Unexpected typed argument list");
-                typedArguments = parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true);
+                typedArguments = parseCommandArguments();
                 if (current_.kind == TokenKind.leftBrace) continue;
                 if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after typed arguments");
                 break;
@@ -1929,6 +1950,19 @@ class ProgramParser {
         }
 
         if (pipeline.length == 0) {
+            if (commandName == "redir" || commandName == "fopen") {
+                auto arguments = evalArguments();
+                if (!arguments.hasBlock) throw new UsageError(commandName ~ " requires a Command block");
+                if (arguments.block.kind != ValueKind.commandValue)
+                    throw new YshTypeError(commandName ~ " block should be Command");
+                if (arguments.positional.length || (arguments.named !is null && arguments.named.length))
+                    throw new YshTypeError(commandName ~ " expects only a block argument");
+                // RunBlock evaluates the fragment in the current frame;
+                // redirection setup and cleanup belong to its command owner.
+                executeProgram((cast(YshCommand)arguments.block.callableValue).source, mem);
+                mem.lastStatus = 0;
+                return;
+            }
             if (commandName == "ctx") {
                 auto arguments = evalArguments();
                 if (argv.length < 2) throw new UsageError("ctx expects push, set, or emit");
@@ -2155,6 +2189,8 @@ class ProgramParser {
         advance(); // eval
         string[] words;
         while (!isEndStatement(current_.kind)) {
+            if (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.leftParen)
+                throw new UsageError("eval does not accept typed arguments or literal blocks");
             words ~= readCommandWord(mem);
         }
         if (mem.options.get("simple_eval_builtin") && words.length != 1) {
@@ -2970,6 +3006,33 @@ class ProgramParser {
         mem.enterLoop();
         scope (exit) mem.leaveLoop();
         switch (iterable.kind) {
+        case ValueKind.stdinValue:
+            if (names.length > 2) throw new YshTypeError("Stdin iteration expects at most 2 loop variables");
+            // Each iteration owns a stream snapshot, not the singleton value.
+            // Body redirects may temporarily change Memory.inputFile.
+            auto input = mem.inputFile;
+            long lineIndex;
+            while (true) {
+                string text;
+                import std.exception : ErrnoException;
+                import core.stdc.errno : EINTR;
+                try { text = input.readln(); }
+                catch (ErrnoException error) {
+                    if (error.errno == EINTR) continue;
+                    throw new FatalRuntimeError("Error reading stdin: " ~ error.msg);
+                }
+                if (!text.length) break;
+                if (text[$ - 1] == '\n') text = text[0 .. $ - 1];
+                auto bindings = names.length == 1 ? [Value.str(text)] : [Value.integer(lineIndex), Value.str(text)];
+                bindLoopVariables(names, bindings, mem);
+                try { executeProgram(bodySource, mem); }
+                catch (LoopControl control) {
+                    if (control.levels > 1) { --control.levels; throw control; }
+                    if (control.shouldBreak) break;
+                }
+                ++lineIndex;
+            }
+            break;
         case ValueKind.list:
             // YSH List iteration observes its changing length as the loop
             // runs, so appends extend the loop and removals shorten it.
@@ -3168,6 +3231,9 @@ class ProgramParser {
         advance(); // read
         bool all;
         bool line;
+        bool rawLine;
+        bool withEol;
+        long byteCount = -1;
 
         while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen) {
             if (atRawWord("--all")) {
@@ -3180,7 +3246,17 @@ class ProgramParser {
                 line = true;
                 continue;
             }
-            throw new UsageError("read currently supports --all or --line");
+            if (atRawWord("--raw-line")) { consumeRawWord("--raw-line"); rawLine = true; continue; }
+            if (atRawWord("--with-eol")) { consumeRawWord("--with-eol"); withEol = true; continue; }
+            if (atRawWord("--num-bytes")) {
+                consumeRawWord("--num-bytes");
+                auto words = readCommandWord(mem);
+                if (words.length != 1) throw new UsageError("read --num-bytes expects an integer");
+                try { byteCount = to!long(words[0]); }
+                catch (Exception error) { throw new UsageError("read --num-bytes expects an integer"); }
+                continue;
+            }
+            throw new UsageError("read: unexpected flag");
         }
 
         if (all && line) {
@@ -3200,13 +3276,16 @@ class ProgramParser {
 
         string result;
         bool endOfInput;
-        if (all) {
-            while (true) {
-                auto chunk = mem.inputFile.readln();
-                if (chunk.length == 0) {
-                    break;
-                }
-                result ~= chunk;
+        if (all || rawLine || byteCount != -1) {
+            import yshd.io_stream : readRawLine, readInputBytes, StreamReadError;
+            try {
+                if (byteCount != -1) result = readInputBytes(mem.inputFile, byteCount < 0 ? 0 : byteCount);
+                else if (rawLine) result = readRawLine(mem.inputFile, endOfInput, withEol);
+                else result = readInputBytes(mem.inputFile);
+            } catch (StreamReadError error) {
+                mem.errorFile.writeln("read: ", error.msg);
+                mem.lastStatus = 1;
+                return;
             }
         } else {
             result = mem.inputFile.readln();
@@ -3656,8 +3735,7 @@ class ProgramParser {
                 auto close = substitutionClose(content, position + 1, '(', ')');
                 auto command = content[position + 2 .. close];
                 auto output = captureCommandOutput(command, mem);
-                while (output.length != 0 &&
-                        (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
+                while (output.length != 0 && output[$ - 1] == '\n') {
                     output = output[0 .. $ - 1];
                 }
                 result ~= output;
@@ -3902,8 +3980,7 @@ class ProgramParser {
             auto command = collectParenthesizedCommand("$ command substitution",
                 endOffset);
             auto output = captureCommandOutput(command, mem);
-            while (output.length != 0 &&
-                    (output[$ - 1] == '\n' || output[$ - 1] == '\r')) {
+            while (output.length != 0 && output[$ - 1] == '\n') {
                 output = output[0 .. $ - 1];
             }
             return output;
@@ -3989,12 +4066,12 @@ class ProgramParser {
         throw new YshError("unterminated " ~ description);
     }
 
-    private string collectBracketedExpression(string description) {
+    private string collectBracketedExpression(string description, bool allowEmpty = false) {
         size_t ignored;
-        return collectBracketedExpression(description, ignored);
+        return collectBracketedExpression(description, ignored, allowEmpty);
     }
 
-    private string collectBracketedExpression(string description, ref size_t endOffset) {
+    private string collectBracketedExpression(string description, ref size_t endOffset, bool allowEmpty = false) {
         require(TokenKind.leftBracket, "[");
         auto start = current_.offset;
         int depth;
@@ -4005,7 +4082,7 @@ class ProgramParser {
                 auto expression = strip(source_[start .. current_.offset]);
                 endOffset = current_.offset + current_.text.length;
                 advance();
-                if (expression.length == 0) {
+                if (expression.length == 0 && !allowEmpty) {
                     throw new YshError(description ~ " cannot be empty");
                 }
                 return expression;

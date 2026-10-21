@@ -5,9 +5,7 @@ import std.conv : to;
 import std.algorithm.mutation : reverse;
 import std.algorithm.sorting : sort;
 import std.array : array, join;
-import std.file : SpanMode, dirEntries;
 import std.format : format;
-import std.path : baseName, dirName;
 import std.string : endsWith, indexOf, lastIndexOf, replace, split,
     startsWith, strip, stripLeft, stripRight;
 import std.uni : toLower, toUpper;
@@ -16,6 +14,7 @@ import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
 import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
+import yshd.eval_scope : EvalOptions, parseEvalOptions, withEvalBindings;
 import yshd.io_ysh : encodeDataValue, WriteEncoding, DataEncodeError, dataOptions;
 import yshd.value : Value, ValueKind, YshDict, YshObject, YshError, YshTypeError, StructuredError, FatalRuntimeError,
     exactlyEqual, kindName, stringify, toBool;
@@ -160,6 +159,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -199,6 +199,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -388,13 +389,13 @@ class YshExpression {
         captured = mem.currentFrame;
         moduleFrame = mem.globalFrame;
     }
-    Value eval(Memory mem) {
+    Value eval(Memory mem, EvalOptions options = EvalOptions.init) {
         auto previousGlobal = mem.setActiveGlobalFrame(moduleFrame);
         mem.pushEnclosed(captured);
         scope (exit) { mem.popFrame(); mem.setActiveGlobalFrame(previousGlobal); }
         auto optionNumbers = mem.options.pushExpression();
         scope (exit) mem.options.pop(optionNumbers);
-        return expression.eval(mem);
+        return withEvalBindings(mem, options, () { return expression.eval(mem); });
     }
 }
 
@@ -631,6 +632,7 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -735,6 +737,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
+        case ValueKind.stdinValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -804,6 +807,7 @@ class ParsedArguments {
     private PositionalCallArgument[] positional_;
     private NamedCallArgument[] named_;
     private Expr block_;
+    private bool lazy_;
 
     Expr singleExpression() {
         if (positional_.length != 1 || positional_[0].spread ||
@@ -818,6 +822,10 @@ class ParsedArguments {
         EvaluatedArguments result;
         result.named = new YshDict();
         foreach (argument; positional_) {
+            if (lazy_) {
+                result.positional ~= Value.closure(ValueKind.expressionValue, new YshExpression(argument.expression, mem));
+                continue;
+            }
             auto value = argument.expression.eval(mem);
             if (!argument.spread) result.positional ~= value;
             else {
@@ -827,6 +835,10 @@ class ParsedArguments {
             }
         }
         foreach (argument; named_) {
+            if (lazy_) {
+                result.named.set(argument.name, Value.closure(ValueKind.expressionValue, new YshExpression(argument.expression, mem)));
+                continue;
+            }
             auto value = argument.expression.eval(mem);
             if (!argument.spread) result.named.set(argument.name, value);
             else {
@@ -871,6 +883,7 @@ private bool builtinFunctionName(string name) {
     case "toJson8":
     case "fromJson":
     case "fromJson8":
+    case "parseCommand":
     case "Object":
     case "prototype":
     case "propView":
@@ -912,6 +925,16 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     }
 
     switch (name) {
+    case "parseCommand":
+        if (arguments.length != 1 || arguments[0].kind != ValueKind.stringValue)
+            throw new YshTypeError("parseCommand() expects one Str");
+        import yshd.program : parseProgram, YshCommand;
+        try { parseProgram(arguments[0].stringValue, ReturnMode.shell, mem.options); }
+        catch (ParseError error) {
+            mem.errorFile.writeln("ysh-d: ", error.msg);
+            throw new StructuredError(3, "Syntax error in parseCommand()", new YshDict());
+        }
+        return Value.closure(ValueKind.commandValue, new YshCommand(arguments[0].stringValue, mem));
     case "floatsEqual":
         if (arguments.length != 2 || arguments[0].kind != ValueKind.floating || arguments[1].kind != ValueKind.floating)
             throw new YshTypeError("floatsEqual() expects two Float arguments");
@@ -1063,29 +1086,9 @@ private Value callBuiltinFunction(string name, Value[] arguments,
             throw new YshTypeError("glob() expects one Str pattern");
         }
 
-        auto pattern = arguments[0].stringValue;
-        auto directory = dirName(pattern);
-        auto leafPattern = baseName(pattern);
-        if (directory.length == 0) {
-            directory = ".";
-        }
-
+        import yshd.glob : globPaths;
         Value[] matches;
-        try {
-            auto entries = dirEntries(directory, leafPattern,
-                SpanMode.shallow).array;
-            entries.sort!((a, b) => a.name < b.name);
-            foreach (entry; entries) {
-                auto matchName = directory == "."
-                    ? baseName(entry.name)
-                    : entry.name;
-                matches ~= Value.str(matchName);
-            }
-        } catch (Exception error) {
-            // Shell-style glob() returns an empty list when the directory or
-            // pattern has no matches; filesystem access errors at an existing
-            // directory are still surfaced by dirEntries on iteration.
-        }
+        foreach (path; globPaths(arguments[0].stringValue, mem)) matches ~= Value.str(path);
         return Value.list(matches);
 
     case "list":
@@ -1213,16 +1216,16 @@ private string evaluateReplacement(Value replacement, Memory mem, string dollarZ
     import yshd.state : Cell;
     Cell[string] previousCells;
     if (variables !is null) foreach (name, value; variables) {
-        auto old = name in frame.cells;
+        auto old = frame.cells.find(name);
         previousCells[name] = old is null ? null : *old;
-        frame.cells[name] = new Cell(value);
+        frame.cells.set(name, new Cell(value));
     }
     scope (exit) {
         mem.argumentZero = previousZero;
         mem.shellArguments = previousArguments;
         foreach (name, cell; previousCells) {
             if (cell is null) frame.cells.remove(name);
-            else frame.cells[name] = cell;
+            else frame.cells.set(name, cell);
         }
     }
     auto value = closure.eval(mem);
@@ -1750,6 +1753,7 @@ private Value callValueMethod(Value receiver, string name,
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError("value has no method " ~ name);
     }
 }
@@ -1784,16 +1788,49 @@ private class YshNativeFunction {
             return callBuiltinFunction("Object", [arguments.length == 2 ? arguments[1] : Value.nullValue(), arguments[0]], null, mem);
         }
         if (name == "io.eval" || name == "io.evalExpr") {
-            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue || (named !is null && named.length))
+            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue)
                 throw new YshTypeError(name ~ "() expects one captured value");
             if (name == "io.eval") {
                 if (arguments[1].kind != ValueKind.commandValue) throw new YshTypeError("io.eval() expects Command");
                 import yshd.program : YshCommand;
-                (cast(YshCommand)arguments[1].callableValue).eval(mem);
-                return Value.nullValue();
+                return (cast(YshCommand)arguments[1].callableValue).evalValue(mem, parseEvalOptions(named, true));
             }
             if (arguments[1].kind != ValueKind.expressionValue) throw new YshTypeError("io.evalExpr() expects Expr");
-            return (cast(YshExpression)arguments[1].callableValue).eval(mem);
+            return (cast(YshExpression)arguments[1].callableValue).eval(mem, parseEvalOptions(named, false));
+        }
+        if (name == "io.captureStdout" || name == "io.captureAll") {
+            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue ||
+                    arguments[1].kind != ValueKind.commandValue || (named !is null && named.length))
+                throw new YshTypeError(name ~ "() expects one captured Command");
+            import yshd.program : YshCommand;
+            import yshd.process : captureSource;
+            auto command = cast(YshCommand)arguments[1].callableValue;
+            auto result = captureSource(command.source, mem,
+                (string source, Memory child) { return command.eval(child); }, name == "io.captureAll");
+            if (name == "io.captureAll") {
+                auto properties = new YshDict();
+                properties.set("stdout", Value.str(result.stdoutText));
+                properties.set("stderr", Value.str(result.stderrText));
+                properties.set("status", Value.integer(result.status));
+                return Value.dictRef(properties);
+            }
+            if (result.status != 0) {
+                auto properties = new YshDict();
+                properties.set("status", Value.integer(result.status));
+                throw new StructuredError(4, format("captureStdout(): command failed with status %s", result.status), properties);
+            }
+            auto output = result.stdoutText.replace("\0", "");
+            while (output.length && output[$ - 1] == '\n') output = output[0 .. $ - 1];
+            return Value.str(output);
+        }
+        if (name == "io.glob" || name == "io.libcGlob") {
+            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue ||
+                    arguments[1].kind != ValueKind.stringValue || (named !is null && named.length))
+                throw new YshTypeError(name ~ "() expects one Str pattern");
+            import yshd.glob : globPaths;
+            Value[] paths;
+            foreach (path; globPaths(arguments[1].stringValue, mem, name == "io.glob")) paths ~= Value.str(path);
+            return Value.list(paths);
         }
         return callBuiltinFunction(name, arguments, named, mem);
     }
@@ -1813,7 +1850,13 @@ Value[string] builtinNamespaces() {
     auto ioMethods = new YshDict();
     ioMethods.set("M/eval", Value.builtin(new YshNativeFunction("io.eval")));
     ioMethods.set("M/evalExpr", Value.builtin(new YshNativeFunction("io.evalExpr")));
-    result["io"] = Value.object(new YshObject(new YshObject(null, ioMethods), new YshDict()));
+    ioMethods.set("captureStdout", Value.builtin(new YshNativeFunction("io.captureStdout")));
+    ioMethods.set("captureAll", Value.builtin(new YshNativeFunction("io.captureAll")));
+    ioMethods.set("glob", Value.builtin(new YshNativeFunction("io.glob")));
+    ioMethods.set("libcGlob", Value.builtin(new YshNativeFunction("io.libcGlob")));
+    auto ioProperties = new YshDict();
+    ioProperties.set("stdin", Value.stdinSource());
+    result["io"] = Value.object(new YshObject(new YshObject(null, ioMethods), ioProperties));
     return result;
 }
 
@@ -2510,11 +2553,13 @@ private class Parser {
         return left;
     }
 
-    ParsedArguments parseArguments(bool allowBlock) {
-        require(TokenKind.leftParen, "(");
+    ParsedArguments parseArguments(bool allowBlock, bool deferEvaluation = false) {
+        require(deferEvaluation ? TokenKind.leftBracket : TokenKind.leftParen, deferEvaluation ? "[" : "(");
         auto arguments = new ParsedArguments();
+        arguments.lazy_ = deferEvaluation;
         size_t group;
-        while (current_.kind != TokenKind.rightParen) {
+        auto closing = deferEvaluation ? TokenKind.rightBracket : TokenKind.rightParen;
+        while (current_.kind != closing) {
             if (current_.kind == TokenKind.semicolon) {
                 ++group;
                 if (group > (allowBlock ? 2 : 1))
@@ -2526,6 +2571,7 @@ private class Parser {
                 if (arguments.block_ !is null) throw new ParseError("expected one block argument");
                 arguments.block_ = parseTest();
             } else if (current_.kind == TokenKind.ellipsis) {
+                if (deferEvaluation) throw new ParseError("Spread arguments in lazy calls are not translated");
                 advance();
                 auto expression = parseTest();
                 if (group == 1) arguments.named_ ~= NamedCallArgument("", expression, true);
@@ -2542,7 +2588,7 @@ private class Parser {
             if (current_.kind == TokenKind.comma) { advance(); continue; }
             if (current_.kind != TokenKind.semicolon) break;
         }
-        require(TokenKind.rightParen, ")");
+        require(closing, deferEvaluation ? "]" : ")");
         return arguments;
     }
 
@@ -2947,6 +2993,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
+        case ValueKind.stdinValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -3015,7 +3062,8 @@ size_t expressionAtomEnd(string source, ShellOptions options = null) {
 
 ParsedArguments parseTypedArguments(string source, bool validateNested = false, ShellOptions options = null) {
     auto parser = new Parser(source, validateNested, options);
-    auto arguments = parser.parseArguments(true);
+    bool deferEvaluation = parser.current_.kind == TokenKind.leftBracket;
+    auto arguments = parser.parseArguments(!deferEvaluation, deferEvaluation);
     if (parser.current_.kind != TokenKind.eof) throw new ParseError("unexpected token after typed arguments");
     return arguments;
 }

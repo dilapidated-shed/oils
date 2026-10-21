@@ -145,6 +145,7 @@ enum ValueKind {
     boundFunctionValue,
     bashArrayValue,
     bashAssocValue,
+    stdinValue,
 }
 
 class YshObject {
@@ -432,12 +433,14 @@ struct Value {
         result.callableValue = callable;
         return result;
     }
+
+    static Value stdinSource() { Value result; result.kind = ValueKind.stdinValue; return result; }
 }
 
 bool sameIdentity(Value left, Value right) {
     if (left.kind != right.kind) return false;
     final switch (left.kind) {
-    case ValueKind.nullValue: return true;
+    case ValueKind.nullValue: case ValueKind.stdinValue: return true;
     case ValueKind.boolean: case ValueKind.integer: case ValueKind.floating:
     case ValueKind.stringValue: case ValueKind.sliceValue: case ValueKind.rangeValue:
         return left.scalarIdentity == right.scalarIdentity;
@@ -490,6 +493,7 @@ string kindName(Value value) {
     case ValueKind.boundFunctionValue: return "BoundFunc";
     case ValueKind.bashArrayValue: return "BashArray";
     case ValueKind.bashAssocValue: return "BashAssoc";
+    case ValueKind.stdinValue: return "Stdin";
     }
 }
 
@@ -524,6 +528,7 @@ bool toBool(Value value) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         return true;
     }
 }
@@ -573,6 +578,7 @@ string stringify(Value value) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError("can't stringify " ~ kindName(value));
     }
 }
@@ -638,6 +644,7 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
+    case ValueKind.stdinValue:
         throw new YshTypeError("Equality isn't defined on " ~ kindName(left) ~ " values");
     }
 }
@@ -743,6 +750,7 @@ private string reprWithActive(Value value, ref bool[Object] active) {
     case ValueKind.boundFunctionValue: return "<BoundFunc>";
     case ValueKind.bashArrayValue: return "<BashArray>";
     case ValueKind.bashAssocValue: return "<BashAssoc>";
+    case ValueKind.stdinValue: return "<Stdin>";
     }
 }
 

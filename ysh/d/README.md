@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-649 assertion matches, 470 failures. The unchanged original harness, fixture
+682 assertion matches, 437 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-retained-control-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-io-stream-2026-10-21.tsv).
 
 ## Source map
 
@@ -121,6 +121,13 @@ checking follows the reference's var/setvar rules and nesting restrictions;
 annotation syntax is parsed without adding type enforcement. Control flow
 matches 9/9 inherited cases, assignment 18/22, procs 31/38 and scope 9/26.
 Those counts leave the larger translation and inherited acceptance incomplete.
+
+The I/O continuation adds isolated stdout/stderr capture, shell-filtered and
+libc glob APIs, eval bindings and ordered frame capture, lazy typed arguments,
+parseCommand, stdin iteration, and descriptor-based raw/byte reads. The I/O
+method fixture matches 9/9 cases, eval 17/31, for 19/20 and assignment 19/22.
+The test-only Python reference build is now available to fixtures that
+explicitly request it; it is separate from the D language-execution path.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

@@ -23,6 +23,36 @@ class Cell {
     }
 }
 
+/// Reference frames are insertion-ordered dictionaries of cells. Rebinding
+/// preserves order; removing and reinserting a name puts it at the end.
+class FrameCells {
+    private Cell[string] values;
+    private string[] names;
+    Cell* find(string name) { return name in values; }
+    Cell get(string name, Cell fallback = null) {
+        auto cell = find(name);
+        return cell is null ? fallback : *cell;
+    }
+    void set(string name, Cell cell) {
+        if (name !in values) names ~= name;
+        values[name] = cell;
+    }
+    void remove(string name) {
+        if (!values.remove(name)) return;
+        foreach (index, item; names) if (item == name) {
+            names = names[0 .. index] ~ names[index + 1 .. $];
+            break;
+        }
+    }
+    int opApply(scope int delegate(string, Cell) visit) {
+        foreach (name; names) {
+            auto status = visit(name, values[name]);
+            if (status) return status;
+        }
+        return 0;
+    }
+}
+
 class BuiltinRegistry {
     Cell[string] cells;
     YshDict shellFunctions;
@@ -32,10 +62,11 @@ class BuiltinRegistry {
 /// The enclosed field is core/state.py's lexical __E__ link. Dynamic callers
 /// remain in Memory's active frame stack and are never captured by this link.
 class Frame {
-    Cell[string] cells;
+    FrameCells cells;
     Frame enclosed;
 
     this(Frame enclosed = null) {
+        cells = new FrameCells();
         this.enclosed = enclosed;
     }
 }
@@ -47,8 +78,8 @@ class FramePlace : YshPlace {
     string name;
     this(Frame frame, string name) { this.frame = frame; this.name = name; }
     override void assign(Value value) {
-        auto cell = name in frame.cells;
-        if (cell is null) frame.cells[name] = new Cell(value);
+        auto cell = frame.cells.find(name);
+        if (cell is null) frame.cells.set(name, new Cell(value));
         else (*cell).value = value;
     }
 }
@@ -58,7 +89,7 @@ private Cell lookupFrame(Frame frame, string name, bool declaration, ref Frame f
         return null;
     }
 
-    auto found = name in frame.cells;
+    auto found = frame.cells.find(name);
     if (found !is null) {
         foundFrame = frame;
         return *found;
@@ -147,11 +178,11 @@ class Memory {
         foreach (name, value; environment.toAA()) {
             env.set(name, Value.str(value));
         }
-        globalFrame.cells["ENV"] = new Cell(Value.dictRef(env));
-        globalFrame.cells["ARGV"] = new Cell(Value.list([]));
-        globalFrame.cells["_error"] = new Cell(Value.dict());
-        globalFrame.cells["NAN"] = new Cell(Value.floating(double.nan));
-        globalFrame.cells["INFINITY"] = new Cell(Value.floating(double.infinity));
+        globalFrame.cells.set("ENV", new Cell(Value.dictRef(env)));
+        globalFrame.cells.set("ARGV", new Cell(Value.list([])));
+        globalFrame.cells.set("_error", new Cell(Value.dict()));
+        globalFrame.cells.set("NAN", new Cell(Value.floating(double.nan)));
+        globalFrame.cells.set("INFINITY", new Cell(Value.floating(double.infinity)));
         import yshd.expr : builtinNamespaces;
         builtins = new BuiltinRegistry();
         foreach (name, value; builtinNamespaces()) builtins.cells[name] = new Cell(value);
@@ -164,7 +195,7 @@ class Memory {
         foreach (argument; arguments) {
             values ~= Value.str(argument);
         }
-        globalFrame.cells["ARGV"] = new Cell(Value.list(values));
+        globalFrame.cells.set("ARGV", new Cell(Value.list(values)));
     }
 
     /// Calls have a new local frame but retain their defining global frame.
@@ -256,6 +287,17 @@ class Memory {
         return cell.value;
     }
 
+    Cell findLocal(string name) {
+        Frame ignored;
+        return lookupFrame(currentFrame, name, false, ignored);
+    }
+
+    void unsetLocal(string name) {
+        Frame found;
+        auto cell = lookupFrame(currentFrame, name, false, found);
+        if (cell !is null) { requireWritable(name, cell); found.cells.remove(name); }
+    }
+
     Value getGlobal(string name) {
         Frame ignored;
         auto cell = lookupFrame(globalFrame, name, false, ignored);
@@ -275,7 +317,7 @@ class Memory {
             return;
         }
 
-        currentFrame.cells[name] = new Cell(value, readOnly);
+        currentFrame.cells.set(name, new Cell(value, readOnly));
     }
 
     /// Runtime semantics of setvar: mutate a local/enclosed binding when one
@@ -291,13 +333,13 @@ class Memory {
             return;
         }
 
-        currentFrame.cells[name] = new Cell(value);
+        currentFrame.cells.set(name, new Cell(value));
     }
 
     void setShellVar(string name, Value value) {
         auto cell = getShellAssignmentCell(name);
         if (cell !is null) { requireWritable(name, cell); cell.value = value; }
-        else (options.get("dynamic_scope") ? globalFrame : currentFrame).cells[name] = new Cell(value);
+        else (options.get("dynamic_scope") ? globalFrame : currentFrame).cells.set(name, new Cell(value));
     }
 
     Cell getShellAssignmentCell(string name) {
@@ -319,7 +361,7 @@ class Memory {
             return;
         }
 
-        globalFrame.cells[name] = new Cell(value);
+        globalFrame.cells.set(name, new Cell(value));
     }
 
     /// Enter a frame that can see an enclosing frame, matching
@@ -328,9 +370,13 @@ class Memory {
     /// scope model.
     Frame pushEnclosed(Frame enclosed) {
         auto frame = new Frame(enclosed);
+        pushFrame(frame);
+        return frame;
+    }
+
+    void pushFrame(Frame frame) {
         frameStack ~= frame;
         currentFrame = frame;
-        return frame;
     }
 
     void popFrame() {

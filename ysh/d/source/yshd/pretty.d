@@ -214,6 +214,7 @@ private class ValueEncoder {
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
+        case ValueKind.stdinValue:
             // IDs and terminal styles await the rest of the value/display model.
             return text("<" ~ kindName(value) ~ ">");
         case ValueKind.objectValue:

@@ -158,7 +158,65 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: retained control and call frames, 2026-10-21
+## Current host checkpoint: native I/O and evaluation scopes, 2026-10-21
+
+The unchanged inherited harness reports **682 assertion matches and 437
+failures across 1,119 cases**, with no timeouts. This serial run adds 33
+matches over `e652a7b7aed2973755ec564898593d4c263769ac` and loses no previous
+match. The test-only reference build was also repaired, so these gains are
+not attributed solely to D implementation changes. The whole-language
+translation and inherited acceptance remain incomplete.
+
+Native capture forks an isolated evaluator and drains stdout/stderr together
+with POSIX poll/read. A test exceeds both pipe capacities to check deadlock
+behavior. CaptureAll retains byte streams and terminal status; captureStdout
+removes NUL/trailing LF and wraps failure as structured status 4. Command
+substitution shares the process boundary while retaining its own status rule.
+All language evaluation remains in D; capture never invokes a reference shell.
+
+Eval/evalExpr now accept dollar0, positional and temporary variable bindings;
+command eval also supports captured-frame execution and dictionary capture.
+Bindings restore before frame collection and across errors. Frame cells use
+insertion order, preserving declaration order without sorting returned names.
+Lazy command arguments retain individual positional/named expression closures.
+Lazy spreads remain explicitly untranslated. ParseCommand validates source,
+captures lexical/module frames and converts syntax errors to structured errors.
+
+The io glob APIs use the target libc ABI through ImportC. Shell filtering
+applies dotglob, GLOBIGNORE, no_dash_glob and globskipdots; libcGlob omits those
+filters. This does not complete ordinary shell-word glob/brace expansion.
+Stdin is a distinct value; each loop snapshots its active input stream, strips
+only LF and reports read errors. Redir/fopen execute their fragment in the
+current frame. Raw-line and byte-count reads use the descriptor directly so
+following bytes remain available to other commands. Pending trap execution
+during EINTR, full OSH read behavior and other builtin forms remain open.
+
+The I/O-method fixture matches **9/9**, eval **17/31**, for **19/20**, assignment
+**19/22** and procs **31/38**. Regex APIs remain **40/40**, regex **29/29**,
+strings **29/29**, functions **26/26**, case **18/18**, contexts **8/8**, and
+control flow **9/9**. These counts do not establish complete subsystem coverage.
+
+The owning reference `build/py.sh minimal` now succeeds, including extension
+tests, after supplying its readline headers under a separate host prefix.
+Explicit inherited calls to REPO_ROOT/bin/osh reach that test oracle instead
+of failing on missing generated modules. The fixtures and harness are
+unchanged, including their three-second limit and expected failures. The D
+binary has no dependency on this Python build or its extensions.
+
+Pinned Icky DMD compiles source tree
+`ae714686abce2f20a41d4b965a5f33e097896e7d`; host binary SHA-256 is
+`89823e19744dd3f3e7ec22083a659965bd4073907a8f7ff74ed705da91d4fd3e`.
+All 25 CLI/module suites, 24 library suites and the existing owner smoke pass.
+Dynamic dependencies remain libc, libgcc_s and the loader. Shared specs,
+static-transitive AI-CI, managed admission and physical targets remain
+unqualified. Capitalized attribute blocks, full shell words/builtins,
+modules/reflection, jobs/traps and interactive behavior still need work.
+
+See [host qualification](qualification/inherited-host-io-stream-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-io-stream-2026-10-21.tsv), and
+[case results](qualification/inherited-cases-io-stream-2026-10-21.tsv).
+
+## Previous host checkpoint: retained control and call frames, 2026-10-21
 
 The unchanged inherited harness reports **649 assertion matches and 470
 failures across 1,119 cases**, with no timeouts in this serial full run. That

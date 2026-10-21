@@ -392,6 +392,7 @@ private class DataEncoder {
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
+        case ValueKind.stdinValue:
             if (diagnostic) {
                 import yshd.value : kindName;
                 return "<" ~ kindName(value) ~ ">";

@@ -3,7 +3,7 @@ module yshd.process;
 import std.format : format;
 import std.process : Pipe, pipe;
 import std.stdio : File;
-import std.string : indexOf, split, toStringz;
+import std.string : indexOf, replace, split, toStringz;
 import std.conv : to;
 
 import yshd.state : Memory, ReturnMode;
@@ -17,8 +17,9 @@ version (Posix) {
     import core.sys.posix.sys.types : pid_t;
     import core.sys.posix.sys.wait : waitpid, WIFEXITED, WEXITSTATUS,
         WIFSIGNALED, WTERMSIG;
-    import core.sys.posix.unistd : fork, _exit, execve, dup2, close, write,
+    import core.sys.posix.unistd : fork, _exit, execve, dup2, close, read, write,
         sysconf, _SC_OPEN_MAX;
+    import core.sys.posix.poll : poll, pollfd, POLLIN;
     import core.sys.posix.fcntl : fcntl, F_DUPFD;
     import core.sys.posix.signal : signal, SIGPIPE, SIG_DFL;
 }
@@ -120,24 +121,32 @@ int runSourcePipeline(string[] stages, Memory mem,
     }
 }
 
-/// Command substitution is a subshell: variable/container mutation and chdir
-/// must not escape to its parent. Read while the child writes so output larger
-/// than pipe capacity cannot deadlock.
-string captureSourceOutput(string source, Memory mem,
-        int delegate(string, Memory) executeStage) {
+struct SourceCapture {
+    string stdoutText;
+    string stderrText;
+    int status;
+}
+
+/// core/executor.py:CaptureStdout/Capture3 share process isolation and the
+/// inherit_errexit rule. Poll both output descriptors while the child runs:
+/// draining one stream to EOF first can deadlock on a full second pipe.
+SourceCapture captureSource(string source, Memory mem,
+        int delegate(string, Memory) executeStage, bool captureErrors = false) {
     version (Posix) {
-        auto link = pipe();
+        auto links = new Pipe[captureErrors ? 2 : 1];
+        foreach (ref link; links) link = pipe();
         mem.outputFile.flush();
         mem.errorFile.flush();
         auto child = fork();
         if (child < 0) {
-            link.close();
+            foreach (ref link; links) link.close();
             throw new YshError("fork failed for command substitution");
         }
         if (child == 0) {
             signal(SIGPIPE, SIG_DFL);
-            link.readEnd.close();
-            mem.outputFile = link.writeEnd;
+            foreach (ref link; links) link.readEnd.close();
+            mem.outputFile = links[0].writeEnd;
+            if (captureErrors) mem.errorFile = links[1].writeEnd;
             mem.returnMode = ReturnMode.shell;
             if (!mem.options.get("inherit_errexit")) mem.errexit = false;
             int status;
@@ -159,24 +168,52 @@ string captureSourceOutput(string source, Memory mem,
             mem.errorFile.flush();
             _exit(status);
         }
-        link.writeEnd.close();
+        foreach (ref link; links) link.writeEnd.close();
         bool reaped;
         scope (exit) {
-            link.close();
+            foreach (ref link; links) link.close();
             if (!reaped) waitSourceChild(child);
         }
-        string result;
-        while (true) {
-            auto bytes = link.readEnd.readln();
-            if (bytes.length == 0) break;
-            result ~= bytes;
+        pollfd[] descriptors;
+        foreach (ref link; links) descriptors ~= pollfd(link.readEnd.fileno(), POLLIN, 0);
+        auto remaining = descriptors.length;
+        SourceCapture result;
+        char[4096] buffer;
+        while (remaining) {
+            int ready;
+            do { ready = poll(descriptors.ptr, descriptors.length, -1); } while (ready < 0 && errno == EINTR);
+            if (ready < 0) throw new YshError("Oils I/O error (poll): " ~ to!string(strerror(errno)), 2);
+            foreach (index, ref descriptor; descriptors) {
+                if (descriptor.fd < 0 || descriptor.revents == 0) continue;
+                auto count = read(descriptor.fd, buffer.ptr, buffer.length);
+                if (count < 0) {
+                    if (errno == EINTR) continue;
+                    throw new YshError("Oils I/O error (read): " ~ to!string(strerror(errno)), 2);
+                }
+                if (count == 0) {
+                    descriptor.fd = -1;
+                    links[index].readEnd.close();
+                    --remaining;
+                } else if (index == 0) result.stdoutText ~= buffer[0 .. cast(size_t)count];
+                else result.stderrText ~= buffer[0 .. cast(size_t)count];
+            }
         }
-        mem.lastStatus = waitSourceChild(child);
+        result.status = waitSourceChild(child);
         reaped = true;
         return result;
     } else {
         throw new YshError("command substitution requires POSIX process support");
     }
+}
+
+/// Shell command substitution drops NUL bytes; Capture3 retains all bytes.
+/// Its terminal status belongs to the parent shell's command-substitution
+/// register, unlike the expression-level capture methods.
+string captureSourceOutput(string source, Memory mem,
+        int delegate(string, Memory) executeStage) {
+    auto result = captureSource(source, mem, executeStage);
+    mem.lastStatus = result.status;
+    return result.stdoutText.replace("\0", "");
 }
 
 private int launchExternal(string[] argv, File input, File output,

@@ -2,4 +2,5 @@
  * Parsing, lowering, evaluation and match state remain in D. */
 #define _GNU_SOURCE 1
 #include <fnmatch.h>
+#include <glob.h>
 #include <regex.h>
