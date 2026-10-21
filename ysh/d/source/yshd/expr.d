@@ -389,10 +389,9 @@ class YshExpression {
         moduleFrame = mem.globalFrame;
     }
     Value eval(Memory mem) {
-        auto previousGlobal = mem.globalFrame;
-        mem.globalFrame = moduleFrame;
+        auto previousGlobal = mem.setActiveGlobalFrame(moduleFrame);
         mem.pushEnclosed(captured);
-        scope (exit) { mem.popFrame(); mem.globalFrame = previousGlobal; }
+        scope (exit) { mem.popFrame(); mem.setActiveGlobalFrame(previousGlobal); }
         auto optionNumbers = mem.options.pushExpression();
         scope (exit) mem.options.pop(optionNumbers);
         return expression.eval(mem);
@@ -3021,12 +3020,17 @@ ParsedArguments parseTypedArguments(string source, bool validateNested = false, 
     return arguments;
 }
 
-void validateAssignmentTarget(string source) {
-    auto target = (new Parser(source, true)).parse();
-    if (cast(VariableExpr)target !is null ||
-            cast(SubscriptExpr)target !is null ||
-            cast(AttributeExpr)target !is null) return;
-    throw new ParseError("assignment target must be a variable, subscript, or attribute");
+string validateAssignmentTarget(string source, ShellOptions options = null) {
+    auto target = (new Parser(source, true, options)).parse();
+    if (auto variable = cast(VariableExpr)target) return variable.name_;
+    Expr object;
+    if (auto subscript = cast(SubscriptExpr)target) object = subscript.object_;
+    else if (auto attribute = cast(AttributeExpr)target) object = attribute.object_;
+    else throw new ParseError("assignment target must be a variable, subscript, or attribute");
+    // Match the retained checker's immediate-base rule; complex container
+    // targets receive runtime lookup rather than invented static inference.
+    if (auto variable = cast(VariableExpr)object) return variable.name_;
+    return "";
 }
 
 Value evaluate(string source, Memory mem) {

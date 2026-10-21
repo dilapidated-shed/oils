@@ -1,0 +1,52 @@
+field	value
+qualification	BLOCKED
+date-utc	2026-10-21
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	6d1db98c2fbe9f4d8e5bef961e937daae4c5c592
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+d-source-git-tree	4a2a52e65fa29b54ece6f913a7946438de3a396b
+icky-dmd	ccf61ab82659b9eadee2d05b489fb195956cef88
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+bootstrap-compiler	LDC 1.36.0 (bootstrap only)
+host	Ubuntu 24.04.3 Linux 6.18.55 x86_64 disposable container
+binary-sha256	0c5675006f32614bc0884fbeceaea355319cc399edb4320ab1254dcf22bb7d3e
+cli-module-unittests	PASS 23 modules
+library-unittests	PASS 22 modules
+owner-workflow-smoke	PASS full existing owner sequence; declared RUNNER_TEMP supplied on host
+inherited-harness	unchanged test/sh_spec.py; host Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT; LIB_YSH; TMP per case; SH is exact mode binary
+inherited-modes	our_shell ysh selects ysh-d; absent/osh selects symlink osh-d to same executable
+inherited-timeout	3 seconds per case via original harness timeout option; serial suite execution
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture
+inherited-cases	1119
+inherited-assertion-matches	649
+inherited-failures	470
+inherited-timeouts	0
+inherited-qualification	FAIL; no additional expected-failure allowance
+comparison-to-published-checkpoint	38 additional assertion matches; zero prior matches regressed
+prequalification-repair	intermediate source matched 645 cases but changed ysh-assign case 6; translated reference VarChecker before final full run
+harness-pass-boundary	assertion matches only; expected-status-only matches do not prove implementation coverage
+control-flow-fixture	PASS 9/9
+assignment-fixture	18/22
+scope-fixture	9/26
+proc-fixture	31/38
+regex-fixture	PASS 29/29
+regex-api-fixture	PASS 40/40
+string-fixture	PASS 29/29
+context-fixture	PASS 8/8
+object-fixture	13/15
+for-fixture	18/20
+json-fixture	59/64
+case-fixture	PASS 18/18
+func-fixture	PASS 26/26
+shared-spec-acceptance	NOT_RUN
+producer-controls-current-continuation	NOT_RERUN
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no dynamic C++ runtime
+static-transitive-AICI	UNKNOWN
+managed-FP-admission	NOT_RUN
+target-device-acceptance	NOT_RUN
+hosted-CI-at-authoring	NOT_RUN

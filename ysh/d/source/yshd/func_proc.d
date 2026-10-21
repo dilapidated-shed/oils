@@ -3,7 +3,7 @@ module yshd.func_proc;
 import std.format : format;
 
 import yshd.expr : evaluate, EvaluatedArguments;
-import yshd.program : executeProgram;
+import yshd.program : executeProcedureBody;
 import yshd.state : Frame, Memory, ReturnMode, BuiltinRegistry;
 import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError;
 
@@ -58,6 +58,7 @@ class YshFunction {
 
     string bodySource;
     Frame closure;
+    Frame moduleFrame;
     BuiltinRegistry builtins;
 
     this(string name, FunctionParameter[] parameters, string bodySource,
@@ -71,6 +72,7 @@ class YshFunction {
         this.restNamedName = restNamedName;
         this.bodySource = bodySource;
         closure = definitionMemory.currentFrame;
+        moduleFrame = definitionMemory.globalFrame;
         builtins = definitionMemory.builtins;
 
         evaluateDefaults(parameters, definitionMemory, defaults, hasDefaults);
@@ -128,24 +130,19 @@ class YshFunction {
                 name, parameters.length, arguments.length));
         }
 
-        auto memory = callerMemory is null
-            ? new Memory()
-            : new Memory(callerMemory.inputFile, callerMemory.outputFile,
-                callerMemory.errorFile);
-        if (callerMemory !is null) {
-            memory.options = callerMemory.options;
-            memory.errexitSuppression = callerMemory.errexitSuppression;
-            memory.argumentZero = callerMemory.argumentZero;
-            memory.shellArguments = callerMemory.shellArguments;
-            memory.contextStack = callerMemory.contextStack;
-        }
-        auto root = closure;
-        while (root.enclosed !is null) root = root.enclosed;
-        memory.useGlobalFrame(root);
+        auto memory = callerMemory is null ? new Memory() : callerMemory;
+        auto previousGlobal = memory.setActiveGlobalFrame(moduleFrame);
+        auto previousBuiltins = memory.builtins;
+        auto previousMode = memory.returnMode;
         memory.builtins = builtins;
         memory.returnMode = ReturnMode.functionValue;
         memory.pushEnclosed(closure);
-        scope (exit) memory.popFrame();
+        scope (exit) {
+            memory.popFrame();
+            memory.setActiveGlobalFrame(previousGlobal);
+            memory.builtins = previousBuiltins;
+            memory.returnMode = previousMode;
+        }
 
         foreach (index, parameter; parameters) {
             auto value = index < arguments.length
@@ -192,7 +189,7 @@ class YshFunction {
         }
 
         try {
-            executeProgram(bodySource, memory);
+            executeProcedureBody(bodySource, memory);
         } catch (FunctionReturn returned) {
             return returned.value;
         }
@@ -208,6 +205,8 @@ class YshFunction {
 /// block proc argument groups are layered separately by the command parser.
 class YshProc {
     string name;
+    bool shellCompatible;
+    Frame moduleFrame;
     bool openSignature;
     FunctionParameter[] wordParameters;
     string restWordName;
@@ -227,14 +226,17 @@ class YshProc {
     this(string name, string bodySource, Memory definitionMemory,
             bool openSignature = true,
             FunctionParameter[] wordParameters = [],
-            string restWordName = "", ProcSignature signature = ProcSignature.init) {
+            string restWordName = "", ProcSignature signature = ProcSignature.init,
+            bool shellCompatible = false) {
         this.name = name;
+        this.shellCompatible = shellCompatible;
+        moduleFrame = definitionMemory.globalFrame;
         this.openSignature = openSignature;
         this.wordParameters = wordParameters;
         this.restWordName = restWordName;
         this.bodySource = bodySource;
         this.signature = signature;
-        closure = definitionMemory.currentFrame;
+        closure = shellCompatible ? null : definitionMemory.currentFrame;
         builtins = definitionMemory.builtins;
 
         if (!openSignature) {
@@ -278,29 +280,28 @@ class YshProc {
 
     Value invoke(string[] words, Memory callerMemory = null,
             EvaluatedArguments arguments = EvaluatedArguments.init) {
-        auto memory = callerMemory is null
-            ? new Memory()
-            : new Memory(callerMemory.inputFile, callerMemory.outputFile,
-                callerMemory.errorFile);
-        if (callerMemory !is null) {
-            memory.options = callerMemory.options;
-            memory.errexitSuppression = callerMemory.errexitSuppression;
-            memory.argumentZero = callerMemory.argumentZero;
-            memory.shellArguments = callerMemory.shellArguments;
-            memory.contextStack = callerMemory.contextStack;
+        if (shellCompatible) {
+            if (arguments.positional.length || (arguments.named !is null && arguments.named.length) || arguments.hasBlock)
+                throw new YshTypeError("Shell functions do not accept typed arguments");
+            return invokeShell(words, callerMemory is null ? new Memory() : callerMemory);
         }
-        scope (exit) {
-            if (callerMemory !is null) {
-                callerMemory.lastStatus = memory.lastStatus;
-            }
-        }
-        auto root = closure;
-        while (root.enclosed !is null) root = root.enclosed;
-        memory.useGlobalFrame(root);
+        auto memory = callerMemory is null ? new Memory() : callerMemory;
+        auto previousGlobal = memory.setActiveGlobalFrame(moduleFrame);
+        auto previousBuiltins = memory.builtins;
+        auto previousMode = memory.returnMode;
+        import yshd.options : ShellOptions;
+        auto scopeOptions = [ShellOptions.number("dynamic_scope")];
+        memory.options.push(scopeOptions, false);
+        scope (exit) memory.options.pop(scopeOptions);
         memory.builtins = builtins;
         memory.returnMode = ReturnMode.procValue;
         memory.pushEnclosed(closure);
-        scope (exit) memory.popFrame();
+        scope (exit) {
+            memory.popFrame();
+            memory.setActiveGlobalFrame(previousGlobal);
+            memory.builtins = previousBuiltins;
+            memory.returnMode = previousMode;
+        }
 
         if (openSignature) {
             Value[] argv;
@@ -379,11 +380,37 @@ class YshProc {
         }
 
         try {
-            executeProgram(bodySource, memory);
+            executeProcedureBody(bodySource, memory);
         } catch (ProcReturn returned) {
             memory.lastStatus = returned.status;
             return Value.integer(returned.status);
         }
+        return Value.integer(memory.lastStatus);
+    }
+
+    private Value invokeShell(string[] words, Memory memory) {
+        assert(memory !is null);
+        auto previousGlobal = memory.setActiveGlobalFrame(moduleFrame);
+        auto previousBuiltins = memory.builtins;
+        auto previousArguments = memory.shellArguments;
+        auto previousMode = memory.returnMode;
+        memory.shellArguments = words;
+        memory.builtins = builtins;
+        memory.returnMode = ReturnMode.procValue;
+        import yshd.options : ShellOptions;
+        auto scopeOptions = [ShellOptions.number("dynamic_scope")];
+        memory.options.push(scopeOptions, memory.options.get("dynamic_scope"));
+        scope (exit) memory.options.pop(scopeOptions);
+        memory.pushEnclosed(null);
+        scope (exit) {
+            memory.popFrame();
+            memory.setActiveGlobalFrame(previousGlobal);
+            memory.builtins = previousBuiltins;
+            memory.shellArguments = previousArguments;
+            memory.returnMode = previousMode;
+        }
+        try { executeProcedureBody(bodySource, memory); }
+        catch (ProcReturn returned) { memory.lastStatus = returned.status; }
         return Value.integer(memory.lastStatus);
     }
 }

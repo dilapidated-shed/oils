@@ -154,7 +154,8 @@ class Lexer {
     private HereDocument[] pendingDocuments_;
     HereDocument[size_t] hereDocuments;
 
-    this(string input, bool emitNewlines = false, size_t startOffset = 0, bool recognizeHereDocuments = true, ShellOptions options = null) {
+    this(string input, bool emitNewlines = false, size_t startOffset = 0, bool recognizeHereDocuments = true,
+            ShellOptions options = null, HereDocument[] inheritedDocuments = []) {
         input_ = input;
         emitNewlines_ = emitNewlines;
         recognizeHereDocuments_ = recognizeHereDocuments;
@@ -162,6 +163,8 @@ class Lexer {
         expressionStrings = !emitNewlines;
         assert(startOffset <= input.length);
         position_ = startOffset;
+        pendingDocuments_ = inheritedDocuments.dup;
+        foreach (document; inheritedDocuments) hereDocuments[document.operatorOffset] = document;
     }
 
     @property size_t offset() const { return position_; }
@@ -336,6 +339,11 @@ class Lexer {
                 ++position_;
             }
             auto text = input_[start .. position_];
+            bool expressionContext = !emitNewlines_ || expressionCommand_ ||
+                (boundaries_.length && boundaries_[$ - 1].expression);
+            if (!expressionContext && position_ < input_.length &&
+                    " \t\r\n;|&()<>{}".indexOf(input_[position_]) < 0)
+                return Token(TokenKind.name, text, start);
             switch (text) {
             case "null":
                 return Token(TokenKind.nullKeyword, text, start);

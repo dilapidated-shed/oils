@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-611 assertion matches, 508 failures. The unchanged original harness, fixture
+649 assertion matches, 470 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-native-control-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-retained-control-2026-10-21.tsv).
 
 ## Source map
 
@@ -113,6 +113,14 @@ shell arrays have distinct values and assignment/expansion paths. These are
 still partial subsystems: full arithmetic, shell grammar and builtins,
 namespaces/modules, reflection, I/O iteration, interactive behavior, and
 independent acceptance remain open.
+
+The retained-control continuation adds shell functions, for/while/until loops,
+dynamic shell-call frames, shared status/capture/argument state, deferred
+function redirections and here-documents, and restoring cd blocks. Definition
+checking follows the reference's var/setvar rules and nesting restrictions;
+annotation syntax is parsed without adding type enforcement. Control flow
+matches 9/9 inherited cases, assignment 18/22, procs 31/38 and scope 9/26.
+Those counts leave the larger translation and inherited acceptance incomplete.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

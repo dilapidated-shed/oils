@@ -158,7 +158,59 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: native control, calls and objects, 2026-10-21
+## Current host checkpoint: retained control and call frames, 2026-10-21
+
+The unchanged inherited harness reports **649 assertion matches and 470
+failures across 1,119 cases**, with no timeouts in this serial full run. That
+adds 38 matches over published source
+`6d1db98c2fbe9f4d8e5bef961e937daae4c5c592`, with no previous match regressed.
+The whole-language translation and inherited acceptance remain incomplete.
+
+Shell-compatible function definitions now have their own argument lists,
+dynamic word lookup, lexical expression lookup, local bindings and proc
+boundaries. Typed calls and shell calls share runtime status, regex captures,
+contexts, shell arguments and directory state while unwinding local, global
+and option frames. Captures retain their defining lexical/module frames.
+Retained for/while/until commands parse structurally, including nested do/done
+and here-document data; no shell runtime interprets their source.
+
+Function redirects and here-documents bind at invocation. Header siblings and
+runtime positional substitutions are retained. Brace groups execute in the
+current frame. Cd blocks restore logical directory/PWD state across returns
+and errors, and -P uses physical paths. Full directory-stack and startup-PWD
+behavior remain open. Complete command-word boundaries prevent builtin and
+keyword prefixes from consuming longer command names or aliases.
+
+The reference VarChecker now rejects undeclared local setvar targets,
+duplicate var/parameter names, const inside typed definitions, and mixed
+nested shell/typed definitions. It checks source order within each definition;
+command substitutions receive fresh checker state. Declaration, function and
+parameter annotations follow the type-expression grammar without adding type
+enforcement. An intermediate full run exposed an assignment regression after
+shell-function support; the checker repairs it before this qualification.
+D-only tests that intended global mutation now say setglobal. No inherited
+fixture or failure allowance was changed.
+
+Control flow matches **9/9**, assignment **18/22**, procs **31/38**, and scope
+**9/26**. Functions remain **26/26**, case **18/18**, regex **29/29**, regex APIs
+**40/40**, strings **29/29**, and contexts **8/8**. Objects remain **13/15**, for
+**18/20**, and JSON **59/64**. These are assertion matches, not claims that the
+associated implementation surfaces are complete.
+
+Pinned Icky DMD compiles D source tree
+`4a2a52e65fa29b54ece6f913a7946438de3a396b`; host binary SHA-256 is
+`0c5675006f32614bc0884fbeceaea355319cc399edb4320ab1254dcf22bb7d3e`.
+All 23 CLI/module suites, 22 library suites and the existing owner smoke pass.
+Dynamic dependencies remain libc, libgcc_s and the loader. Shared specs,
+static-transitive AI-CI, managed admission and physical targets remain
+unqualified. I/O methods/iteration, builtins, modules/reflection, remaining
+shell grammar, jobs/traps and interactive behavior still need translation.
+
+See [host qualification](qualification/inherited-host-retained-control-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-retained-control-2026-10-21.tsv), and
+[case results](qualification/inherited-cases-retained-control-2026-10-21.tsv).
+
+## Previous host checkpoint: native control, calls and objects, 2026-10-21
 
 The unchanged inherited harness now reports **611 assertion matches and 508
 failures across 1,119 cases**: 95 additional matches over published source

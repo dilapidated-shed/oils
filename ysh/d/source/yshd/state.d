@@ -25,10 +25,12 @@ class Cell {
 
 class BuiltinRegistry {
     Cell[string] cells;
+    YshDict shellFunctions;
+    this() { shellFunctions = new YshDict(); }
 }
 
-/// A lexical frame. The enclosed field is the D equivalent of the __E__ frame
-/// link used by core/state.py:_FrameLookup.
+/// The enclosed field is core/state.py's lexical __E__ link. Dynamic callers
+/// remain in Memory's active frame stack and are never captured by this link.
 class Frame {
     Cell[string] cells;
     Frame enclosed;
@@ -99,6 +101,7 @@ class Memory {
     size_t errexitSuppression;
     // core/state.py:Mem keeps $0 separate from mutable/global/local ARGV.
     string argumentZero = "ysh-d";
+    string workingDirectory;
     string[] shellArguments;
 
     string shellArgument(size_t index) {
@@ -131,6 +134,8 @@ class Memory {
         this.outputFile = outputFile;
         this.errorFile = errorFile;
         options = new ShellOptions();
+        import std.file : getcwd;
+        workingDirectory = getcwd();
         globalFrame = new Frame();
         currentFrame = globalFrame;
         frameStack = [globalFrame];
@@ -169,6 +174,14 @@ class Memory {
         globalFrame = frame;
         currentFrame = frame;
         frameStack = [frame];
+    }
+
+    Frame setActiveGlobalFrame(Frame frame) {
+        auto previous = globalFrame;
+        globalFrame = frame;
+        frameStack[0] = frame;
+        if (frameStack.length == 1) currentFrame = frame;
+        return previous;
     }
 
     string getEnv(string name, string fallback = "") {
@@ -213,7 +226,7 @@ class Memory {
 
     Cell getCell(string name) {
         Frame ignored;
-        return lookupLocalOrGlobal(name, ignored);
+        return lookupLocalOrGlobal(name, ignored, options.get("dynamic_scope"));
     }
 
     /// Shell-word lookup differs from a YSH expression's required binding.
@@ -281,6 +294,22 @@ class Memory {
         currentFrame.cells[name] = new Cell(value);
     }
 
+    void setShellVar(string name, Value value) {
+        auto cell = getShellAssignmentCell(name);
+        if (cell !is null) { requireWritable(name, cell); cell.value = value; }
+        else (options.get("dynamic_scope") ? globalFrame : currentFrame).cells[name] = new Cell(value);
+    }
+
+    Cell getShellAssignmentCell(string name) {
+        Frame found;
+        if (options.get("dynamic_scope")) {
+            foreach_reverse (frame; frameStack)
+                if (auto cell = lookupFrame(frame, name, false, found)) return cell;
+            return null;
+        }
+        return lookupFrame(currentFrame, name, false, found);
+    }
+
     void setGlobal(string name, Value value) {
         Frame foundFrame;
         auto cell = lookupFrame(globalFrame, name, false, foundFrame);
@@ -327,8 +356,13 @@ class Memory {
         return loopDepth != 0;
     }
 
-    private Cell lookupLocalOrGlobal(string name, ref Frame foundFrame) {
-        auto cell = lookupFrame(currentFrame, name, false, foundFrame);
+    private Cell lookupLocalOrGlobal(string name, ref Frame foundFrame, bool allowDynamic = false) {
+        Cell cell;
+        if (allowDynamic) {
+            foreach_reverse (frame; frameStack)
+                if (auto found = lookupFrame(frame, name, false, foundFrame)) return found;
+        }
+        cell = lookupFrame(currentFrame, name, false, foundFrame);
         if (cell !is null) {
             return cell;
         }
@@ -338,6 +372,10 @@ class Memory {
             if (cell !is null) return cell;
         }
         auto builtin = name in builtins.cells;
+        if (builtin is null && name == "__sh_function__") {
+            builtins.cells[name] = new Cell(Value.dictRef(builtins.shellFunctions));
+            builtin = name in builtins.cells;
+        }
         if (builtin is null) {
             import yshd.expr : builtinFunctionValue;
             auto value = builtinFunctionValue(name);
@@ -351,7 +389,7 @@ class Memory {
 
     private static void requireWritable(string name, Cell cell) {
         if (cell.readOnly) {
-            throw new YshError(format("Can't assign to readonly value '%s'", name));
+            throw new FatalRuntimeError(format("Can't assign to readonly value '%s'", name));
         }
     }
 }
