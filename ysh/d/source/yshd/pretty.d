@@ -6,7 +6,7 @@ import std.conv : to;
 import std.math : isFinite, isNaN;
 import std.string : indexOf;
 import std.utf : toUTF32;
-import yshd.io_ysh : encodeBString, utf8ScalarLength;
+import yshd.io_ysh : encodeBString, encodeJsonString, utf8ScalarLength;
 import yshd.libc_text : wchar_t, wcswidth, winsize, ioctl, TIOCGWINSZ;
 import yshd.value : Value, ValueKind, kindName, stringify;
 
@@ -205,6 +205,7 @@ private class ValueEncoder {
         case ValueKind.sliceValue:
         case ValueKind.functionValue:
         case ValueKind.procValue:
+        case ValueKind.placeValue:
             // IDs and terminal styles await the rest of the value/display model.
             return text("<" ~ kindName(value) ~ ">");
         }
@@ -218,6 +219,70 @@ string prettyValue(Value value, size_t width = 80) {
         doc = concat([text("(" ~ name ~ ")"), lineBreak(" ".replicate(6 - name.length)), doc]);
     }
     return render(doc, width);
+}
+
+/// ASDL diagnostics retain their field names, separately from YSH value
+/// notation. Share measured layout with ordinary printing.
+private Doc asdlRecord(string name, Doc[] fields) {
+    if (!fields.length) return text("(" ~ name ~ ")");
+    return wrap(DocKind.group, concat([text("(" ~ name),
+        wrap(DocKind.indent, concat([lineBreak(" "), joined(fields, "", " ")]), 4),
+        lineBreak(""), text(")")]));
+}
+
+private class AsdlEncoder {
+    bool[Object] active;
+    private Doc leaf(string value) {
+        bool plain = value.length != 0;
+        foreach (ch; value) if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9') || ch == '_' || ch == '.' || ch == '/' || ch == '-')) plain = false;
+        return text(plain ? value : encodeJsonString(value));
+    }
+    private Doc record(string name, Doc[] fields) {
+        return asdlRecord(name, fields);
+    }
+    Doc encode(Value value) {
+        switch (value.kind) {
+        case ValueKind.nullValue: return text("(value.Null)");
+        case ValueKind.boolean: return record("value.Bool", [text(value.booleanValue ? "b:T" : "b:F")]);
+        case ValueKind.integer: return record("value.Int", [text("i:" ~ stringify(value))]);
+        case ValueKind.floating: return record("value.Float", [text("f:" ~ stringify(value))]);
+        case ValueKind.stringValue: return record("value.Str", [concat([text("s:"), leaf(value.stringValue)])]);
+        case ValueKind.list:
+            Object identity = value.listValue;
+            if (identity in active) return text("...");
+            active[identity] = true;
+            scope (exit) active.remove(identity);
+            Doc[] items;
+            foreach (item; value.listValue.items) items ~= encode(item);
+            return record("value.List", [concat([text("items:"), surrounded("[", joined(items, "", " "), "]")])]);
+        case ValueKind.dict:
+            Object identity = value.dictValue;
+            if (identity in active) return text("...");
+            active[identity] = true;
+            scope (exit) active.remove(identity);
+            Doc[] items;
+            foreach (key, item; value.dictValue) items ~= [leaf(key), encode(item)];
+            return record("value.Dict", [concat([text("d:"), surrounded("{", joined(items, "", " "), "}")])]);
+        case ValueKind.rangeValue:
+            return record("value.Range", [text("lower:" ~ to!string(value.rangeLower)), text("upper:" ~ to!string(value.rangeUpper))]);
+        default:
+            import yshd.value : YshError;
+            throw new YshError("ASDL diagnostics for " ~ kindName(value) ~ " are not translated");
+        }
+    }
+}
+
+string asdlValue(Value value, size_t width = 80) {
+    return render((new AsdlEncoder()).encode(value), width);
+}
+
+string prettyCell(string name, Value value, bool readOnly, size_t width = 80) {
+    auto doc = asdlRecord("Cell", [text("exported:F"), text("readonly:" ~ (readOnly ? "T" : "F")),
+        text("nameref:F"), concat([text("val:"), (new AsdlEncoder()).encode(value)])]);
+    // Pp writes the name before invoking the ASDL printer, whose column starts
+    // at zero. It therefore does not subtract the prefix from max_width.
+    return name ~ " = " ~ render(doc, width);
 }
 
 size_t terminalWidth(int descriptor) {

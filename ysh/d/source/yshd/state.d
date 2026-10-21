@@ -4,7 +4,7 @@ import std.format : format;
 import std.process : environment;
 import std.stdio : File, stderr, stdin, stdout;
 
-import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError;
+import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError, YshPlace;
 import yshd.options : ShellOptions;
 
 enum ReturnMode { shell, functionValue, procValue }
@@ -37,6 +37,19 @@ class Frame {
 
     this(Frame enclosed = null) {
         this.enclosed = enclosed;
+    }
+}
+
+/// A Place captures the precise current frame, independent of later calls.
+/// SetPlace in core/state.py writes that frame, including a new local name.
+class FramePlace : YshPlace {
+    Frame frame;
+    string name;
+    this(Frame frame, string name) { this.frame = frame; this.name = name; }
+    override void assign(Value value) {
+        auto cell = name in frame.cells;
+        if (cell is null) frame.cells[name] = new Cell(value);
+        else (*cell).value = value;
     }
 }
 

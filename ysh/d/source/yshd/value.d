@@ -135,6 +135,11 @@ enum ValueKind {
     rangeValue,
     functionValue,
     procValue,
+    placeValue,
+}
+
+abstract class YshPlace {
+    abstract void assign(Value value);
 }
 
 class YshError : Exception {
@@ -184,6 +189,14 @@ struct Value {
     long rangeLower;
     long rangeUpper;
     Object callableValue;
+    YshPlace placeValue;
+
+    static Value place(YshPlace place) {
+        Value result;
+        result.kind = ValueKind.placeValue;
+        result.placeValue = place;
+        return result;
+    }
 
     static Value nullValue() {
         Value result;
@@ -303,6 +316,8 @@ string kindName(Value value) {
         return "Func";
     case ValueKind.procValue:
         return "Proc";
+    case ValueKind.placeValue:
+        return "Place";
     }
 }
 
@@ -327,6 +342,7 @@ bool toBool(Value value) {
         return true;
     case ValueKind.functionValue:
     case ValueKind.procValue:
+    case ValueKind.placeValue:
         return true;
     }
 }
@@ -363,6 +379,8 @@ string stringify(Value value) {
         throw new YshTypeError("can't stringify Func");
     case ValueKind.procValue:
         throw new YshTypeError("can't stringify Proc");
+    case ValueKind.placeValue:
+        throw new YshTypeError("can't stringify Place");
     }
 }
 
@@ -416,6 +434,8 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.functionValue:
     case ValueKind.procValue:
         return left.callableValue is right.callableValue;
+    case ValueKind.placeValue:
+        throw new YshTypeError("Equality isn't defined on Place values");
     }
 }
 
@@ -509,6 +529,8 @@ private string reprWithActive(Value value, ref bool[Object] active) {
         return "<func>";
     case ValueKind.procValue:
         return "<proc>";
+    case ValueKind.placeValue:
+        return "<Place>";
     }
 }
 

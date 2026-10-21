@@ -100,6 +100,16 @@ struct Token {
     size_t offset;
 }
 
+struct HereDocument {
+    size_t operatorOffset;
+    size_t wordEnd;
+    size_t bodyStart;
+    size_t endOffset;
+    string body;
+    bool quoted;
+    bool stripTabs;
+}
+
 bool asciiDigit(char c) {
     return c >= '0' && c <= '9';
 }
@@ -126,6 +136,11 @@ class Lexer {
     private string input_;
     private size_t position_;
     private bool emitNewlines_;
+    private bool commandStart_ = true;
+    private bool expressionCommand_;
+    private size_t expressionDepth_;
+    private HereDocument[] pendingDocuments_;
+    HereDocument[size_t] hereDocuments;
 
     this(string input, bool emitNewlines = false, size_t startOffset = 0) {
         input_ = input;
@@ -136,11 +151,104 @@ class Lexer {
 
     Token peek() {
         auto saved = position_;
-        scope (exit) position_ = saved;
+        auto savedStart = commandStart_;
+        auto savedExpression = expressionCommand_;
+        auto savedDepth = expressionDepth_;
+        auto savedPending = pendingDocuments_.dup;
+        auto savedDocuments = hereDocuments.dup;
+        scope (exit) {
+            position_ = saved;
+            commandStart_ = savedStart;
+            expressionCommand_ = savedExpression;
+            expressionDepth_ = savedDepth;
+            pendingDocuments_ = savedPending;
+            hereDocuments = savedDocuments;
+        }
         return next();
     }
 
     Token next() {
+        auto token = nextToken();
+        if (!emitNewlines_) return token;
+        if (commandStart_) {
+            expressionCommand_ = token.kind == TokenKind.varKeyword || token.kind == TokenKind.constKeyword ||
+                token.kind == TokenKind.setvarKeyword || token.kind == TokenKind.setglobalKeyword ||
+                token.kind == TokenKind.equal || (token.kind == TokenKind.name && token.text == "call");
+            commandStart_ = false;
+        }
+        if (token.kind == TokenKind.shiftLeft && !expressionCommand_ && expressionDepth_ == 0)
+            registerHereDocument(token.offset);
+        if (token.kind == TokenKind.leftParen || token.kind == TokenKind.leftBracket ||
+                (expressionCommand_ && token.kind == TokenKind.leftBrace)) ++expressionDepth_;
+        else if (token.kind == TokenKind.rightParen || token.kind == TokenKind.rightBracket ||
+                (expressionCommand_ && token.kind == TokenKind.rightBrace)) {
+            if (expressionDepth_) --expressionDepth_;
+        } else if (!expressionCommand_ && token.kind == TokenKind.leftBrace) commandStart_ = true;
+        if (token.kind == TokenKind.newline) {
+            if (pendingDocuments_.length) {
+                position_ = pendingDocuments_[$ - 1].endOffset;
+                pendingDocuments_.length = 0;
+            }
+            if (!expressionDepth_) { commandStart_ = true; expressionCommand_ = false; }
+        } else if (!expressionDepth_ && (token.kind == TokenKind.semicolon ||
+                (!expressionCommand_ && (token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)))) {
+            commandStart_ = true;
+            expressionCommand_ = false;
+        }
+        return token;
+    }
+
+    /// Delimiters undergo quote removal, never variable or command expansion.
+    /// Bodies remain source data and are skipped by command tokenization.
+    private void registerHereDocument(size_t offset) {
+        HereDocument document;
+        document.operatorOffset = offset;
+        auto cursor = position_;
+        if (cursor < input_.length && input_[cursor] == '-') { document.stripTabs = true; ++cursor; }
+        while (cursor < input_.length && (input_[cursor] == ' ' || input_[cursor] == '\t')) ++cursor;
+        string delimiter;
+        bool sawWord;
+        char quote = 0;
+        while (cursor < input_.length) {
+            auto ch = input_[cursor];
+            if (!quote && (ch == ' ' || ch == '\t' || ch == '\n' || ch == ';' ||
+                    ch == '|' || ch == '&' || ch == '<' || ch == '>')) break;
+            sawWord = true;
+            ++cursor;
+            if (ch == quote && quote) { quote = 0; document.quoted = true; }
+            else if (!quote && (ch == '\'' || ch == '"')) { quote = ch; document.quoted = true; }
+            else if (ch == '\\' && quote != '\'') {
+                if (cursor == input_.length) throw new LexError("unfinished here document delimiter");
+                document.quoted = true;
+                auto escaped = input_[cursor++];
+                if (quote == '"' && escaped != '$' && escaped != '`' && escaped != '\\' && escaped != '"') delimiter ~= '\\';
+                delimiter ~= escaped;
+            } else delimiter ~= ch;
+        }
+        if (!sawWord || quote) throw new LexError("invalid here document delimiter");
+        document.wordEnd = cursor;
+        auto headerEnd = cursor;
+        while (headerEnd < input_.length && input_[headerEnd] != '\n') ++headerEnd;
+        cursor = pendingDocuments_.length ? pendingDocuments_[$ - 1].endOffset : headerEnd + (headerEnd < input_.length);
+        document.bodyStart = cursor;
+        while (cursor < input_.length) {
+            auto begin = cursor;
+            while (cursor < input_.length && input_[cursor] != '\n') ++cursor;
+            auto end = cursor;
+            if (document.stripTabs) while (begin < end && input_[begin] == '\t') ++begin;
+            if (cursor < input_.length) ++cursor;
+            if (input_[begin .. end] == delimiter) {
+                document.endOffset = cursor;
+                pendingDocuments_ ~= document;
+                hereDocuments[offset] = document;
+                return;
+            }
+            document.body ~= input_[begin .. cursor];
+        }
+        throw new LexError("Couldn't find terminator for here document");
+    }
+
+    private Token nextToken() {
         skipTrivia();
         if (position_ == input_.length) {
             return Token(TokenKind.eof, "", position_);
@@ -148,6 +256,9 @@ class Lexer {
 
         auto start = position_;
         auto c = input_[position_];
+
+        if (c == '$' && position_ + 1 < input_.length && input_[position_ + 1] == '\'')
+            return ansiQuotedToken();
 
         if ((c == 'u' || c == 'b' || c == 'r') &&
                 position_ + 1 < input_.length &&
@@ -593,6 +704,54 @@ class Lexer {
         return Token(TokenKind.charValue, text, start);
     }
 
+    private Token ansiQuotedToken() {
+        auto start = position_;
+        position_ += 2;
+        string text;
+        while (position_ < input_.length) {
+            char ch = input_[position_++];
+            if (ch == '\'') return Token(TokenKind.stringValue, text, start);
+            if (ch != '\\') { text ~= ch; continue; }
+            if (position_ == input_.length) break;
+            ch = input_[position_++];
+            switch (ch) {
+            case '\\': case '\'': case '"': text ~= ch; break;
+            case 'a': text ~= cast(char)7; break;
+            case 'b': text ~= '\b'; break;
+            case 'e': case 'E': text ~= cast(char)27; break;
+            case 'f': text ~= '\f'; break;
+            case 'n': text ~= '\n'; break;
+            case 'r': text ~= '\r'; break;
+            case 't': text ~= '\t'; break;
+            case 'v': text ~= cast(char)11; break;
+            case 'x': case 'u': case 'U':
+                auto limit = ch == 'x' ? 2 : ch == 'u' ? 4 : 8;
+                uint code;
+                size_t count;
+                while (count < limit && position_ < input_.length && hexDigit(input_[position_])) {
+                    code = code * 16 + hexValue(input_[position_++]);
+                    ++count;
+                }
+                if (!count) { text ~= '\\'; text ~= ch; }
+                else if (ch == 'x') text ~= cast(char)code;
+                else appendUtf8(text, code);
+                break;
+            default:
+                if (ch >= '0' && ch <= '7') {
+                    uint code = ch - '0';
+                    size_t count = 1;
+                    while (count < 3 && position_ < input_.length && input_[position_] >= '0' && input_[position_] <= '7') {
+                        code = code * 8 + input_[position_++] - '0';
+                        ++count;
+                    }
+                    text ~= cast(char)code;
+                } else { text ~= '\\'; text ~= ch; }
+                break;
+            }
+        }
+        throw new LexError("unterminated ANSI quoted string");
+    }
+
     private static bool hexDigit(char c) {
         return (c >= '0' && c <= '9') ||
             (c >= 'a' && c <= 'f') ||
@@ -740,6 +899,9 @@ class Lexer {
                 text ~= '\'';
                 p += 2;
                 break;
+            case '"': text ~= '"'; p += 2; break;
+            case 'b': text ~= '\b'; p += 2; break;
+            case 'f': text ~= '\f'; p += 2; break;
             case 'n':
                 text ~= '\n';
                 p += 2;
@@ -872,6 +1034,9 @@ class Lexer {
                 text ~= '\'';
                 position_ += 2;
                 break;
+            case '"': text ~= '"'; position_ += 2; break;
+            case 'b': text ~= '\b'; position_ += 2; break;
+            case 'f': text ~= '\f'; position_ += 2; break;
             case 'n':
                 text ~= '\n';
                 position_ += 2;

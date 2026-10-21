@@ -191,6 +191,17 @@ string encodeJsonString(string value) {
 
         auto length = utf8ScalarLength(value, offset);
         if (length == 0) {
+            // JSON permits an escaped surrogate without its matching half.
+            // The reference decoder stores that escape as surrogate UTF-8.
+            if (byteValue == 0xed && offset + 2 < value.length &&
+                    cast(ubyte)value[offset + 1] >= 0xa0 && cast(ubyte)value[offset + 1] <= 0xbf &&
+                    isContinuation(cast(ubyte)value[offset + 2])) {
+                auto code = ((byteValue & 15) << 12) | ((cast(ubyte)value[offset + 1] & 63) << 6) |
+                    (cast(ubyte)value[offset + 2] & 63);
+                result ~= format("\\u%04x", code);
+                offset += 3;
+                continue;
+            }
             appendUtf8(result, 0xfffd);
             ++offset;
         } else {
@@ -368,6 +379,7 @@ private class DataEncoder {
         case ValueKind.rangeValue:
         case ValueKind.functionValue:
         case ValueKind.procValue:
+        case ValueKind.placeValue:
             if (diagnostic) {
                 import yshd.value : kindName;
                 return "<" ~ kindName(value) ~ ">";

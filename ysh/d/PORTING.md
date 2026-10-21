@@ -158,6 +158,58 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
+## Current host checkpoint: decoding, Places and here-documents, 2026-10-21
+
+The unchanged inherited harness reports **435 assertion matches and 684
+failures across all 1,119 cases**. This is 47 additional matches over the
+published source `ba5a2f7f817320b4204e08df0b4fcfdeac39f459`, with no previous
+match regressed after repeating the timeout described below. The complete D
+runtime remains unfinished. Shared shell specs, interactive execution,
+independent AI-CI and managed admission remain unqualified.
+
+Translated `data_lang/j8.py` decoding directly to D: JSON/J8 objects, lists,
+scalars, strict numeric tokenization and reference integer bounds, J8 comments
+and string prefixes, binary escapes, Unicode validation, surrogate pairs and
+unpaired JSON escapes, complete-input checks and positioned errors.
+`json read`/`json8 read` return status 1 on decoding failure and leave the
+destination unchanged. `fromJson()`/`fromJson8()` raise structured status-4
+errors with byte positions. All 57 passing JSON/J8 cases use the original
+64-case fixture; seven failures still reach retained shell arithmetic/arrays,
+Eggex, objects and the upstream excessive-nesting case.
+
+Places capture the current frame independently of intervening function calls.
+`read --all`/`read --line`, the JSON readers and `Place.setValue()` use the
+captured frame. The reference's disabled dangling-place check has not been
+silently enabled. Container places remain outside the translated surface.
+
+The command lexer records here-document delimiters, removes delimiter quoting,
+and preserves bodies as source data rather than tokenizing their contents as
+commands. Quoted/unquoted bodies, tab stripping, ordered documents and pipeline
+fragments share this path. Expansion occurs when applying the redirection;
+parse-only mode validates without evaluating substitutions. This does not
+establish a complete shared shell lexer or arbitrary descriptor handling.
+ANSI-quoted words/expressions, the missing common J8 escapes and JSON encoding
+of unpaired surrogate bytes are also translated. `join()` now shares the
+reference list-stringification behavior. ASDL data/cell diagnostics reuse
+measured layout and preserve their separate field notation.
+
+Pinned Icky DMD compiles the exact D source tree
+`03f8d61f24cc7b5fe49333a192be7c75cdb4ce0c`; the host executable has SHA-256
+`baebdf9e19f6c17dd7bbe15e000871e360ef64f73a54defb9bfd7446166a4f66`.
+All 18 CLI/module test suites and 17 library suites pass. The full owner smoke
+sequence is checked with its declared runner temporary directory.
+
+The first concurrent inherited run timed out in `ysh-expr-bool:4`; a separate
+full-fixture retry also timed out. The previous binary and the current binary
+both match the unchanged case in isolated diagnostics, and the current binary
+subsequently passes the original three-second limit in both an isolated case
+and a full-fixture repeat. The initial timeout results are retained; the final
+ledger uses that full-fixture repeat. No timeout is reclassified as a pass.
+
+See [host qualification](qualification/inherited-host-decode-2026-10-21.tsv),
+[suite results](qualification/inherited-suites-decode-2026-10-21.tsv), and
+[case results](qualification/inherited-cases-decode-2026-10-21.tsv).
+
 ## IL-0 acquisition continuation, 2026-10-19
 
 The retained D translation has been rebuilt on Ubuntu 24.04 x86_64 through the

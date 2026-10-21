@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-388 assertion matches, 731 failures. The unchanged original harness, fixture
+435 assertion matches, 684 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-decode-2026-10-21.tsv).
 
 ## Source map
 
@@ -97,8 +97,12 @@ The data-output continuation adds reference JSON/J8 indentation and
 type/cycle handling, toJson/toJson8, diagnostic cycle markers, and measured
 pretty printing for translated data values and ranges. Expression display and
 `pp value` share that printer. The inherited function fixture now passes all
-26 cases. JSON/J8 decoding, reference-value identities, terminal styles and
-the remaining value variants still need translation.
+26 cases. The subsequent decoder implements strict JSON and J8 input, error
+positions, and codec functions. Captured-frame Places and here-documents now
+support the shared read paths. JSON/J8 passes 57/64 inherited cases; retained
+shell arrays/arithmetic, Eggex and objects still leave failures in that fixture.
+Reference-value identities, terminal styles and remaining value variants need
+translation.
 
 The `ysh-d` entrypoint enables `ysh:all` before applying CLI overrides. The same
 binary, invoked as `osh-d`, supplies the reference's default OSH option state

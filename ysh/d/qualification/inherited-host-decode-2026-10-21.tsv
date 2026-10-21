@@ -1,0 +1,41 @@
+field	value
+qualification	BLOCKED
+date-utc	2026-10-21
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	ba5a2f7f817320b4204e08df0b4fcfdeac39f459
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+d-source-git-tree	03f8d61f24cc7b5fe49333a192be7c75cdb4ce0c
+icky-dmd	ccf61ab82659b9eadee2d05b489fb195956cef88
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+bootstrap-compiler	LDC 1.36.0 (bootstrap only)
+host	Ubuntu 24.04.3 Linux 6.18.55 x86_64 disposable container
+binary-sha256	baebdf9e19f6c17dd7bbe15e000871e360ef64f73a54defb9bfd7446166a4f66
+cli-module-unittests	PASS 18 modules
+library-unittests	PASS 17 modules
+owner-workflow-smoke	PASS full existing owner sequence; verified RUNNER_TEMP supplied on host
+inherited-harness	unchanged test/sh_spec.py; host Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT; LIB_YSH; TMP per case; SH is exact mode binary
+inherited-modes	our_shell ysh selects ysh-d; absent/osh selects symlink osh-d to same executable
+inherited-timeout	3 seconds per case via original harness timeout option
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture
+inherited-cases	1119
+inherited-assertion-matches	435
+inherited-failures	684
+inherited-qualification	FAIL; no additional expected-failure allowance
+inherited-repeat	Initial full run and first full-fixture retry TIME at ysh-expr-bool:4; original/current isolated diagnostics pass; current isolated and full-fixture repeat pass at original 3-second limit. Initial receipts retained.
+harness-pass-boundary	assertion matches only; expected-status-only matches do not prove implementation coverage
+json-fixture	57/64
+case-fixture	PASS 18/18
+func-fixture	PASS 26/26
+comparison-to-published-checkpoint	47 additional assertion matches; zero prior matches regressed after final fixture repeat
+shared-spec-acceptance	NOT_RUN
+producer-controls-current-continuation	NOT_RERUN
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no dynamic C++ runtime
+static-transitive-AICI	UNKNOWN
+managed-FP-admission	NOT_RUN
+target-device-acceptance	NOT_RUN
+hosted-CI-at-authoring	NOT_RUN

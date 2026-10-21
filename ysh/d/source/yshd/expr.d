@@ -143,6 +143,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
     case ValueKind.procValue:
+    case ValueKind.placeValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -172,6 +173,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
     case ValueKind.procValue:
+    case ValueKind.placeValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -414,6 +416,15 @@ private class VariableExpr : Expr {
     }
 }
 
+private class PlaceExpr : Expr {
+    string name;
+    this(string name) { this.name = name; }
+    override Value eval(Memory mem) {
+        import yshd.state : FramePlace;
+        return Value.place(new FramePlace(mem.currentFrame, name));
+    }
+}
+
 private class DictExpr : Expr {
     private Expr[] keys_;
     private Expr[] values_;
@@ -538,6 +549,7 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.rangeValue:
     case ValueKind.functionValue:
     case ValueKind.procValue:
+    case ValueKind.placeValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -632,6 +644,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.rangeValue:
         case ValueKind.functionValue:
         case ValueKind.procValue:
+        case ValueKind.placeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -753,12 +766,15 @@ private bool builtinFunctionName(string name) {
     case "list":
     case "keys":
     case "values":
+    case "join":
     case "strcmp":
     case "_group":
     case "_start":
     case "_end":
     case "toJson":
     case "toJson8":
+    case "fromJson":
+    case "fromJson8":
         return true;
     default:
         return false;
@@ -773,6 +789,25 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     }
 
     switch (name) {
+    case "join":
+        if (arguments.length < 1 || arguments.length > 2 || arguments[0].kind != ValueKind.list)
+            throw new YshTypeError("join() expects List and optional Str delimiter");
+        auto delimiter = arguments.length == 2 ? requireString(arguments[1], "join delimiter should be Str") : "";
+        string[] parts;
+        foreach (item; arguments[0].listValue.items) parts ~= stringify(item);
+        return Value.str(parts.join(delimiter));
+    case "fromJson":
+    case "fromJson8":
+        import yshd.data_decode : decodeDataValue, DataDecodeError;
+        if (arguments.length != 1) throw new YshTypeError(name ~ "() expects one Str argument");
+        auto source = requireString(arguments[0], name ~ "() expects a Str");
+        try { return decodeDataValue(source, name == "fromJson8"); }
+        catch (DataDecodeError error) {
+            auto properties = new YshDict();
+            properties.set("start_pos", Value.integer(cast(long)error.startPosition));
+            properties.set("end_pos", Value.integer(cast(long)error.endPosition));
+            throw new StructuredError(4, error.msg, properties);
+        }
     case "toJson":
     case "toJson8":
         if (arguments.length != 1) throw new YshTypeError(name ~ "() expects one argument");
@@ -1060,6 +1095,8 @@ private long normalizeSearchEnd(long end, size_t length) {
 
 private bool valueMethodExists(ValueKind kind, string name) {
     switch (kind) {
+    case ValueKind.placeValue:
+        return name == "setValue";
     case ValueKind.stringValue:
         switch (name) {
         case "startsWith":
@@ -1118,6 +1155,11 @@ private Value callValueMethod(Value receiver, string name,
     auto named = namedArguments is null ? new YshDict() : namedArguments;
 
     final switch (receiver.kind) {
+    case ValueKind.placeValue:
+        if (name != "setValue" || arguments.length != 1 || named.length)
+            throw new YshTypeError("Place.setValue() expects one argument");
+        receiver.placeValue.assign(arguments[0]);
+        return Value.nullValue();
     case ValueKind.stringValue:
         auto s = receiver.stringValue;
 
@@ -2144,6 +2186,12 @@ private class Parser {
     private Expr parseAtom() {
         auto token = current_;
         switch (token.kind) {
+        case TokenKind.amp:
+            advance();
+            if (current_.kind != TokenKind.name) throw new ParseError("expected variable name after &");
+            auto name = current_.text;
+            advance();
+            return new PlaceExpr(name);
         case TokenKind.nullKeyword:
             advance();
             return new LiteralExpr(Value.nullValue());
@@ -2436,6 +2484,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.rangeValue:
         case ValueKind.functionValue:
         case ValueKind.procValue:
+        case ValueKind.placeValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }

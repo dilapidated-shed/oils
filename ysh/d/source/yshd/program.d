@@ -13,8 +13,8 @@ import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
 import yshd.func_proc : FunctionParameter, FunctionReturn, ProcReturn, YshFunction, YshProc;
 import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
     renderWrite, spliceArray, DataEncodeError, dataOptions;
-import yshd.pretty : prettyValue, terminalWidth;
-import yshd.lexer : Lexer, Token, TokenKind;
+import yshd.pretty : prettyValue, prettyCell, asdlValue, terminalWidth;
+import yshd.lexer : Lexer, Token, TokenKind, HereDocument;
 import yshd.process : runExternal, runPipeline, runSourcePipeline, captureSourceOutput;
 import yshd.state : Memory, ReturnMode;
 import yshd.options : ShellOptions;
@@ -56,6 +56,7 @@ private class CommandScanner {
         this.returnMode = returnMode;
         lexer = new Lexer(source, true);
     }
+    HereDocument[size_t] documents() { return lexer.hereDocuments; }
     Token next() {
         auto token = lexer.next();
         if (commandStart && token.kind == TokenKind.caseKeyword) {
@@ -558,10 +559,10 @@ class ProgramParser {
         string[] clauses;
         size_t begin;
         foreach (op; operators) {
-            clauses ~= strip(source_[start + begin .. start + op.offset]);
+            clauses ~= commandFragment(start, begin, op.offset, scanner);
             begin = op.offset + op.text.length;
         }
-        clauses ~= strip(source_[start + begin .. start + end]);
+        clauses ~= commandFragment(start, begin, end, scanner);
         foreach (clause; clauses) {
             if (clause.length == 0) throw new YshError("expected command in &&/|| list");
             parseProgram(clause);
@@ -592,6 +593,20 @@ class ProgramParser {
             kind == TokenKind.caseKeyword ||
             kind == TokenKind.whileKeyword ||
             kind == TokenKind.forKeyword;
+    }
+
+    private string commandFragment(size_t sourceStart, size_t begin, size_t end, CommandScanner scanner) {
+        auto fragment = strip(source_[sourceStart + begin .. sourceStart + end]);
+        auto offsets = scanner.documents().keys;
+        sort(offsets);
+        bool appended;
+        foreach (offset; offsets) {
+            if (offset < begin || offset >= end) continue;
+            auto document = scanner.documents()[offset];
+            if (!appended) { fragment ~= '\n'; appended = true; }
+            fragment ~= source_[sourceStart + document.bodyStart .. sourceStart + document.endOffset];
+        }
+        return fragment;
     }
 
     private bool tryExecuteTopLevelPipeline(Memory mem) {
@@ -631,16 +646,14 @@ class ProgramParser {
         string[] stages;
         size_t begin;
         foreach (separator; separators) {
-            auto stage = strip(source_[
-                statementStart + begin .. statementStart + separator]);
+            auto stage = commandFragment(statementStart, begin, separator, scanner);
             if (stage.length == 0) {
                 throw new YshError("pipeline has an empty stage");
             }
             stages ~= stage;
             begin = separator + 1;
         }
-        auto last = strip(source_[
-            statementStart + begin .. statementStart + statementEnd]);
+        auto last = commandFragment(statementStart, begin, statementEnd, scanner);
         if (last.length == 0) {
             throw new YshError("pipeline has an empty final stage");
         }
@@ -720,6 +733,8 @@ class ProgramParser {
             TokenKind kind;
             bool duplicate;
             string operand;
+            bool hereDocument;
+            bool expandHereDocument;
         }
         Redirection[] redirects;
         string commandSource;
@@ -728,9 +743,9 @@ class ProgramParser {
             if (token.offset < copiedThrough) continue;
             auto kind = token.kind;
             if (kind != TokenKind.greater && kind != TokenKind.shiftRight &&
-                    kind != TokenKind.less && kind != TokenKind.tripleLess) continue;
+                    kind != TokenKind.less && kind != TokenKind.tripleLess && kind != TokenKind.shiftLeft) continue;
             auto begin = token.offset;
-            int descriptor = kind == TokenKind.less || kind == TokenKind.tripleLess ? 0 : 1;
+            int descriptor = kind == TokenKind.less || kind == TokenKind.tripleLess || kind == TokenKind.shiftLeft ? 0 : 1;
             if (index > 0 && tokens[index - 1].kind == TokenKind.integer &&
                     tokens[index - 1].offset + tokens[index - 1].text.length == begin) {
                 begin = tokens[index - 1].offset;
@@ -738,9 +753,19 @@ class ProgramParser {
             }
             if (!syntaxOnly_ && (descriptor < 0 || descriptor > 2))
                 throw new YshError("only descriptors 0, 1 and 2 are translated");
+            if (kind == TokenKind.shiftLeft) {
+                auto document = token.offset in scanner.documents();
+                if (document is null) throw new ParseError("expected here document");
+                commandSource ~= source_[statementStart + copiedThrough .. statementStart + begin] ~ " ";
+                copiedThrough = document.wordEnd;
+                if (syntaxOnly_ && !document.quoted) evaluateDoubleQuoted(document.body, null, true);
+                redirects ~= Redirection(descriptor, kind, false, document.body, true, !document.quoted);
+                continue;
+            }
             auto operandStart = token.offset + token.text.length;
-            auto operandParser = new ProgramParser(source_[statementStart + operandStart ..
-                statementStart + statementEnd], syntaxOnly_);
+            // Keep the following source available to the command lexer: its
+            // lookahead may encounter a later here-document on this header.
+            auto operandParser = new ProgramParser(source_[statementStart + operandStart .. $], syntaxOnly_);
             bool duplicate = operandParser.current_.kind == TokenKind.amp;
             if (duplicate) operandParser.advance();
             auto parts = operandParser.readCommandWord(mem);
@@ -780,9 +805,10 @@ class ProgramParser {
                 default: throw new YshError("untranslated descriptor duplication");
                 }
             } else {
-                if (redirect.kind == TokenKind.tripleLess) {
+                if (redirect.kind == TokenKind.tripleLess || redirect.hereDocument) {
                     selected = File.tmpfile();
-                    selected.write(redirect.operand, "\n");
+                    selected.write(redirect.expandHereDocument ? evaluateDoubleQuoted(redirect.operand, mem, true) : redirect.operand);
+                    if (!redirect.hereDocument) selected.write("\n");
                     selected.flush();
                     selected.rewind();
                 } else {
@@ -2085,21 +2111,56 @@ class ProgramParser {
     /// side effects and discards the returned value.
     private void parseJson(Memory mem) {
         auto encoding = current_.text == "json8" ? WriteEncoding.j8 : WriteEncoding.json;
+        bool hasTyped;
         advance(); // json
         string[] words;
         while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen) {
             words ~= readCommandWord(mem);
         }
-        auto arguments = current_.kind == TokenKind.leftParen
+        hasTyped = current_.kind == TokenKind.leftParen;
+        auto arguments = hasTyped
             ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
             : parseTypedArguments("()", true);
         if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after JSON typed arguments");
-        if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) && words[0] == "write")) {
-            mem.errorFile.writeln("json: expected write with no word arguments; read is not translated yet");
+        if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) &&
+                (words[0] == "write" || words[0] == "read"))) {
+            mem.errorFile.writeln("json: expected read or write with no word arguments");
             mem.lastStatus = 2;
             return;
         }
         auto values = arguments.eval(mem);
+        if (words[0] == "read") {
+            import yshd.data_decode : decodeDataValue, DataDecodeError;
+            import yshd.state : FramePlace;
+            import std.exception : ErrnoException;
+            Value place;
+            if (hasTyped) {
+                if (values.positional.length != 1 || values.named.length || values.hasBlock ||
+                        values.positional[0].kind != ValueKind.placeValue)
+                    throw new YshTypeError("json read expects one Place argument");
+                place = values.positional[0];
+            } else place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
+            string contents;
+            try {
+                while (true) {
+                    auto chunk = mem.inputFile.readln();
+                    if (!chunk.length) break;
+                    contents ~= chunk;
+                }
+                auto value = decodeDataValue(contents, encoding == WriteEncoding.j8);
+                place.placeValue.assign(value);
+            } catch (DataDecodeError error) {
+                mem.errorFile.writeln("json read: ", error.msg);
+                mem.lastStatus = 1;
+                return;
+            } catch (ErrnoException error) {
+                mem.errorFile.writeln("json read: ", error.msg);
+                mem.lastStatus = 1;
+                return;
+            }
+            mem.lastStatus = 0;
+            return;
+        }
         if (values.positional.length != 1 || values.hasBlock)
             throw new YshTypeError("json write expects one typed argument");
         auto options = dataOptions(values.named, 2);
@@ -2117,11 +2178,25 @@ class ProgramParser {
 
     private void parsePrettyPrint(Memory mem) {
         advance(); // pp
-        if (current_.kind != TokenKind.name || (current_.text != "test_" && current_.text != "value")) {
-            throw new UsageError("pp currently supports test_ and value");
-        }
+        if (current_.kind != TokenKind.name) throw new UsageError("pp: expected an action");
         auto action = current_.text;
         advance();
+        if (action == "cell_") {
+            string[] names;
+            while (!isEndStatement(current_.kind)) names ~= readCommandWord(mem);
+            mem.lastStatus = 0;
+            foreach (name; names) {
+                if (!name.length || !asciiIdentifierStart(name[0])) throw new UsageError("pp cell_: invalid variable name");
+                foreach (ch; name) if (!asciiIdentifierContinue(ch)) throw new UsageError("pp cell_: invalid variable name");
+                auto cell = mem.getCell(name);
+                if (cell is null) {
+                    mem.errorFile.writeln("pp: Couldn't find a variable named ", name);
+                    mem.lastStatus = 1;
+                } else mem.outputFile.writeln(prettyCell(name, cell.value, cell.readOnly, terminalWidth(mem.outputFile.fileno())));
+            }
+            return;
+        }
+        if (action != "value" && action != "test_" && action != "asdl_") throw new UsageError("pp: invalid action " ~ action);
         auto parsed = current_.kind == TokenKind.leftParen
             ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
             : parseTypedArguments("()", true);
@@ -2131,6 +2206,7 @@ class ProgramParser {
             throw new YshTypeError("pp expects one typed argument");
         auto value = values.positional[0];
         if (action == "value") mem.outputFile.writeln(prettyValue(value, terminalWidth(mem.outputFile.fileno())));
+        else if (action == "asdl_") mem.outputFile.writeln(asdlValue(value, terminalWidth(mem.outputFile.fileno())));
         else {
             if (value.kind <= ValueKind.dict) mem.outputFile.write("(", kindName(value), ")   ");
             mem.outputFile.writeln(encodeDataValue(value, WriteEncoding.j8, -1, false, true));
@@ -2143,7 +2219,7 @@ class ProgramParser {
         bool all;
         bool line;
 
-        while (!isEndStatement(current_.kind)) {
+        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen) {
             if (atRawWord("--all")) {
                 consumeRawWord("--all");
                 all = true;
@@ -2154,14 +2230,26 @@ class ProgramParser {
                 line = true;
                 continue;
             }
-            throw new YshError("read currently supports --all or --line");
+            throw new UsageError("read currently supports --all or --line");
         }
 
         if (all && line) {
             throw new YshError("read accepts only one of --all and --line");
         }
 
+        import yshd.state : FramePlace;
+        Value place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
+        if (current_.kind == TokenKind.leftParen) {
+            auto values = parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true).eval(mem);
+            if (values.positional.length != 1 || values.named.length || values.hasBlock ||
+                    values.positional[0].kind != ValueKind.placeValue)
+                throw new YshTypeError("read expects one Place argument");
+            place = values.positional[0];
+        }
+        if (!isEndStatement(current_.kind)) throw new UsageError("read: unexpected word arguments");
+
         string result;
+        bool endOfInput;
         if (all) {
             while (true) {
                 auto chunk = mem.inputFile.readln();
@@ -2172,6 +2260,7 @@ class ProgramParser {
             }
         } else {
             result = mem.inputFile.readln();
+            endOfInput = !result.length;
             if (result.length != 0 && result[$ - 1] == '\n') {
                 result = result[0 .. $ - 1];
                 if (result.length != 0 && result[$ - 1] == '\r') {
@@ -2180,8 +2269,8 @@ class ProgramParser {
             }
         }
 
-        mem.setVar("_reply", Value.str(result));
-        mem.lastStatus = result.length == 0 && !all ? 1 : 0;
+        place.placeValue.assign(Value.str(result));
+        mem.lastStatus = endOfInput && !all ? 1 : 0;
     }
 
     private void parseTry(Memory mem) {
@@ -2533,14 +2622,15 @@ class ProgramParser {
         throw new YshError("unterminated substitution in double-quoted word");
     }
 
-    private string evaluateDoubleQuoted(string content, Memory mem) {
+    private string evaluateDoubleQuoted(string content, Memory mem, bool hereDocument = false) {
         string result;
         size_t position;
         while (position < content.length) {
             auto ch = content[position];
             if (ch == '\\' && position + 1 < content.length) {
                 auto next = content[position + 1];
-                if (next == '$' || next == '`' || next == '"' || next == '\\') {
+                if (next == '\n') { position += 2; continue; }
+                if (next == '$' || next == '`' || (!hereDocument && next == '"') || next == '\\') {
                     result ~= next;
                     position += 2;
                     continue;
@@ -2553,7 +2643,7 @@ class ProgramParser {
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '{') {
                 auto close = substitutionClose(content, position + 1, '{', '}');
-                result ~= evaluateBracedParameter(content[position + 2 .. close], mem);
+                result ~= evaluateBracedParameter(content[position + 2 .. close], mem, true);
                 position = close + 1;
                 continue;
             }
@@ -2615,7 +2705,7 @@ class ProgramParser {
         return result;
     }
 
-    private string evaluateBracedParameter(string parameter, Memory mem) {
+    private string evaluateBracedParameter(string parameter, Memory mem, bool quoted = false) {
         import std.path : CaseSensitive, globMatch;
         import std.utf : toUTF32;
         size_t nameEnd;
@@ -2636,7 +2726,9 @@ class ProgramParser {
             if (syntaxOnly_) {
                 // Syntax is checked even when the default would be unused,
                 // while nested commands and assignments remain unevaluated.
-                if (word.length) {
+                if (quoted) {
+                    evaluateDoubleQuoted(word, null);
+                } else if (word.length) {
                     wordParser.readCommandWord(null);
                     if (wordParser.current_.kind != TokenKind.eof)
                         throw new YshError("parameter default requires one translated word");
@@ -2651,7 +2743,8 @@ class ProgramParser {
             if (operation == '+') useDefault = !useDefault;
             if (!useDefault) return operation == '+' ? "" : existing;
             string replacement;
-            if (word.length) {
+            if (quoted) replacement = evaluateDoubleQuoted(word, mem);
+            else if (word.length) {
                 auto parts = wordParser.readCommandWord(mem);
                 if (parts.length != 1 || wordParser.current_.kind != TokenKind.eof)
                     throw new YshError("parameter default requires one translated word");

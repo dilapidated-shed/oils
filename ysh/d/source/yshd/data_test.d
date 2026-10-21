@@ -4,10 +4,67 @@ version (unittest) {
     import std.stdio : File;
     import yshd.io_ysh : encodeDataValue, encodeJ8String, encodeBString,
         WriteEncoding, DataEncodeError;
-    import yshd.pretty : prettyValue;
+    import yshd.pretty : prettyValue, prettyCell;
     import yshd.value : Value, YshDict, YshError;
     import yshd.program : executeProgram, parseProgram;
     import yshd.state : Memory;
+
+    unittest {
+        import yshd.value : repr;
+        auto output = File.tmpfile();
+        auto mem = new Memory(output, File.tmpfile());
+        executeProgram("var name = 'expanded'\n" ~
+            "cat <<'LITERAL'\n$should_not_expand \" } ( ;\nLITERAL\n" ~
+            "cat <<EXPAND | cat\n$name \\\" \\$name\nEXPAND\n" ~
+            "json read (&value) <<-'JSON'\n\t{\"k\": [1,2]}\n\tJSON\n" ~
+            "func f() {\n cat <<END\n} unterminated ' \"\nEND\n}\ncall f()\n", mem);
+        assert(repr(mem.get("value")) == `{"k": [1, 2]}`);
+        output.rewind();
+        string actual;
+        while (!output.eof()) actual ~= output.readln();
+        assert(actual == "$should_not_expand \" } ( ;\nexpanded \\\" $name\n} unterminated ' \"\n", actual);
+        parseProgram("json read <<EOF\n${unset:?never execute}\nEOF\n");
+        bool rejected;
+        try { parseProgram("cat <<EOF\nno terminator\n"); } catch (YshError error) { rejected = error.status == 2; }
+        assert(rejected);
+        executeProgram("json read <<< '[0]'\n", mem);
+        assert(repr(mem.get("_reply")) == "[0]");
+    }
+
+    unittest {
+        import yshd.value : repr;
+        auto mem = new Memory(File.tmpfile(), File.tmpfile());
+        executeProgram(`
+            var x = 'global'
+            func fill(place) {
+              var x = 'local'
+              call place->setValue('written')
+              return (x)
+            }
+            var result = fill(&x)
+            assert [x === 'written']
+            assert [result === 'local']
+            json read (&decoded) <<< '{"x":[42,true]}'
+            assert [decoded.x === [42,true]]
+            json read (&decoded) <<< '[broken]'
+        `, mem);
+        assert(mem.lastStatus == 1);
+        assert(repr(mem.get("decoded")) == `{"x": [42, true]}`);
+        executeProgram(`
+            try { call fromJson('[+]') }
+            assert [_error.code === 4]
+            assert [_error.start_pos === 1]
+            assert [_error.end_pos === 2]
+            json8 read <<< "b'\\yff'"
+            assert [_reply === b'\yff']
+            json write (fromJson(toJson({a:[1,2]})), space=0)
+            echo '{"p":3}' | json read (&piped)
+            assert [piped.p === 3]
+            echo updated | read --all (&x)
+            assert [x === b'updated\n']
+        `, mem);
+        assert(mem.lastStatus == 0);
+    }
 
     unittest {
         auto reusedValue = Value.list([Value.integer(1), Value.integer(2)]);
@@ -32,6 +89,10 @@ version (unittest) {
         assert(prettyValue(Value.str("can't")) == "(Str)   b'can\\'t'");
         assert(prettyValue(Value.floating(-0.0)) == "(Float) -0.0");
         assert(prettyValue(Value.range(1, 100)) == "(Range 1 ..< 100)");
+        auto cellDict = new YshDict();
+        cellDict.set("age", Value.integer(42));
+        assert(prettyCell("x", Value.dictRef(cellDict), false) ==
+            "x = (Cell exported:F readonly:F nameref:F val:(value.Dict d:{age (value.Int i:42)}))");
     }
 
     unittest {
