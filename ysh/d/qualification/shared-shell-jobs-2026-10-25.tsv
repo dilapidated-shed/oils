@@ -1,0 +1,84 @@
+fixture	case	candidate	reference	remaining-operation
+spec/background.test.sh	0	pass	pass	
+spec/background.test.sh	1	pass	pass	
+spec/background.test.sh	2	pass	pass	
+spec/background.test.sh	3	FAIL	FAIL	jobspec usage / pipeline status register reference assertion mismatch
+spec/background.test.sh	4	pass	pass	
+spec/background.test.sh	5	pass	pass	
+spec/background.test.sh	6	pass	pass	
+spec/background.test.sh	7	pass	pass	
+spec/background.test.sh	8	pass	pass	
+spec/background.test.sh	9	pass	pass	
+spec/background.test.sh	10	pass	pass	
+spec/background.test.sh	11	pass	pass	
+spec/background.test.sh	12	FAIL	FAIL	jobspec usage / pipeline status register reference assertion mismatch
+spec/background.test.sh	13	FAIL	FAIL	jobspec usage / pipeline status register reference assertion mismatch
+spec/background.test.sh	14	pass	pass	
+spec/background.test.sh	15	pass	pass	
+spec/background.test.sh	16	pass	pass	
+spec/background.test.sh	17	pass	pass	
+spec/background.test.sh	18	pass	pass	
+spec/background.test.sh	19	pass	pass	
+spec/background.test.sh	20	pass	pass	
+spec/background.test.sh	21	pass	pass	
+spec/background.test.sh	22	pass	pass	
+spec/background.test.sh	23	pass	pass	
+spec/background.test.sh	24	pass	pass	
+spec/background.test.sh	25	pass	pass	
+spec/background.test.sh	26	pass	pass	
+spec/builtin-trap.test.sh	0	pass	pass	
+spec/builtin-trap.test.sh	1	pass	pass	
+spec/builtin-trap.test.sh	2	pass	pass	
+spec/builtin-trap.test.sh	3	pass	pass	
+spec/builtin-trap.test.sh	4	pass	pass	
+spec/builtin-trap.test.sh	5	pass	pass	
+spec/builtin-trap.test.sh	6	FAIL	FAIL	compound and comment trap source display reference assertion mismatch
+spec/builtin-trap.test.sh	7	pass	pass	
+spec/builtin-trap.test.sh	8	pass	pass	
+spec/builtin-trap.test.sh	9	pass	pass	
+spec/builtin-trap.test.sh	10	pass	pass	
+spec/builtin-trap.test.sh	11	pass	pass	
+spec/builtin-trap.test.sh	12	pass	pass	
+spec/builtin-trap.test.sh	13	pass	pass	
+spec/builtin-trap.test.sh	14	FAIL	FAIL	compound and comment trap source display reference assertion mismatch
+spec/builtin-trap.test.sh	15	ok	ok	
+spec/builtin-trap.test.sh	16	pass	pass	
+spec/builtin-trap.test.sh	17	pass	pass	
+spec/builtin-trap.test.sh	18	pass	pass	
+spec/builtin-trap.test.sh	19	pass	pass	
+spec/builtin-trap.test.sh	20	pass	pass	
+spec/builtin-trap.test.sh	21	pass	pass	
+spec/builtin-trap.test.sh	22	pass	pass	
+spec/builtin-trap.test.sh	23	pass	pass	
+spec/builtin-trap.test.sh	24	pass	pass	
+spec/builtin-trap.test.sh	25	pass	pass	
+spec/builtin-trap.test.sh	26	pass	pass	
+spec/builtin-trap.test.sh	27	ok	ok	
+spec/builtin-trap.test.sh	28	pass	pass	
+spec/builtin-trap.test.sh	29	pass	pass	
+spec/builtin-trap.test.sh	30	pass	pass	
+spec/builtin-trap.test.sh	31	pass	pass	
+spec/builtin-trap.test.sh	32	pass	pass	
+spec/builtin-trap-err.test.sh	0	pass	pass	
+spec/builtin-trap-err.test.sh	1	pass	pass	
+spec/builtin-trap-err.test.sh	2	pass	pass	
+spec/builtin-trap-err.test.sh	3	pass	pass	
+spec/builtin-trap-err.test.sh	4	pass	pass	
+spec/builtin-trap-err.test.sh	5	pass	pass	
+spec/builtin-trap-err.test.sh	6	FAIL	pass	shell arithmetic command grammar (D)
+spec/builtin-trap-err.test.sh	7	pass	pass	
+spec/builtin-trap-err.test.sh	8	pass	pass	
+spec/builtin-trap-err.test.sh	9	pass	pass	
+spec/builtin-trap-err.test.sh	10	pass	pass	
+spec/builtin-trap-err.test.sh	11	pass	pass	
+spec/builtin-trap-err.test.sh	12	FAIL	FAIL	errtrace / LINENO / root-dependent redirection reference assertion mismatch
+spec/builtin-trap-err.test.sh	13	pass	pass	
+spec/builtin-trap-err.test.sh	14	pass	pass	
+spec/builtin-trap-err.test.sh	15	FAIL	FAIL	errtrace / LINENO / root-dependent redirection reference assertion mismatch
+spec/builtin-trap-err.test.sh	16	FAIL	pass	shell arithmetic command grammar (D)
+spec/builtin-trap-err.test.sh	17	pass	pass	
+spec/builtin-trap-err.test.sh	18	FAIL	FAIL	errtrace / LINENO / root-dependent redirection reference assertion mismatch
+spec/builtin-trap-err.test.sh	19	pass	pass	
+spec/builtin-trap-err.test.sh	20	pass	pass	
+spec/builtin-trap-err.test.sh	21	ok	ok	
+spec/builtin-trap-err.test.sh	22	pass	pass

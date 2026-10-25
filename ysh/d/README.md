@@ -74,11 +74,17 @@ now implements `set -e/-u/-o pipefail` and their disabling forms, command
 conditions and negation, ordered descriptor redirections, expression command
 substitution, and braced parameter/pattern removal. The unchanged FP IL-0
 qualifier and its thirteen runtime/source-substitution controls execute through
-the earlier partial D runtime on Linux x86_64; that producer receipt has not
-been rerun for the current continuation. These results do not qualify a managed
+the partial D runtime on Linux x86_64; the October 25 continuation reruns the
+real producer and all thirteen controls successfully. These results do not qualify a managed
 Grease package or discharge the remaining inherited-spec dependency.
 
-The latest continuation adds real concurrent source pipelines and isolated
+The October 25 continuation adds native batch jobs, wait/fork builtins,
+deferred traps, source-line tracking, and quote-aware IFS/glob expansion.
+The combined inherited run is 799 matching cases and 320 failures out of 1,119,
+with every match from the concurrent 777-case checkpoint preserved. The port
+remains incomplete and named ysh-d; see [PORTING.md](PORTING.md).
+
+Earlier continuations add real concurrent source pipelines and isolated
 command substitutions, reference-derived option metadata and scoped option
 cells, YSH startup defaults, expression-context failure propagation, and
 distinct proc-status versus function-value returns. `ENV.PATH` and the exact

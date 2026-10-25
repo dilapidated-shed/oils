@@ -1,0 +1,84 @@
+field	value
+qualification	BLOCKED; incomplete whole-language translation
+run-date	2026-10-25 UTC
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	8015be7a6446e647c7c2dc7291f90702f4cb716d
+tested-source-commit	1c32cb6e1ee757da202986100848a235dd2aa5d9
+initial-local-validation-commit	a978efd66c7bc5234aa691d5ebafefc0f8e0f55a; identical complete Git tree to canonical tested source
+source-repository-tree	da20b68b03dc9cec31e68f7a0f4939e379af5f13
+d-source-git-tree	74411dce6d3a23ce13d8f6a5bb94e33aab19c483
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+grease-repository-read	ba869518c7d850de6c47d8c6234654575e264e6c
+grease-source-gitlink	5651cf97a1b5042f24f14112a7ade9a1518eb0bc; ancestor of retained branch; reference language sources/fixtures preserved
+icky-dmd-source	isomorphisms/ick ccf61ab82659b9eadee2d05b489fb195956cef88
+icky-dmd-version	DMD64 D Compiler v2.113.0
+icky-dmd-sha256	89ced0c720844810b3bcb3bcbf62a0ebff064de4b992a825fa2a2d3784b1843b
+druntime-source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos-source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos-archive-sha256	8be33121263f8f27a4189af33c5ea1aea18080aa0f96b275c57cd64b0822180f
+bootstrap	LDC 1.36.0 from official Ubuntu packages; bootstrap only
+build-command	pinned dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I<druntime>/import -I<phobos> <phobos>/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+host	Ubuntu 24.04.3 Linux x86_64 disposable container
+binary-name	ysh-d; incomplete, not greased
+binary-bytes	2884456
+binary-sha256	cbd70ee66547928eeb54695498480126d56e8aba1da8a315c88fee9897aa0477
+tested-executable	/workspace/scratch/1c7b62ceade6/oils-jobs-combined/ysh/d/.build/ysh-d
+clean-rebuild	PASS; second detached checkout of identical source tree rebuilt byte-identical executable; source checkout then fetched and selected canonical source commit for execution
+reproducibility-boundary	Two builds on this host and compiler/runtime; independent second-host/toolchain reconstruction NOT_RUN
+cli-module-unittests	PASS 33 modules
+library-unittests	PASS 32 modules
+owner-workflow-smoke	PASS unchanged owner run body against clean rebuilt executable; RUNNER_TEMP supplied
+parse-only-producers	PASS --ast-format none -n on unchanged FP producer and 13-control program; existing nonexecution sentinel/unit checks preserved
+inherited-harness	unchanged test/sh_spec.py with test-only Python 2.7.13; -v --details --timeout 3
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	Original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT and LIB_YSH; original fixture modes; separate TMP root
+inherited-fixtures	81 fixtures, 1119 cases; 80 ysh-* plus Grease alias; fixture/harness/timeout/allowances unchanged
+candidate-final	799 matches, 320 FAIL, zero TIMEOUT
+previous-checkpoint	777 matches, 342 FAIL at 8015be7a6446e647c7c2dc7291f90702f4cb716d
+preservation	22 new matches over current 777 baseline; zero lost current, preceding 754 or October 21 714 matches
+october-21-comparison	714/405 to 799/320: 85 added matches
+reference-assertions	1042 matches, 77 FAIL from previous actual-reference run; unchanged fixture hashes and reference source; reused, not falsely reported as a fresh 1119-case reference rerun
+paired-assertion-categories	795 both match; 247 D FAIL/reference match; 73 both FAIL; 4 D match/reference FAIL
+exact-transcript-and-side-effects	NOT_ESTABLISHED; original assertion comparisons plus detailed transcripts are bounded evidence, not full exact stdout/stderr/status/side-effect qualification
+remaining-failures	320 operation rows; 59 lack a direct missing-operation diagnostic and need causal work
+unexplained-compatibility-zero	FAIL; whole-language/causal work remains
+shared-shell-selection	Three fixtures only: background, builtin-trap, builtin-trap-err; full reachable shared set NOT_RUN
+shared-shell-results	73 matches, 10 FAIL, zero TIMEOUT out of 83; actual reference 75 matches, 8 FAIL; 2 extra D failures reach untranslated shell arithmetic
+batch-jobs-traps	Native fork/wait/job state/deferred traps exercised; interactive input/terminal lifecycle/full interruption qualification remain incomplete
+pid-inspection	Native test resolves Linux NSpid when /proc is mounted from outer PID namespace; verifies direct last-stage executable and process-group signal/wait
+benchmark-source	dilapidated-shed/grease ba869518c7d850de6c47d8c6234654575e264e6c
+benchmark-large-parse-fixture-sha256	bea0ccc44b0736a6cd227c584154ee27aa7ab06e5752ebc723a8d10f3f9a0d74
+benchmark-D-side	01_empty and 02_parse_large PASS status 0, empty stdout/stderr; 03..08 FAIL status 2
+benchmark-reference-side	01_empty PASS; 02_parse_large PASS status 0 with original AST not printed. marker; 03..08 FAIL status 2, OILS-ERR-16 rejects retired .. range syntax
+benchmark-paired-command	sh benchmarks/greasecpp-vs-greased/run.sh greasecpp /workspace/scratch/1c7b62ceade6/oils-jobs-combined/ysh/d/.build/ysh-d 1
+benchmark-paired-result	FAIL status 1 before gate: greasecpp executable is unavailable; no fallback or same-binary substitution
+benchmark-fixture-boundary	Unchanged six execution cases use legacy .. ranges; no fixture change or acceptance of rejected reference syntax was used to manufacture a pass
+fp-producer-source	68c53d0daa64ec998701060abaaf225752ea1e93
+fp-producer-qualifier-sha256	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+lua-source	87306483cec50f8c750a22dda1d0742246fad756
+stock-lua-source	0b29f408433e92953cc72b1d3e06c7ac8139e439
+lua-producer-ick-source	515c0f29fe6e2e96e10495fbaf25da93532e7722
+lua-producer-ick-zip-sha256	03a86b94e862b1d726ffc369407168145485a055322fda46370a99ccde2e0475
+lua-producer	PASS actual interpreter, embedded literal-source semantics and exact embedded bytes
+lua-runtime-controls	PASS 13/13 on final executable; stock Lua/source/object/receipt/compiler substitution and relocation controls
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no Python or C++ dynamic dependency
+native-link-map-sha256	9fd6e9562ba66308c087daddfb015f8d93184e5394c4feee1f704c80dd1d2126
+cpp-symbol-inspection	No C++ ABI/standard-library mangled symbol candidates from anchored nm inspection; this is not independent static code-closure acceptance
+execution-observation-limit	strace PTRACE_TRACEME/PTRACE_SETOPTIONS: Operation not permitted on this host; no syscall-trace closure verdict
+source-execution-path	D parsing/evaluation, embedded original stdlib source and explicit POSIX/libc/ImportC/druntime/Phobos boundaries; reference ExternalProgram ENOEXEC retry applies only to invoked external executable files
+independent-static-transitive-AICI	NOT_RUN
+workflow-definition-sha256	b831aed5263f2e251a3eadc9142c0f32021b54998652f9d03889621b48854143
+native-Linux-acceptance	BLOCKED by language failures and missing independent acceptance; diagnostic build only
+netbsd	NOT_RUN in this continuation; canonical ICK PR #42 remains closed/parked at 22b41425cb478754346637db87ebd42e43b42863; recorded exact-head libgcc complex-lowering ICE and native-gdc/Unicode failures; full target druntime/Phobos execution unverified
+android-arm32	NOT_RUN; optional target work deferred behind Linux language implementation
+android-arm64	NOT_RUN; physical acceptance separate
+physical-device-acceptance	NOT_RUN
+Cat-Food-admission	NOT_RUN
+managed-FP-admission	NOT_RUN
+integration-PR	Oils #5 remains closed on partial evidence; retained branch preserved
+release-default-switch-merge	NOT_RUN
+transcript-archive-sha256	a7c85ea39cc08a41c570b0cf8c34a84cdd3b47d63ef7232d9d2633b8f70a9100
+concurrent-head-preserved	8015be7a6446e647c7c2dc7291f90702f4cb716d arrived during validation; disjoint value/string work and all existing receipts preserved; source commit rebased and combined tests rerun
+initial-discovery-head	54021a8e8b0643303876a0ffbeac1f65ff09afa1; superseded by concurrent 777-match checkpoint before publication

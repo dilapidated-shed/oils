@@ -156,9 +156,91 @@ Current state:
 - [ ] full YSH spec-suite differential run
 - [ ] zero Python/C++ fallback on the YSH execution path
 
-Only the final item closes the whole-hog translation.
+All of these items are required to close the whole-hog translation.
 
-## Current host checkpoint: values, string patterns and type objects, 2026-10-24
+## Current host checkpoint: batch jobs, deferred traps and word expansion, 2026-10-25
+
+The whole translation remains **incomplete**. The unchanged inherited harness
+records **799 assertion matches and 320 failures across 1,119 cases**, with zero
+timeouts. All 777 matches from the branch's concurrent value/string checkpoint remain;
+this continuation adds 22. Relative
+to the October 21 checkpoint, 85 additional cases match and none of its 714
+matches is lost. No reference fixture, timeout or allowance was changed.
+
+The branch advanced to `8015be7a6446e647c7c2dc7291f90702f4cb716d` during
+validation. The disjoint value/string implementation and its receipts were
+preserved, and the combined tree was rebuilt and fully rerun before publication.
+All matches from both independently tested changes remain.
+
+The native batch runtime now implements background command lists and pipelines,
+subshells, `fork`, `forkwait`, `$!`, job/PID selection, `wait`, `wait -n`,
+`wait --all`, and job listings. Pipeline stages are direct children; `$!` is the
+last stage's PID. The child evaluator cannot unwind into the parent's entry
+path on setup errors. Copied variables, mutable values, cwd and trap state are
+isolated by fork. Native tests inspect the actual last executable and signal a
+real process group. These are bounded batch/process-group checks; interactive
+startup, terminal ownership, complete stopped-job handling and PTY acceptance
+remain unfinished.
+
+`traps.d` translates trap registration, removal, ignored dispositions, deferred
+signal dispatch and EXIT/ERR/DEBUG hooks. Its C callback writes only fixed
+`sig_atomic_t` storage; D allocation and user code run after the signal handler
+returns. Trap registers, errtrace inheritance, original source-line tracking,
+EXIT status and subprogram clearing are exercised. Listings preserve the
+reference's `<unknown>` marker for non-Simple commands. Complete diagnostic,
+signal-interruption and interactive behavior still need qualification.
+
+Shell-word evaluation now retains quoting and splitting eligibility through IFS
+splitting and globbing. `simple_word_eval` protects substitutions, while static
+literal globs still expand. Expression substitutions are implicitly quoted.
+Shell assignments retain the last command-substitution status; control-flow
+status words use scalar evaluation. OSH initializes/exports a validated logical
+PWD, and failed file redirects return status 1 and obey errexit. Arbitrary
+descriptor ownership, the remaining word modes and shell arithmetic are open.
+
+All 33 CLI/module and 32 library suites, the unchanged owner smoke, the real
+retained Icky Lua producer and all 13 negative/runtime controls pass. Both
+original producer/control programs pass nonexecuting parse-only checking.
+The three shared fixtures `background`, `builtin-trap` and `builtin-trap-err`
+record **73 matching cases and 10 failures out of 83**. The actual reference
+records 75 matches and 8 failures on that subset. The two additional D failures
+reach untranslated shell arithmetic. All ten failures remain visible; the full
+shared-shell selection has not been run.
+
+The unchanged Grease benchmark at `ba869518c7d850de6c47d8c6234654575e264e6c`
+passes its empty and large `--ast-format none -n FILE` programs on D with empty
+stdout/stderr. Cases 03 through 08 fail with status 2 on both D and the Python
+reference: their `..` ranges are rejected by the reference with OILS-ERR-16,
+which requires `..<` or `..=`. Those fixtures were preserved. The paired runner
+also stops at `FAIL greasecpp executable is unavailable: greasecpp`; no timing
+or paired compatibility acceptance is claimed.
+
+Tested source `1c32cb6e1ee757da202986100848a235dd2aa5d9` has repository tree
+`da20b68b03dc9cec31e68f7a0f4939e379af5f13` and D source tree
+`74411dce6d3a23ce13d8f6a5bb94e33aab19c483`. The pinned Icky DMD/runtime stack
+builds executable SHA-256
+`cbd70ee66547928eeb54695498480126d56e8aba1da8a315c88fee9897aa0477`.
+A clean checkout reproduces identical bytes on this host. The tested executable
+is still **ysh-d**. Dynamic dependencies are libc, libgcc_s and the loader;
+the link map and symbol inspection supplement source provenance, and do not
+replace independent static/transitive ai-ci acceptance. Ptrace is unavailable
+on this host. No complete native closure verdict is claimed.
+
+See the [host receipt](qualification/inherited-host-jobs-2026-10-25.tsv),
+[all cases](qualification/inherited-cases-jobs-2026-10-25.tsv),
+[suite totals](qualification/inherited-suites-jobs-2026-10-25.tsv),
+[remaining operations](qualification/remaining-failures-jobs-2026-10-25.tsv),
+[shared cases](qualification/shared-shell-jobs-2026-10-25.tsv),
+[benchmark gate](qualification/benchmark-jobs-2026-10-25.tsv) and
+[translation ledger](qualification/translation-ledger.tsv).
+All 320 failures have an operation family and an unchanged fixture description;
+59 have no direct missing-operation diagnostic and still require causal
+diagnosis. Assertion matching is not full stdout/stderr/side-effect equivalence.
+The reachable-call-graph inventory and the translation remain incomplete.
+Independent acceptance, NetBSD/Android execution, Cat Food/consumer admission,
+`greased` promotion, release, PR reopening and merge have not occurred.
+
+## Previous host checkpoint: values, string patterns and type objects, 2026-10-24
 
 The whole translation remains **incomplete**. At source
 `ed600804d301e3f12c20544eb6c5f65c949d8d45`, the unchanged inherited harness
