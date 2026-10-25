@@ -12,6 +12,7 @@ import std.uni : toLower, toUpper;
 
 import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
+import yshd.type_objects : YshTypeIndexFunction;
 import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
 import yshd.eval_scope : EvalOptions, parseEvalOptions, withEvalBindings;
@@ -567,7 +568,7 @@ private long normalizeSliceBound(long bound, size_t length) {
     return result;
 }
 
-private Value subscriptGet(Value object, Value index) {
+private Value subscriptGet(Value object, Value index, Memory mem = null) {
     final switch (object.kind) {
     case ValueKind.stringValue:
         if (index.kind == ValueKind.sliceValue) {
@@ -622,6 +623,14 @@ private Value subscriptGet(Value object, Value index) {
         }
         return *found;
 
+    case ValueKind.objectValue:
+        auto prototype = object.objectValue.prototype;
+        auto method = prototype is null ? null : prototype.properties.find("__index__");
+        if (method !is null && (method.kind == ValueKind.functionValue ||
+                method.kind == ValueKind.builtinFunctionValue))
+            return invokeFunction(*method, [object, index], null, mem);
+        throw new YshTypeError("Obj has no index method");
+
     case ValueKind.nullValue:
     case ValueKind.boolean:
     case ValueKind.integer:
@@ -635,7 +644,6 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.matchValue:
     case ValueKind.expressionValue:
     case ValueKind.commandValue:
-    case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
     case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
@@ -706,7 +714,9 @@ private class SubscriptExpr : Expr {
     }
 
     override Value eval(Memory mem) {
-        return subscriptGet(object_.eval(mem), index_.eval(mem));
+        auto object = object_.eval(mem);
+        auto index = index_.eval(mem);
+        return subscriptGet(object, index, mem);
     }
 
     void assign(Memory mem, Value value) {
@@ -900,10 +910,12 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         return object.prototype is null ? Value.nullValue() : Value.object(object.prototype);
     }
     if (name == "dict") {
-        if (arguments.length != 1) throw new YshTypeError("dict() expects Dict or Obj");
+        if (arguments.length != 1) throw new YshTypeError("dict() expects Dict, Obj, or BashAssoc");
         if (arguments[0].kind == ValueKind.dict) return Value.dictRef(arguments[0].dictValue.shallowCopy());
         if (arguments[0].kind == ValueKind.objectValue) return Value.dictRef(arguments[0].objectValue.properties.shallowCopy());
-        throw new YshTypeError("dict() expects Dict or Obj");
+        if (arguments[0].kind == ValueKind.bashAssocValue)
+            return Value.dictRef(arguments[0].shellContainer.shallowCopy());
+        throw new YshTypeError("dict() expects Dict, Obj, or BashAssoc");
     }
 
     switch (name) {
@@ -1071,6 +1083,12 @@ private Value callBuiltinFunction(string name, Value[] arguments,
     case "int":
         if (arguments.length != 1) {
             throw new YshTypeError("int() expects one argument");
+        }
+        if (arguments[0].kind == ValueKind.boolean)
+            return Value.integer(arguments[0].booleanValue ? 1 : 0);
+        if (arguments[0].kind == ValueKind.floating) {
+            import yshd.conversion : truncateFiniteFloatToInteger;
+            return Value.integer(truncateFiniteFloatToInteger(arguments[0].floatValue));
         }
         return Value.integer(convertToInt(arguments[0]));
 
@@ -1423,16 +1441,14 @@ private Value callValueMethod(Value receiver, string name,
         if (name == "startsWith" || name == "endsWith" ||
                 name == "contains") {
             if (arguments.length != 1 || named.length != 0) {
-                throw new YshTypeError(name ~ "() expects one Str argument");
+                throw new YshTypeError(name ~ "() expects one pattern");
+            }
+            if (name != "contains") {
+                import yshd.string_methods : hasStringAffix;
+                return Value.boolean(hasStringAffix(s, arguments[0], name == "endsWith"));
             }
             auto pattern = requireString(arguments[0],
                 name ~ "() expects a Str argument");
-            if (name == "startsWith") {
-                return Value.boolean(s.startsWith(pattern));
-            }
-            if (name == "endsWith") {
-                return Value.boolean(s.endsWith(pattern));
-            }
             return Value.boolean(s.indexOf(pattern) >= 0);
         }
 
@@ -1440,44 +1456,26 @@ private Value callValueMethod(Value receiver, string name,
             if (arguments.length > 1 || named.length != 0) {
                 throw new YshTypeError(name ~ "() expects zero or one Str");
             }
-            if (arguments.length == 0) {
-                if (name == "trimStart") {
-                    return Value.str(stripLeft(s));
-                }
-                if (name == "trimEnd") {
-                    return Value.str(stripRight(s));
-                }
-                return Value.str(strip(s));
-            }
-            auto pattern = requireString(arguments[0],
-                name ~ "() expects a Str pattern");
-            auto result = s;
-            if ((name == "trimStart" || name == "trim") &&
-                    result.startsWith(pattern)) {
-                result = result[pattern.length .. $];
-            }
-            if ((name == "trimEnd" || name == "trim") &&
-                    result.endsWith(pattern)) {
-                result = result[0 .. $ - pattern.length];
-            }
-            return Value.str(result);
+            import yshd.string_methods : trimStringAffixes;
+            return Value.str(trimStringAffixes(s, name != "trimEnd", name != "trimStart", arguments));
         }
 
         if (name == "split") {
             if (arguments.length != 1) {
                 throw new YshTypeError("split() expects one Str separator");
             }
-            auto separator = requireString(arguments[0],
-                "split() expects a Str separator");
             long count = -1;
             auto countValue = named.find("count");
             if (countValue !is null) {
-                count = methodInt(*countValue, "split count should be Int");
+                if (countValue.kind != ValueKind.integer)
+                    throw new YshTypeError("split count should be Int");
+                count = bigIntToLong(countValue.integerValue, "split count should be Int");
             }
             if (named.length > (countValue is null ? 0 : 1)) {
                 throw new YshTypeError("split() got unknown named argument");
             }
-            return Value.list(splitExact(s, separator, count));
+            import yshd.string_methods : splitStringByPattern;
+            return Value.list(splitStringByPattern(s, arguments[0], count));
         }
 
         if (name == "lines") {
@@ -1871,9 +1869,18 @@ Value builtinFunctionValue(string name) {
 /// values. Keep them in builtin lookup, outside the user's lexical frames.
 Value[string] builtinNamespaces() {
     Value[string] result;
+    auto typeMethods = new YshDict();
+    typeMethods.set("__index__", Value.builtin(new YshTypeIndexFunction()));
+    auto typePrototype = new YshObject(null, typeMethods);
+    foreach (name; ["Bool", "Int", "Float", "Str", "List", "Dict"]) {
+        auto properties = new YshDict();
+        properties.set("name", Value.str(name));
+        result[name] = Value.object(new YshObject(typePrototype, properties));
+    }
     auto objectFunctions = new YshDict();
+    objectFunctions.set("name", Value.str("Obj"));
     objectFunctions.set("new", Value.builtin(new YshNativeFunction("Obj.new")));
-    result["Obj"] = Value.object(new YshObject(null, objectFunctions));
+    result["Obj"] = Value.object(new YshObject(typePrototype, objectFunctions));
     auto ioMethods = new YshDict();
     ioMethods.set("M/eval", Value.builtin(new YshNativeFunction("io.eval")));
     ioMethods.set("M/evalExpr", Value.builtin(new YshNativeFunction("io.evalExpr")));
@@ -1895,6 +1902,7 @@ private Value invokeFunction(Value callee, Value[] arguments, YshDict named, Mem
         throw new YshTypeError("YSH expression call requires Func");
     if (auto userFunction = cast(YshFunction)callee.callableValue) return userFunction.invoke(arguments, named, mem);
     if (auto builtin = cast(YshNativeFunction)callee.callableValue) return builtin.invoke(arguments, named, mem);
+    if (auto typeIndex = cast(YshTypeIndexFunction)callee.callableValue) return typeIndex.invoke(arguments, named);
     if (auto objectMethod = cast(YshObjectMethod)callee.callableValue) return objectMethod.invoke(arguments, named, mem);
     if (auto bound = cast(YshBoundMethod)callee.callableValue) return bound.invoke(arguments, named, mem);
     if (auto pipeline = cast(YshPipelineFunction)callee.callableValue) return pipeline.invoke(arguments, named, mem);
@@ -2530,26 +2538,15 @@ private class Parser {
             if (current_.kind == TokenKind.leftBracket) {
                 advance();
 
-                Expr index;
-                if (current_.kind == TokenKind.colon) {
-                    advance();
-                    Expr upper;
-                    if (current_.kind != TokenKind.rightBracket) {
-                        upper = parseOr();
-                    }
-                    index = new SliceExpr(null, upper);
-                } else {
-                    auto first = parseOr();
-                    if (current_.kind == TokenKind.colon) {
+                Expr index = parseSubscriptItem();
+                if (current_.kind == TokenKind.comma) {
+                    Expr[] indexes = [index];
+                    while (current_.kind == TokenKind.comma) {
                         advance();
-                        Expr upper;
-                        if (current_.kind != TokenKind.rightBracket) {
-                            upper = parseOr();
-                        }
-                        index = new SliceExpr(first, upper);
-                    } else {
-                        index = first;
+                        if (current_.kind == TokenKind.rightBracket) break;
+                        indexes ~= parseSubscriptItem();
                     }
+                    index = new ListExpr(indexes);
                 }
 
                 require(TokenKind.rightBracket, "]");
@@ -2581,6 +2578,17 @@ private class Parser {
             return new BinaryExpr(op, left, parseFactor());
         }
         return left;
+    }
+
+    private Expr parseSubscriptItem() {
+        Expr lower;
+        if (current_.kind != TokenKind.colon) lower = parseOr();
+        if (current_.kind != TokenKind.colon) return lower;
+        advance();
+        Expr upper;
+        if (current_.kind != TokenKind.rightBracket && current_.kind != TokenKind.comma)
+            upper = parseOr();
+        return new SliceExpr(lower, upper);
     }
 
     ParsedArguments parseArguments(bool allowBlock, bool deferEvaluation = false) {

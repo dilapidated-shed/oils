@@ -182,6 +182,7 @@ abstract class YshPlace {
 abstract class YshRegex {
     abstract string asEre();
     abstract RegexMatch search(string subject, long position = 0, bool leftMatch = false, bool useNotBol = true);
+    abstract RegexMatch matchAffix(string subject, bool atEnd);
 }
 
 class RegexMatch {
@@ -555,8 +556,10 @@ string stringify(Value value) {
     case ValueKind.floating:
         import std.math : isNaN, isInfinity;
         import std.string : indexOf;
-        if (isNaN(value.floatValue)) return "NAN";
-        if (isInfinity(value.floatValue)) return value.floatValue < 0 ? "-INFINITY" : "INFINITY";
+        // val_ops.Stringify uses Python's str(Float), distinct from the
+        // uppercase nonfinite spellings of J8 and diagnostic pretty printing.
+        if (isNaN(value.floatValue)) return "nan";
+        if (isInfinity(value.floatValue)) return value.floatValue < 0 ? "-inf" : "inf";
         // Match the reference FloatToStr precision before preserving .0.
         auto text = format("%.16g", value.floatValue);
         if (text.indexOf('.') < 0 && text.indexOf('e') < 0 && text.indexOf('E') < 0) text ~= ".0";
@@ -644,9 +647,7 @@ bool exactlyEqual(Value left, Value right) {
         throw new YshTypeError("Equality isn't defined on Range values");
     case ValueKind.functionValue:
     case ValueKind.procValue:
-        return left.callableValue is right.callableValue;
     case ValueKind.placeValue:
-        throw new YshTypeError("Equality isn't defined on Place values");
     case ValueKind.eggexValue:
     case ValueKind.matchValue:
     case ValueKind.expressionValue:
@@ -655,10 +656,16 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.builtinFunctionValue:
     case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
-    case ValueKind.bashArrayValue:
-    case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
         throw new YshTypeError("Equality isn't defined on " ~ kindName(left) ~ " values");
+    case ValueKind.bashArrayValue:
+    case ValueKind.bashAssocValue:
+        if (left.shellContainer.length != right.shellContainer.length) return false;
+        foreach (key, item; left.shellContainer) {
+            auto other = right.shellContainer.find(key);
+            if (other is null || item.stringValue != other.stringValue) return false;
+        }
+        return true;
     }
 }
 

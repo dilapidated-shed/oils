@@ -2,7 +2,7 @@ module yshd.eggex;
 
 import std.conv : to;
 import std.algorithm : sort;
-import std.string : indexOf, toStringz;
+import std.string : indexOf, toStringz, startsWith, endsWith;
 import std.utf : byDchar;
 import std.range : walkLength;
 import yshd.expr : ParseError, resolveCaptureConversion;
@@ -124,6 +124,17 @@ class Eggex : YshRegex {
     override RegexMatch search(string subject, long position = 0, bool leftMatch = false, bool useNotBol = true) {
         auto ere = asEre();
         return searchEre(ere, flags, subject, position, leftMatch, captures, useNotBol);
+    }
+
+    /// method_str._EggexMatchStart/End anchor the lowered ERE directly.
+    /// Preserve that reference rule, including its treatment of alternation.
+    /// These methods ignore captures and do not update the match register.
+    override RegexMatch matchAffix(string subject, bool atEnd) {
+        auto ere = asEre();
+        if (atEnd) {
+            if (!ere.endsWith("$")) ere ~= "$";
+        } else if (!ere.startsWith("^")) ere = "^" ~ ere;
+        return searchEre(ere, flags, subject);
     }
 
     bool matches(Value subject, Memory mem) {
