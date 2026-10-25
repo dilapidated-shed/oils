@@ -103,8 +103,13 @@ string[] expandShellWord(ScalarWord word, Memory mem, bool staticWord = true) {
     string[] result;
     foreach (field; fields) {
         bool pattern;
+        bool leftBracket;
         foreach (fragment; field.fragments) if (!fragment.quoted)
-            foreach (ch; fragment.text) if ("*?[".indexOf(ch) >= 0) pattern = true;
+            foreach (ch; fragment.text) {
+                if (ch == '*' || ch == '?') pattern = true;
+                else if (ch == '[') leftBracket = true;
+                else if (ch == ']' && leftBracket) pattern = true;
+            }
         if (!pattern || mem.options.get("noglob") || (mem.options.get("simple_word_eval") && !staticWord)) {
             result ~= field.text(); continue;
         }

@@ -211,6 +211,7 @@ private class CommandScanner {
     private Lexer lexer;
     private ReturnMode returnMode;
     private bool commandStart = true;
+    private bool bracketCommand;
     private ShellOptions options;
     this(string source, ReturnMode returnMode, ShellOptions options = null) {
         this.source = source;
@@ -221,6 +222,14 @@ private class CommandScanner {
     HereDocument[size_t] documents() { return lexer.hereDocuments; }
     Token next() {
         auto token = lexer.next();
+        if (commandStart) bracketCommand = token.kind == TokenKind.name && token.text == "test" ||
+            token.kind == TokenKind.leftBracket && !(token.offset + 1 < source.length && source[token.offset + 1] == '[');
+        // In test/[ argv, square brackets are ordinary word bytes rather
+        // than command-language grouping. Runtime arity checks own the ].
+        if (bracketCommand && (token.kind == TokenKind.leftBracket || token.kind == TokenKind.rightBracket)) {
+            commandStart = false;
+            return Token(TokenKind.name, token.text, token.offset);
+        }
         if (token.kind == TokenKind.dollar && token.offset + 2 < source.length &&
                 source[token.offset + 1 .. token.offset + 3] == "((") {
             if (options !is null && options.get("no_parse_sh_arith"))
@@ -291,7 +300,7 @@ private class CommandScanner {
         commandStart = token.kind == TokenKind.newline || token.kind == TokenKind.semicolon ||
             token.kind == TokenKind.leftBrace || token.kind == TokenKind.pipe ||
             token.kind == TokenKind.andIf || token.kind == TokenKind.orIf ||
-            token.kind == TokenKind.bang;
+            (!bracketCommand && token.kind == TokenKind.bang);
         return token;
     }
 }
@@ -2351,6 +2360,13 @@ class ProgramParser {
                 }
             }
 
+            if (commandName == "test" || commandName == "[") {
+                if (typedArguments !is null || hasBlock) throw new YshTypeError("test does not accept typed arguments");
+                import yshd.bracket : runTest;
+                mem.lastStatus = runTest(argv, mem);
+                return;
+            }
+
             if (typedArguments !is null || hasBlock) throw new UsageError("External commands do not accept typed arguments");
             mem.canReplaceProcess = allowProcessReplacement_ && atProgramEnd();
             scope (exit) mem.canReplaceProcess = false;
@@ -3110,6 +3126,11 @@ class ProgramParser {
 
     private void parseDoubleBracket(Memory mem) {
         auto first = current_.offset;
+        if (first + 1 >= source_.length || source_[first + 1] != '[') {
+            if (syntaxOnly_) parseCommandWords();
+            else parseCommandInvocation(mem);
+            return;
+        }
         advance();
         if (current_.kind != TokenKind.leftBracket || current_.offset != first + 1)
             throw new ParseError("Expected [[");
@@ -4356,6 +4377,7 @@ class ProgramParser {
 
     private static bool isCommandWordToken(TokenKind kind) {
         return isLiteralWordToken(kind) || kind == TokenKind.equal ||
+            kind == TokenKind.leftBracket || kind == TokenKind.rightBracket ||
             kind == TokenKind.plusPlus ||
             kind == TokenKind.slashSlash || kind == TokenKind.bang ||
             kind == TokenKind.comma ||
@@ -4400,6 +4422,16 @@ class ProgramParser {
 
     private string parseScalarSubstitution(Memory mem, ref size_t endOffset) {
         auto dollarOffset = current_.offset;
+        // Variable names remain identifiers even when they are command
+        // keywords, for example $var and $for in test operands.
+        if (dollarOffset + 1 < source_.length && asciiIdentifierStart(source_[dollarOffset + 1])) {
+            endOffset = dollarOffset + 2;
+            while (endOffset < source_.length && asciiIdentifierContinue(source_[endOffset])) ++endOffset;
+            auto name = source_[dollarOffset + 1 .. endOffset];
+            auto value = syntaxOnly_ ? "" : mem.wordVariable(name);
+            moveTo(endOffset);
+            return value;
+        }
         if (dollarOffset + 2 < source_.length && source_[dollarOffset + 1 .. dollarOffset + 3] == "((") {
             endOffset = shellArithmeticEnd(source_, dollarOffset + 1);
             auto result = arithmeticSubstitution(source_[dollarOffset + 3 .. endOffset - 2], mem);
