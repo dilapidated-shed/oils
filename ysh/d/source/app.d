@@ -1,6 +1,7 @@
 module app;
 
 import std.file : FileException, exists, read;
+import std.exception : ErrnoException;
 import std.stdio : stderr, stdin, writeln;
 import std.string : join;
 import std.path : baseName;
@@ -18,8 +19,23 @@ private Memory shellMemory(string argumentZero, string[] arguments,
         ShellOptions options = null) {
     auto mem = new Memory();
     mem.options = options is null ? new ShellOptions(true) : options;
+    mem.initializeDirectory();
     mem.initializeArguments(argumentZero, arguments);
     return mem;
+}
+
+private int runBatchSource(string source, Memory mem) {
+    mem.traps.initializeMain();
+    scope (exit) mem.traps.restore();
+    int status;
+    try { executeProgram(source, mem); status = mem.lastStatus; }
+    catch (ShellExit control) { status = control.status; }
+    catch (ProcReturn control) { status = control.status; }
+    catch (LexError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 2; }
+    catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = error.status; }
+    catch (FileException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
+    catch (ErrnoException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
+    return mem.traps.finish(mem, status);
 }
 
 int main(string[] args) {
@@ -98,8 +114,7 @@ int main(string[] args) {
                 return 0;
             }
             auto mem = shellMemory(args[0], args[sourceIndex < args.length ? sourceIndex + 1 : sourceIndex .. $], options);
-            executeProgram(source, mem);
-            return mem.lastStatus;
+            return runBatchSource(source, mem);
         }
 
         if (commandString) {
@@ -117,8 +132,7 @@ int main(string[] args) {
             auto argumentZero = args.length > sourceIndex + 1 ? args[sourceIndex + 1] : args[0];
             auto arguments = args.length > sourceIndex + 2 ? args[sourceIndex + 2 .. $] : [];
             auto mem = shellMemory(argumentZero, arguments, options);
-            executeProgram(source, mem);
-            return mem.lastStatus;
+            return runBatchSource(source, mem);
         }
 
         if (parseOnly || literalPath || exists(args[sourceIndex]) || args.length > sourceIndex + 1) {
@@ -129,8 +143,7 @@ int main(string[] args) {
             }
             auto mem = shellMemory(args[sourceIndex], args[sourceIndex + 1 .. $], options);
             mem.pushSourceDirectory(args[sourceIndex]);
-            executeProgram(source, mem);
-            return mem.lastStatus;
+            return runBatchSource(source, mem);
         }
 
         auto source = args[sourceIndex .. $].join(" ");

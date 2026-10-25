@@ -236,7 +236,7 @@ class Lexer {
                 pendingDocuments_.length = 0;
             }
             if (!expressionDepth_) { commandStart_ = true; expressionCommand_ = false; }
-        } else if (!expressionDepth_ && (token.kind == TokenKind.semicolon ||
+        } else if (!expressionDepth_ && (token.kind == TokenKind.semicolon || token.kind == TokenKind.amp ||
                 (!expressionCommand_ && (token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)))) {
             commandStart_ = true;
             expressionCommand_ = false;

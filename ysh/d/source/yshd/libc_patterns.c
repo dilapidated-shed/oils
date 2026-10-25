@@ -4,3 +4,5 @@
 #include <fnmatch.h>
 #include <glob.h>
 #include <regex.h>
+#include <signal.h>
+#include <string.h>

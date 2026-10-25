@@ -7,6 +7,8 @@ import std.stdio : File, stderr, stdin, stdout;
 import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError, YshPlace;
 import yshd.options : ShellOptions;
 import yshd.dirs : DirectoryStack;
+import yshd.traps : TrapState;
+import yshd.jobs : JobTable;
 
 enum ReturnMode { shell, functionValue, procValue }
 
@@ -112,13 +114,56 @@ private Cell lookupFrame(Frame frame, string name, bool declaration, ref Frame f
 /// Mem's registers/environment/process state will move here as those execution
 /// paths are translated.
 class Memory {
+    TrapState traps;
+    JobTable jobs;
+    bool canReplaceProcess;
     Frame globalFrame;
     Frame currentFrame;
     private Frame[] frameStack;
     BuiltinRegistry builtins;
     private size_t loopDepth;
     int lastStatus;
+    size_t commandSubEpoch;
+    int commandSubLastStatus;
     int[] pipelineStatus;
+    size_t errTrapSuppression;
+    size_t currentLine = 1;
+    bool preserveLine;
+    private struct SourceRoot { string source; size_t firstLine; }
+    private SourceRoot[] sourceRoots;
+
+    void registerSource(string source) {
+        auto address = cast(size_t)source.ptr;
+        foreach (root; sourceRoots) {
+            auto base = cast(size_t)root.source.ptr;
+            if (address >= base && address + source.length <= base + root.source.length) return;
+        }
+        sourceRoots ~= SourceRoot(source, 1);
+    }
+
+    void registerDerivedSource(string source, string original, size_t offset) {
+        auto saved = currentLine;
+        auto savedPreserve = preserveLine;
+        preserveLine = false;
+        setSourcePosition(original, offset);
+        sourceRoots ~= SourceRoot(source, currentLine);
+        currentLine = saved;
+        preserveLine = savedPreserve;
+    }
+
+    void setSourcePosition(string source, size_t offset) {
+        if (preserveLine) return;
+        auto address = cast(size_t)source.ptr;
+        foreach (root; sourceRoots) {
+            auto base = cast(size_t)root.source.ptr;
+            if (address < base || address + source.length > base + root.source.length) continue;
+            currentLine = root.firstLine;
+            foreach (ch; root.source[0 .. address - base + offset]) if (ch == '\n') ++currentLine;
+            return;
+        }
+        currentLine = 1;
+        foreach (ch; source[0 .. offset]) if (ch == '\n') ++currentLine;
+    }
     ReturnMode returnMode;
     RegexMatch regexMatch;
     YshDict[] contextStack;
@@ -219,6 +264,8 @@ class Memory {
         this.outputFile = outputFile;
         this.errorFile = errorFile;
         options = new ShellOptions();
+        traps = new TrapState();
+        jobs = new JobTable();
         import std.file : getcwd;
         workingDirectory = getcwd();
         import core.sys.posix.unistd : getpid;
@@ -264,6 +311,25 @@ class Memory {
             values ~= Value.str(argument);
         }
         globalFrame.cells.set("ARGV", new Cell(Value.list(values)));
+    }
+
+    /// core/sh_init.py:InitVarsAfterEnv. OSH exports PWD even in an empty
+    /// environment. YSH's no_init_globals keeps only the private cwd register.
+    void initializeDirectory() {
+        if (options.get("no_init_globals")) return;
+        import core.sys.posix.sys.stat : stat_t, stat;
+        import std.string : toStringz;
+        auto env = get("ENV").dictValue;
+        if (auto inherited = env.find("PWD")) {
+            auto path = inherited.stringValue;
+            stat_t here, there;
+            if (path.length && path[0] == '/' && stat(".", &here) == 0 &&
+                    stat(path.toStringz(), &there) == 0 && here.st_dev == there.st_dev && here.st_ino == there.st_ino)
+                workingDirectory = path;
+        }
+        setGlobal("PWD", Value.str(workingDirectory));
+        env.set("PWD", Value.str(workingDirectory));
+        directoryStack.replace(workingDirectory);
     }
 
     /// Calls have a new local frame but retain their defining global frame.
@@ -315,6 +381,12 @@ class Memory {
     }
 
     Value get(string name) {
+        if (name == "PIPESTATUS") {
+            auto values = new YshDict();
+            import std.conv : to;
+            foreach (i, status; pipelineStatus) values.set(to!string(i), Value.str(to!string(status)));
+            return Value.shellArray(values);
+        }
         if (name == "_this_dir") {
             if (!sourceDirectories.length) throw new FatalRuntimeError("$_this_dir is not defined");
             return Value.str(sourceDirectories[$ - 1]);
@@ -352,6 +424,8 @@ class Memory {
     /// Shell-word lookup differs from a YSH expression's required binding.
     string wordVariable(string name) {
         import yshd.value : stringify;
+        if (name == "LINENO") { import std.conv : to; return to!string(currentLine); }
+        if (name == "BASHPID") { import std.conv : to; import core.sys.posix.unistd : getpid; return to!string(getpid()); }
         if (name == "_this_dir") {
             if (!sourceDirectories.length && !nounset) return "";
             return stringify(get(name));
