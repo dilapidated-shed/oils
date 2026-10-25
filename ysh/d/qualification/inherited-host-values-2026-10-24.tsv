@@ -1,0 +1,64 @@
+field	value
+qualification	BLOCKED; incomplete whole-language translation
+client-date	2026-10-24 America/Detroit
+execution-mode	Direct one-off explicitly requested by user; no managed FP dispatch claimed
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	54021a8e8b0643303876a0ffbeac1f65ff09afa1
+tested-source-commit	ed600804d301e3f12c20544eb6c5f65c949d8d45
+initial-local-validation-commit	e0e03bfa051ea3aa38077f0a794d8e1ebaa6b5a8; identical full repository tree to tested-source-commit
+source-repository-tree	349270b7ea13169d5298f90851ebc1951d7f52b4
+d-source-git-tree	a7c8cedf0b24814e0eb4aa1805a5e07a6e215988
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+icky-dmd-source	isomorphisms/ick ccf61ab82659b9eadee2d05b489fb195956cef88
+icky-dmd-sha256	89ced0c720844810b3bcb3bcbf62a0ebff064de4b992a825fa2a2d3784b1843b
+druntime-source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos-source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos-archive-sha256	8be33121263f8f27a4189af33c5ea1aea18080aa0f96b275c57cd64b0822180f
+host	Linux 6.18.55 x86_64 disposable container
+binary-name	ysh-d; incomplete, not greased
+binary-sha256	e7735b9bb6185b9a7826ad3276916aa858a2411805d07944017f1ea3eff35731
+clean-rebuild	PASS; detached clean worktree at tested-source-commit; cmp and SHA-256 match; functional probe PASS
+reproducibility-boundary	Two builds with one compiler/runtime on one host; not independent multi-host toolchain qualification
+cli-module-unittests	PASS 32 modules
+library-unittests	PASS 31 modules via unchanged owner workflow smoke
+owner-smoke	PASS; executed body byte-matches unchanged .github/workflows/ysh-d.yml
+inherited-harness	unchanged original test/sh_spec.py; separate source-built Python 2.7.13 test prerequisite
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture
+inherited-timeout	Unchanged three seconds per case; serial fixtures; no allowances edited
+inherited-modes	Declared our_shell ysh uses ysh-d; default OSH uses osh-d symlink to identical bytes
+inherited-cases	1119
+inherited-assertion-matches	777
+inherited-failures	342
+inherited-timeouts	0
+baseline-comparison	23 additional matches; no lost matches against retained 754-match per-case candidate ledger at starting-head
+baseline-boundary	Previous full candidate results reused as comparison; this run reproduced conversion failures before repair, not another full baseline run
+reference-boundary	Reference implementations and fixtures unchanged; no new full paired reference run in this continuation
+string-method-fixture	PASS 51/51; inherited patterns, Unicode edge decoding, regex splitting and errors
+conversion-fixture	PASS 12/12
+int-float-fixture	PASS 11/11
+type-object-fixture	PASS first three inherited meta cases; general meta fixture remains 5/14
+comparison-fixture	16/17 matches; inherited case 9 also failed in retained reference run, not suppressed
+remaining-failures	All 342 remain listed in remaining-failures-values-2026-10-24.tsv with full fixture diagnostics in log archive
+fixture-log-archive-sha256	604730317b51ef7b201bdf524a54c26968119997173b9e5e1077ad200cce144d
+failure-diagnosis	Not complete; a passing fixture is not complete translated-surface coverage
+parse-only	PASS --ast-format none -n on unchanged Lua producer and negative-control programs
+paired-benchmark-gate	NOT_RERUN; parse-only probes are not complete benchmark qualification
+lua-producer-source	Flexible Pipes 68c53d0daa64ec998701060abaaf225752ea1e93
+lua-producer-sha256	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+lua-negative-control-sha256	5beb210cb2c02cd1663660469181103b2bb576f4f417629c726f3321333c54b6
+lua-producer	PASS actual unchanged producer, pinned ICK and Lua, interpreter and embedded literal-source semantics
+lua-controls	PASS 13/13 actual unchanged controls, including stock 5.5.1, source/object/receipt substitution and relocation with spaces
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2
+resolved-dynamic-dependencies	PASS inspection with LD_PRELOAD omitted; no dynamic C++ or Python library
+independent-static-transitive-AICI	NOT_RUN; dynamic dependency inspection is not whole source/runtime closure acceptance
+shared-spec-acceptance	NOT_RUN; still required
+interactive-jobs-traps	Not qualified by this checkpoint
+netbsd	NOT_RUN; tracked compiler/runtime prerequisite remains isomorphisms/ick PR #42
+android-arm32	NOT_RUN
+android-arm64	NOT_RUN
+physical-device-acceptance	NOT_RUN
+Cat-Food-admission	NOT_RUN
+release-default-switch-merge	NOT_RUN

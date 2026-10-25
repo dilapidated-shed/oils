@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-754 assertion matches, 365 failures. The unchanged original harness, fixture
+777 assertion matches, 342 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-module-2026-10-24.tsv).
+[the qualification ledger](qualification/inherited-host-values-2026-10-24.tsv).
 
 ## Source map
 

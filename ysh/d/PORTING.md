@@ -158,7 +158,62 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: native modules and producer regression, 2026-10-24
+## Current host checkpoint: values, string patterns and type objects, 2026-10-24
+
+The whole translation remains **incomplete**. At source
+`ed600804d301e3f12c20544eb6c5f65c949d8d45`, the unchanged inherited harness
+reports **777 assertion matches and 342 failures across 1,119 cases**, with
+no timeouts. This adds **23 matches and loses no previous match** against the
+retained 754-match candidate ledger. All 80 YSH fixtures and the Grease alias
+fixture ran in their declared modes. Fixtures, the three-second limit and
+failure allowances remain unchanged.
+
+Explicit `int()` conversion now handles Bool and finite Float separately from
+the stricter implicit arithmetic/index conversions. Float conversion removes
+fractional bits toward zero without narrowing the integer to a machine word;
+NaN and infinities remain errors. Stringifying nonfinite floats uses the
+reference's lowercase spellings, while J8 and diagnostic display retain their
+own formats. `dict(BashAssoc)` copies the actual entries. Exact equality of
+shell containers compares their keys and values, while Func/Proc equality
+raises the reference type error instead of silently comparing identity.
+
+String methods translate `builtin/method_str.py`'s literal/Eggex prefix,
+suffix, trimming and splitting operations. Anchoring preserves the reference
+lowered ERE and flags; these methods leave the match register unchanged.
+Whitespace trimming decodes only the examined edges, accepts the reference's
+limited whitespace set and reports malformed UTF-8 at a visited edge. Regex
+splitting retains count limits, NUL rejection and empty-match errors. The
+unchanged string-method fixture now passes **51/51**, conversion **12/12**,
+and int/float **11/11**.
+
+The ordinary type Obj values share the reference `__index__` prototype.
+Parameterized List/Dict values have per-shell identity caching, including
+nested parameters. General Obj subscripting invokes a callable on the immediate
+prototype, and subscript lists follow the inherited grammar. The first three
+meta cases now pass, but the complete meta fixture still matches only **5/14**.
+The comparison fixture matches **16/17**; its remaining inherited case is
+retained rather than hidden behind a new allowance.
+
+Pinned Icky DMD, druntime and Phobos pass **32 CLI/module suites**, **31 library
+suites**, and the unchanged owner smoke body. A clean detached source worktree
+build produces byte-identical `ysh-d` bytes on this same host and passes its
+functional probe. The actual Lua producer and all **13** runtime/source controls
+also pass. Parse-only accepts both unchanged producer/control programs without
+running them. This is not a new paired benchmark qualification.
+
+Dynamic dependencies remain libc, libgcc_s and the loader. Independent
+static/transitive AI-CI acceptance, shared-spec acceptance, interactive/job/trap
+completion, NetBSD/Android execution and Cat Food admission remain unqualified.
+Keep the executable named `ysh-d`; no release, default switch or completed
+`greased` is claimed.
+
+See [host qualification](qualification/inherited-host-values-2026-10-24.tsv),
+[suite results](qualification/inherited-suites-values-2026-10-24.tsv),
+[case results](qualification/inherited-cases-values-2026-10-24.tsv),
+[remaining failures](qualification/remaining-failures-values-2026-10-24.tsv), and
+[full fixture diagnostics](qualification/inherited-logs-values-2026-10-24.zip).
+
+## Previous host checkpoint: native modules and producer regression, 2026-10-24
 
 The whole translation remains **incomplete**. The unchanged inherited harness
 reports **754 assertion matches and 365 failures across 1,119 cases**, with
