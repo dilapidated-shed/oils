@@ -156,6 +156,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -196,6 +197,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -635,6 +637,7 @@ private Value subscriptGet(Value object, Value index) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -740,6 +743,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.commandValue:
         case ValueKind.objectValue:
         case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
@@ -861,54 +865,23 @@ class ParsedArguments {
     }
 }
 
+enum builtinFunctionNames = [
+    "identity", "len", "abs", "max", "min", "get", "getVar", "setVar", "type",
+    "int", "float", "str", "bool", "glob", "list", "keys", "values",
+    "join", "floatsEqual", "strcmp", "_group", "_start", "_end", "toJson",
+    "toJson8", "fromJson", "fromJson8", "parseCommand", "split", "shSplit",
+    "maybe", "Object", "prototype", "propView", "dict", "first", "rest"
+];
+
 private bool builtinFunctionName(string name) {
-    switch (name) {
-    case "identity":
-    case "len":
-    case "abs":
-    case "max":
-    case "min":
-    case "get":
-    case "getVar":
-    case "type":
-    case "int":
-    case "float":
-    case "str":
-    case "bool":
-    case "glob":
-    case "list":
-    case "keys":
-    case "values":
-    case "join":
-    case "floatsEqual":
-    case "strcmp":
-    case "_group":
-    case "_start":
-    case "_end":
-    case "toJson":
-    case "toJson8":
-    case "fromJson":
-    case "fromJson8":
-    case "parseCommand":
-    case "split":
-    case "shSplit":
-    case "maybe":
-    case "Object":
-    case "prototype":
-    case "propView":
-    case "dict":
-    case "first":
-    case "rest":
-        return true;
-    default:
-        return false;
-    }
+    foreach (candidate; builtinFunctionNames) if (name == candidate) return true;
+    return false;
 }
 
 private Value callBuiltinFunction(string name, Value[] arguments,
         YshDict namedArguments, Memory mem) {
     if (namedArguments !is null && namedArguments.length != 0 &&
-            name != "toJson" && name != "toJson8") {
+            name != "toJson" && name != "toJson8" && name != "setVar") {
         throw new YshTypeError(format("%s() does not accept named arguments yet", name));
     }
 
@@ -1056,11 +1029,13 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         if (arguments.length < 2 || arguments.length > 3) {
             throw new YshTypeError("get() expects Dict, key, and optional fallback");
         }
-        if (arguments[0].kind != ValueKind.dict ||
+        if ((arguments[0].kind != ValueKind.dict && arguments[0].kind != ValueKind.objectValue) ||
                 arguments[1].kind != ValueKind.stringValue) {
-            throw new YshTypeError("get() expects Dict and Str key");
+            throw new YshTypeError("get() expects Dict or Obj and Str key");
         }
-        auto found = arguments[0].dictValue.find(arguments[1].stringValue);
+        auto found = arguments[0].kind == ValueKind.dict
+            ? arguments[0].dictValue.find(arguments[1].stringValue)
+            : arguments[0].objectValue.properties.find(arguments[1].stringValue);
         if (found !is null) {
             return *found;
         }
@@ -1073,6 +1048,19 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         }
         auto cell = mem.getCell(arguments[0].stringValue);
         return cell is null ? Value.nullValue() : cell.value;
+
+    case "setVar":
+        if (arguments.length != 2 || arguments[0].kind != ValueKind.stringValue)
+            throw new YshTypeError("setVar() expects a Str name and a value");
+        bool global;
+        if (namedArguments !is null) foreach (key, value; namedArguments) {
+            if (key != "global" || value.kind != ValueKind.boolean)
+                throw new YshTypeError("setVar() expects only named Bool global");
+            global = value.booleanValue;
+        }
+        if (global) mem.setGlobal(arguments[0].stringValue, arguments[1]);
+        else mem.setVar(arguments[0].stringValue, arguments[1]);
+        return Value.nullValue();
 
     case "type":
         if (arguments.length != 1) {
@@ -1777,6 +1765,7 @@ private Value callValueMethod(Value receiver, string name,
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -1809,6 +1798,17 @@ private class YshNativeFunction {
     string name;
     this(string name) { this.name = name; }
     Value invoke(Value[] arguments, YshDict named, Memory mem) {
+        if (name == "vm.id") {
+            if (arguments.length != 2 || (named !is null && named.length))
+                throw new YshTypeError("vm.id() expects one value");
+            Object identity;
+            auto value = arguments[1];
+            if (value.kind == ValueKind.list) identity = value.listValue;
+            else if (value.kind == ValueKind.dict) identity = value.dictValue;
+            else if (value.kind == ValueKind.objectValue) identity = value.objectValue;
+            else throw new YshTypeError("id() expected List, Dict, or Obj");
+            return Value.integer(cast(size_t)cast(void*)identity);
+        }
         if (name == "Obj.new") {
             if (arguments.length < 1 || arguments.length > 2 || (named !is null && named.length))
                 throw new YshTypeError("Obj.new() expects properties and optional prototype");
@@ -1884,6 +1884,9 @@ Value[string] builtinNamespaces() {
     auto ioProperties = new YshDict();
     ioProperties.set("stdin", Value.stdinSource());
     result["io"] = Value.object(new YshObject(new YshObject(null, ioMethods), ioProperties));
+    auto vmMethods = new YshDict();
+    vmMethods.set("id", Value.builtin(new YshNativeFunction("vm.id")));
+    result["vm"] = Value.object(new YshObject(new YshObject(null, vmMethods), new YshDict()));
     return result;
 }
 
@@ -3024,6 +3027,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.commandValue:
         case ValueKind.objectValue:
         case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:

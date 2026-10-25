@@ -139,6 +139,18 @@ class Memory {
     string[] shellArguments;
     long rootPid;
     long lastBackgroundPid = -1;
+    bool isMain = true;
+    bool[string] sourceGuards;
+    Value[string] diskModules;
+    Value[string] embeddedModules;
+    string[] sourceDirectories;
+
+    bool atTopLevel() const { return frameStack.length == 1; }
+
+    void pushSourceDirectory(string path) {
+        import std.path : absolutePath, dirName;
+        sourceDirectories ~= dirName(absolutePath(path));
+    }
 
     string simpleShellVariable(char name, bool quoted = false) {
         import std.conv : to;
@@ -230,9 +242,18 @@ class Memory {
         globalFrame.cells.set("_error", new Cell(Value.dict()));
         globalFrame.cells.set("NAN", new Cell(Value.floating(double.nan)));
         globalFrame.cells.set("INFINITY", new Cell(Value.floating(double.infinity)));
-        import yshd.expr : builtinNamespaces;
+        import yshd.expr : builtinNamespaces, builtinFunctionNames, builtinFunctionValue;
         builtins = new BuiltinRegistry();
         foreach (name, value; builtinNamespaces()) builtins.cells[name] = new Cell(value);
+        foreach (name; builtinFunctionNames) builtins.cells[name] = new Cell(builtinFunctionValue(name));
+        import yshd.module_ysh : moduleInvokeValue;
+        builtins.cells["module-invoke"] = new Cell(moduleInvokeValue());
+        auto builtinProperties = new YshDict();
+        import yshd.value : YshObject;
+        auto builtinObject = Value.object(new YshObject(null, builtinProperties));
+        foreach (name, cell; builtins.cells) builtinProperties.set(name, cell.value);
+        builtinProperties.set("__builtins__", builtinObject);
+        builtins.cells["__builtins__"] = new Cell(builtinObject);
     }
 
     void initializeArguments(string argumentZero, string[] arguments) {
@@ -294,6 +315,10 @@ class Memory {
     }
 
     Value get(string name) {
+        if (name == "_this_dir") {
+            if (!sourceDirectories.length) throw new FatalRuntimeError("$_this_dir is not defined");
+            return Value.str(sourceDirectories[$ - 1]);
+        }
         if (name == "_pipeline_status") {
             Value[] statuses;
             foreach (status; pipelineStatus) statuses ~= Value.integer(status);
@@ -327,6 +352,10 @@ class Memory {
     /// Shell-word lookup differs from a YSH expression's required binding.
     string wordVariable(string name) {
         import yshd.value : stringify;
+        if (name == "_this_dir") {
+            if (!sourceDirectories.length && !nounset) return "";
+            return stringify(get(name));
+        }
         auto cell = getCell(name);
         if (cell !is null) {
             if (cell.value.kind == ValueKind.bashArrayValue || cell.value.kind == ValueKind.bashAssocValue) {
@@ -482,6 +511,11 @@ class Memory {
             if (cell !is null) return cell;
         }
         auto builtin = name in builtins.cells;
+        if (builtin is null && name == "module-invoke") {
+            import yshd.module_ysh : moduleInvokeValue;
+            builtins.cells[name] = new Cell(moduleInvokeValue());
+            builtin = name in builtins.cells;
+        }
         if (builtin is null && name == "__sh_function__") {
             builtins.cells[name] = new Cell(Value.dictRef(builtins.shellFunctions));
             builtin = name in builtins.cells;

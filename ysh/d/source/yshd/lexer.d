@@ -623,6 +623,16 @@ class Lexer {
 
     private Token numberToken() {
         auto start = position_;
+        bool expressionContext = !emitNewlines_ || expressionCommand_ ||
+            (boundaries_.length && boundaries_[$ - 1].expression);
+        if (!expressionContext) {
+            // Shell words are bytes, even when they begin like an invalid
+            // numeric literal (for example a commit ID starting with 0b).
+            // Keep decimal descriptor prefixes as integer tokens; adjacent
+            // word fragments are joined by the command-word evaluator.
+            while (position_ < input_.length && asciiDigit(input_[position_])) ++position_;
+            return Token(TokenKind.integer, input_[start .. position_], start);
+        }
         if (position_ + 1 < input_.length && input_[position_] == '0' &&
                 (input_[position_ + 1] == 'b' || input_[position_ + 1] == 'o' ||
                  input_[position_ + 1] == 'x')) {

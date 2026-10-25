@@ -7,12 +7,14 @@ on:
       - 'ysh/d/**'
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
+      - 'stdlib/**'
       - '.github/workflows/ysh-d.yml'
   pull_request:
     paths:
       - 'ysh/d/**'
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
+      - 'stdlib/**'
       - '.github/workflows/ysh-d.yml'
 
 permissions:
@@ -112,6 +114,7 @@ jobs:
           common_flags=(
             -conf= -fPIC -w
             -Iysh/d/source
+            -Jstdlib
             -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import"
             -I"$GITHUB_WORKSPACE/.runtime-phobos"
             "$phobos"

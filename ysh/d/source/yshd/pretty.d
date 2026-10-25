@@ -211,6 +211,7 @@ private class ValueEncoder {
         case ValueKind.expressionValue:
         case ValueKind.commandValue:
         case ValueKind.builtinFunctionValue:
+        case ValueKind.builtinProcValue:
         case ValueKind.boundFunctionValue:
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:

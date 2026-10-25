@@ -128,6 +128,7 @@ int main(string[] args) {
                 return 0;
             }
             auto mem = shellMemory(args[sourceIndex], args[sourceIndex + 1 .. $], options);
+            mem.pushSourceDirectory(args[sourceIndex]);
             executeProgram(source, mem);
             return mem.lastStatus;
         }

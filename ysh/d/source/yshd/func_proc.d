@@ -7,6 +7,37 @@ import yshd.program : executeProcedureBody;
 import yshd.state : Frame, Memory, ReturnMode, BuiltinRegistry;
 import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError;
 
+/// value.BuiltinProc has command arguments and status, distinct from Func.
+abstract class YshBuiltinProc {
+    abstract void invoke(string[] words, Memory mem,
+        EvaluatedArguments arguments, Value self);
+}
+
+/// Shared command dispatch for direct procs and Obj prototype __invoke__.
+bool invokeProcedure(Value callable, string[] words, Memory mem,
+        EvaluatedArguments arguments) {
+    Value self;
+    if (callable.kind == ValueKind.objectValue && callable.objectValue.prototype !is null) {
+        auto method = callable.objectValue.prototype.find("__invoke__");
+        if (method is null) return false;
+        self = callable;
+        callable = *method;
+    }
+    if (callable.kind == ValueKind.builtinProcValue) {
+        (cast(YshBuiltinProc)callable.callableValue).invoke(words, mem, arguments, self);
+        return true;
+    }
+    if (callable.kind != ValueKind.procValue) return false;
+    auto proc = cast(YshProc)callable.callableValue;
+    if (self.kind == ValueKind.objectValue) {
+        if (!proc.signature.positional.length && !proc.signature.restPositional.length)
+            throw new YshError("Using a proc as __invoke__ requires a self param");
+        arguments.positional = [self] ~ arguments.positional;
+    }
+    proc.invoke(words, mem, arguments);
+    return true;
+}
+
 struct FunctionParameter {
     string name;
     string defaultSource;

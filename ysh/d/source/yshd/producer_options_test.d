@@ -37,6 +37,9 @@ unittest {
         Case("var x = $(echo captured); echo $x", 0, "captured\n"),
         Case("if '/usr/bin/test' 'one word' = 'one word' { echo quoted }", 0, "quoted\n"),
         Case("echo https://github.com/isomorphisms/lua.git -Wl,--unique=.rodata", 0, "https://github.com/isomorphisms/lua.git -Wl,--unique=.rodata\n"),
+        // Numeric-looking shell words do not enter the expression lexer.
+        Case("echo 0b29f408 0xnohex 0o89 1__2 12.5 1e-3", 0,
+            "0b29f408 0xnohex 0o89 1__2 12.5 1e-3\n"),
     ];
     foreach (item; cases) {
         auto output = File.tmpfile();
@@ -53,7 +56,8 @@ unittest {
     }
     foreach (source; ["set -u; echo $UNBOUND_IL0_CASE", "set -u; echo \"$UNBOUND_IL0_CASE\"",
             "set -u; echo ${UNBOUND_IL0_CASE}", "set -o unsupported", "set -x",
-            "set -o", "var expression = UNBOUND_IL0_CASE"]) {
+            "set -o", "var expression = UNBOUND_IL0_CASE", "var invalid = 0b29",
+            "var invalid = 0xnohex", "echo $[0o89]"]) {
         auto mem = new Memory(File.tmpfile(), File.tmpfile());
         bool rejected;
         try { executeProgram(source, mem); }

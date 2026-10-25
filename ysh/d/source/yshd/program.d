@@ -5,7 +5,7 @@ import std.conv : to;
 import std.file : FileException, chdir, read;
 import std.format : format;
 import std.stdio : File;
-import std.string : indexOf, join, split, strip;
+import std.string : indexOf, join, split, strip, startsWith;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
 import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
@@ -1996,6 +1996,31 @@ class ProgramParser {
         }
 
         if (pipeline.length == 0) {
+            if (commandName == "is-main" || commandName == "source-guard" || commandName == "use") {
+                try {
+                    if (typedArguments !is null || hasBlock)
+                        throw new UsageError(commandName ~ " does not accept typed arguments");
+                    auto words = argv[1 .. $];
+                    if (commandName == "is-main") mem.lastStatus = mem.isMain ? 0 : 1;
+                    else if (commandName == "use") {
+                        import yshd.module_ysh : useModule;
+                        mem.lastStatus = useModule(words, mem);
+                    } else {
+                        if (words.length && words[0] == "--") words = words[1 .. $];
+                        if (!words.length || words[0].length && words[0][0] == '-')
+                            throw new UsageError("source-guard requires a name");
+                        auto seen = words[0] in mem.sourceGuards;
+                        mem.lastStatus = seen !is null && !mem.options.get("redefine_source") ? 1 : 0;
+                        if (seen !is null && mem.options.get("redefine_source"))
+                            mem.errorFile.writeln("(interactive) Reloading source file '", words[0], "'");
+                        mem.sourceGuards[words[0]] = true;
+                    }
+                } catch (UsageError error) {
+                    mem.errorFile.writeln("ysh-d: ", error.msg);
+                    mem.lastStatus = 2;
+                }
+                return;
+            }
             if (commandName == "shvar") {
                 try {
                     auto arguments = evalArguments();
@@ -2114,29 +2139,10 @@ class ProgramParser {
             }
             auto cell = mem.getCell(commandName);
             Value callable = cell is null ? Value.nullValue() : cell.value;
-            bool invokableObject;
-            if (callable.kind == ValueKind.objectValue && callable.objectValue.prototype !is null) {
-                auto method = callable.objectValue.prototype.properties.find("__invoke__");
-                if (method !is null && method.kind == ValueKind.procValue) {
-                    callable = *method;
-                    invokableObject = true;
-                }
-            }
-            if (callable.kind == ValueKind.procValue) {
-                auto userProc = cast(YshProc)callable.callableValue;
-                if (userProc is null) {
-                    throw new YshError(format(
-                        "invalid proc value '%s'", commandName));
-                }
-                auto arguments = evalArguments();
-                if (invokableObject) {
-                    if (!userProc.signature.positional.length && !userProc.signature.restPositional.length)
-                        throw new YshError("Using a proc as __invoke__ requires a self param");
-                    arguments.positional = [cell.value] ~ arguments.positional;
-                }
-                userProc.invoke(argv[1 .. $], mem, arguments);
-                return;
-            }
+            import yshd.func_proc : invokeProcedure;
+            if (callable.kind == ValueKind.procValue || callable.kind == ValueKind.builtinProcValue ||
+                    callable.kind == ValueKind.objectValue)
+                if (invokeProcedure(callable, argv[1 .. $], mem, evalArguments())) return;
 
             if (auto shellFunction = mem.builtins.shellFunctions.find(commandName)) {
                 if (shellFunction.kind == ValueKind.procValue) {
@@ -2248,24 +2254,55 @@ class ProgramParser {
 
     private void parseSource(Memory mem) {
         advance(); // source
-        if (isEndStatement(current_.kind)) {
-            throw new YshError("source requires a path");
-        }
-        auto words = readCommandWord(mem);
-        if (words.length != 1 || !isEndStatement(current_.kind)) {
-            throw new YshError("source accepts exactly one path");
-        }
-
-        string source;
-        try { source = cast(string)read(words[0]); }
-        catch (FileException error) {
-            mem.errorFile.writeln("ysh-d: ", error.msg);
-            mem.lastStatus = 1;
+        string[] words;
+        while (!isEndStatement(current_.kind)) words ~= readCommandWord(mem);
+        bool embedded;
+        if (words.length && words[0] == "--builtin") { embedded = true; words = words[1 .. $]; }
+        else if (words.length && words[0] == "--") words = words[1 .. $];
+        if (!words.length || words[0].length && words[0][0] == '-') {
+            mem.errorFile.writeln("source requires a file path");
+            mem.lastStatus = 2;
             return;
         }
+        auto path = words[0];
+        if (path.startsWith("///")) { embedded = true; path = path[3 .. $]; }
+        string source;
+        if (embedded) {
+            import yshd.resources : standardLibrarySource;
+            if (!standardLibrarySource(path, source)) {
+                mem.errorFile.writeln("source: no builtin file '", path, "'");
+                mem.lastStatus = 1;
+                return;
+            }
+        } else {
+            if (path.indexOf('/') < 0) {
+                import std.path : buildPath;
+                import std.file : exists;
+                foreach (directory; mem.getEnv("PATH").split(":")) {
+                    auto candidate = buildPath(directory, path);
+                    if (exists(candidate)) { path = candidate; break; }
+                }
+            }
+            try { source = cast(string)read(path); }
+            catch (FileException error) {
+                mem.errorFile.writeln("ysh-d: ", error.msg);
+                mem.lastStatus = 1;
+                return;
+            }
+        }
         auto savedMode = mem.returnMode;
+        auto savedMain = mem.isMain;
+        auto savedArguments = mem.shellArguments;
         mem.returnMode = ReturnMode.shell;
-        scope (exit) mem.returnMode = savedMode;
+        mem.isMain = false;
+        if (words.length > 1) mem.shellArguments = words[1 .. $].dup;
+        mem.pushSourceDirectory(embedded ? "stdlib/" ~ path : path);
+        scope (exit) {
+            mem.returnMode = savedMode;
+            mem.isMain = savedMain;
+            mem.shellArguments = savedArguments;
+            --mem.sourceDirectories.length;
+        }
         try {
             .executeProgram(source, mem);
         } catch (ProcReturn control) {

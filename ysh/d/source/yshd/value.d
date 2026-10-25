@@ -142,6 +142,7 @@ enum ValueKind {
     commandValue,
     objectValue,
     builtinFunctionValue,
+    builtinProcValue,
     boundFunctionValue,
     bashArrayValue,
     bashAssocValue,
@@ -288,6 +289,13 @@ struct Value {
     static Value builtin(Object callable) {
         Value result;
         result.kind = ValueKind.builtinFunctionValue;
+        result.callableValue = callable;
+        return result;
+    }
+
+    static Value builtinProc(Object callable) {
+        Value result;
+        result.kind = ValueKind.builtinProcValue;
         result.callableValue = callable;
         return result;
     }
@@ -449,6 +457,7 @@ bool sameIdentity(Value left, Value right) {
     case ValueKind.functionValue: case ValueKind.procValue:
     case ValueKind.expressionValue: case ValueKind.commandValue:
     case ValueKind.builtinFunctionValue: case ValueKind.boundFunctionValue:
+    case ValueKind.builtinProcValue:
         return left.callableValue is right.callableValue;
     case ValueKind.objectValue: return left.objectValue is right.objectValue;
     case ValueKind.bashArrayValue: case ValueKind.bashAssocValue: return left.shellContainer is right.shellContainer;
@@ -490,6 +499,7 @@ string kindName(Value value) {
     case ValueKind.commandValue: return "Command";
     case ValueKind.objectValue: return "Obj";
     case ValueKind.builtinFunctionValue: return "BuiltinFunc";
+    case ValueKind.builtinProcValue: return "BuiltinProc";
     case ValueKind.boundFunctionValue: return "BoundFunc";
     case ValueKind.bashArrayValue: return "BashArray";
     case ValueKind.bashAssocValue: return "BashAssoc";
@@ -525,6 +535,7 @@ bool toBool(Value value) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -575,6 +586,7 @@ string stringify(Value value) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -641,6 +653,7 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.commandValue:
     case ValueKind.objectValue:
     case ValueKind.builtinFunctionValue:
+    case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -747,6 +760,7 @@ private string reprWithActive(Value value, ref bool[Object] active) {
     case ValueKind.commandValue: return "<Command>";
     case ValueKind.objectValue: return "<Obj>";
     case ValueKind.builtinFunctionValue: return "<BuiltinFunc>";
+    case ValueKind.builtinProcValue: return "<BuiltinProc>";
     case ValueKind.boundFunctionValue: return "<BoundFunc>";
     case ValueKind.bashArrayValue: return "<BashArray>";
     case ValueKind.bashAssocValue: return "<BashAssoc>";
