@@ -2,7 +2,7 @@
 
 The target is the complete YSH implementation in D.
 
-The expression evaluator in this branch is only the first translated slice.  It is not a reduced YSH, a compatibility shim, or the intended endpoint.
+The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
 ## Definition of done
 
@@ -158,7 +158,103 @@ Current state:
 
 All of these items are required to close the whole-hog translation.
 
-## Current host checkpoint: batch jobs, deferred traps and word expansion, 2026-10-25
+## Current host checkpoint: native shell arithmetic and test predicates, 2026-10-25
+
+The whole translation remains **incomplete**. The unchanged inherited harness
+records **804 assertion matches and 315 failures across 1,119 cases**, with zero
+timeouts. This continuation preserves every match from the current 799-case
+checkpoint and adds five. All earlier 777/754 matches and the October 21
+714 matches remain. The actual reference was rerun on all 1,119 cases and
+records 1,042 matches and 77 failures. Reference fixtures, harness, timeouts
+and failure allowances are unchanged.
+
+`arith.d` translates the retained shell precedence table and scalar evaluator
+from `osh/arith_parse.py` and `osh/sh_expr_eval.py`. It implements numeric
+bases, unary/binary operators, truncating division/remainder, right-associative
+power, lazy logical/conditional operands, assignments and increments,
+single-evaluation array places, recursive string arithmetic and its
+`eval_unsafe_arith` command-substitution boundary. Undefined values, readonly
+writes and strict/nounset behavior follow the reference, including its
+different treatment of an undefined array name and a missing element.
+
+The existing command, word and expression parsers now reach that evaluator
+through `((...))`, `$((...))`, retained `$[...]`, arithmetic for headers,
+array indices and parameter slices. Slice offsets use the arithmetic grammar
+so the colon in a nested ternary expression remains unambiguous. Arithmetic
+commands remain in the current process. Structural operator discovery treats
+their operators as arithmetic rather than pipelines or redirections.
+`no_parse_dparen`, `no_parse_sh_arith` and `parse_ysh_expr_sub` select the
+reference grammar. Three existing D tests now explicitly select their intended
+YSH expression-substitution mode; their expected behaviors were preserved.
+No inherited fixture was edited.
+
+`bracket.d` translates `test`/`[` from `builtin/bracket_osh.py`,
+`osh/bool_parse.py` and the POSIX predicates in `osh/bool_stat.py`. It keeps
+the reference's 0/1/2/3/4-argument disambiguation, general boolean grammar,
+lazy predicates, strict decimal integer comparisons, filesystem/descriptor/
+variable/option tests, long flags and `simple_test_builtin` restrictions.
+Predicate arguments are expanded by the native word evaluator. Keyword-shaped
+variable names remain identifiers after `$`, and an unmatched literal `[`
+does not trigger glob expansion. Normal procedure/function lookup precedes
+the native test builtin.
+
+The seven unchanged shared-shell fixtures record **217 matches and 12 failures
+out of 229**, versus **218 matches and 11 failures** for the fresh actual
+reference. `arith` passes **74/74**, `arith-context` passes **16/16**, and
+`builtin-bracket` passes **51/52**. Its remaining case reaches the
+untranslated `command` dispatcher. The three `arith-dynamic` assertion
+failures are also present in the actual reference. The previous batch/trap
+selection now matches the reference's 75/83 assertions, including the two
+cases formerly blocked by arithmetic. This selection does not exhaust the
+shared machinery reachable from YSH.
+
+All **35 CLI/module suites**, **34 library suites** and the unchanged owner
+smoke pass. Native tests cover lazy evaluation, index side effects, readonly
+assignment order, strict/nounset behavior, recursive-evaluation controls and
+invalid syntax. The exact final executable runs the real retained Icky Lua
+producer and all **13 negative/runtime controls**. Both programs and explicit
+division/exit/substitution/infinite-loop sentinels pass
+`--ast-format none -n FILE` without output, execution or sentinel creation.
+The nonexecuting entry is real; the previously recorded Grease benchmark
+gate still lacks `greasecpp` and contains preserved legacy range fixtures
+rejected by the reference. No paired benchmark acceptance is claimed.
+
+Tested source `6273f799a45d4a9ab5e60d0b3ac20e159efc4f2e` has repository tree
+`4a64df6e8bbf86a021f48079fda57010b23624a2` and D source tree
+`de34690305d048307ba3f49a8570254521b28de7`. Local validation commit
+`437b2c454d3fc5a037dd0449e3094cd0e73b0300` has the identical full tree.
+The existing pinned Icky DMD/druntime/Phobos stack builds a 2,994,728-byte
+executable with SHA-256
+`156269255abc369cf22a4ed8c1790b97958ae0b7851a9151475fc7b347fcc203`.
+A second detached checkout reproduces identical bytes on this host. The link
+map, full symbols and dynamic dependencies are retained with the transcripts.
+No dynamic Python or C++ standard-library dependency appears; these checks do
+not establish independent static/transitive closure acceptance.
+
+See the [host receipt](qualification/inherited-host-arithmetic-2026-10-25.tsv),
+[all cases](qualification/inherited-cases-arithmetic-2026-10-25.tsv),
+[suite totals](qualification/inherited-suites-arithmetic-2026-10-25.tsv),
+[remaining operations](qualification/remaining-failures-arithmetic-2026-10-25.tsv),
+[shared cases](qualification/shared-shell-arithmetic-2026-10-25.tsv),
+[producer](qualification/il0-producer-arithmetic-2026-10-25.tsv),
+[controls](qualification/il0-controls-arithmetic-2026-10-25.tsv) and
+[translation ledger](qualification/translation-ledger.tsv).
+The [transcript archive](qualification/inherited-logs-arithmetic-2026-10-25.zip)
+has SHA-256
+`9bc3aba0685e68cbc92f6d92b28e3ba9797580d3c928876f062a1f23e90b7506`.
+
+All 315 failures retain an operation family, original case description and
+refreshed diagnostic from the final run. **59 still lack a direct diagnostic
+and need causal diagnosis**. Assertion counts do not establish exact global
+stdout/stderr/status/side-effect parity. The call-graph inventory, word modes,
+command/builtin dispatch, interactive loop, diagnostics and other ledger
+surfaces remain incomplete. Independent ai-ci acceptance, NetBSD/Android
+execution and accepted Cat Food delivery have not occurred. The executable
+remains **ysh-d**; there is no promotion, default switch, release, PR reopening
+or merge. This is a one-off continuation and requires no Flexible Pipes
+managed dispatch.
+
+## Previous host checkpoint: batch jobs, deferred traps and word expansion, 2026-10-25
 
 The whole translation remains **incomplete**. The unchanged inherited harness
 records **799 assertion matches and 320 failures across 1,119 cases**, with zero

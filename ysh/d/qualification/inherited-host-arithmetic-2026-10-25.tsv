@@ -1,0 +1,66 @@
+field	value
+qualification	BLOCKED; incomplete whole-language translation
+run-date	2026-10-25 America/Detroit
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+dispatch	one-off continuation; Flexible Pipes managed dispatch is not required
+starting-head	195e6e87f190a42caf27529512971ea8fed3a703
+tested-source-commit	6273f799a45d4a9ab5e60d0b3ac20e159efc4f2e
+arithmetic-source-commit	e5c466b98b1e7220c80a274fa781495807ecade0
+local-validation-source	437b2c454d3fc5a037dd0449e3094cd0e73b0300; identical complete Git tree to canonical tested source
+source-repository-tree	4a64df6e8bbf86a021f48079fda57010b23624a2
+d-source-git-tree	de34690305d048307ba3f49a8570254521b28de7
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c; unchanged reference implementation and fixtures
+icky-dmd-source	isomorphisms/ick ccf61ab82659b9eadee2d05b489fb195956cef88
+icky-dmd-version	DMD64 D Compiler v2.113.0
+icky-dmd-sha256	89ced0c720844810b3bcb3bcbf62a0ebff064de4b992a825fa2a2d3784b1843b
+druntime-source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos-source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos-archive-sha256	8be33121263f8f27a4189af33c5ea1aea18080aa0f96b275c57cd64b0822180f
+bootstrap	LDC 1.36.0; bootstrap only; no LDC acceptance substitution
+build-command	pinned dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I<druntime>/import -I<phobos> <phobos>/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+generated-inputs	existing option_data.d from frontend/option_gen.py; embedded stdlib source bytes through -Jstdlib; no new generated C++
+host	Ubuntu 24.04.3 Linux x86_64 disposable container
+binary-name	ysh-d; incomplete, not greased
+binary-bytes	2994728
+binary-sha256	156269255abc369cf22a4ed8c1790b97958ae0b7851a9151475fc7b347fcc203
+tested-executable	/workspace/scratch/30f1ca395186/oils-continue195/ysh/d/.build/ysh-d
+clean-rebuild	PASS; second detached checkout at identical source tree produced byte-identical executable; second link also emitted native-link.map
+reproducibility-boundary	same host and pinned compiler/runtime; independent second-host reconstruction NOT_RUN
+cli-module-unittests	PASS 35 modules; final source
+library-unittests	PASS 34 modules; final source
+owner-workflow-smoke	PASS; unchanged owner run body, verified byte-identical; final executable and library suite
+parse-only	PASS --ast-format none -n FILE on actual producer/control programs, YSH division/exit/substitution sentinel and retained arithmetic division/substitution/infinite-loop sentinel; empty stdout/stderr and no sentinel files
+inherited-harness	unchanged test/sh_spec.py -v --details --timeout=3; test-only Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-environment	Original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT and LIB_YSH; fixture-declared modes; isolated per-fixture TMP roots
+inherited-fixtures	81 fixtures, 1119 cases; 80 ysh-* plus Grease alias; fixture hashes, harness, timeout and allowances unchanged
+candidate-final	804 assertion matches, 315 FAIL, zero TIMEOUT
+previous-checkpoint	799 assertion matches, 320 FAIL at 195e6e87f190a42caf27529512971ea8fed3a703
+preservation	5 additional matches; no lost match from current 799, earlier 777/754, or October 21 714
+reference-final	1042 matches, 77 FAIL; fresh actual-reference rerun of all 1119 cases
+paired-assertion-categories	800 both match; 242 D FAIL/reference match; 73 both FAIL; 4 D match/reference FAIL
+shared-shell-selection	7 unchanged fixtures, 229 cases; candidate 217 matches/12 FAIL; fresh reference 218 matches/11 FAIL
+shared-arithmetic	arith 74/74; arith-context 16/16; arith-dynamic 1/4, with all three assertion failures also present in the actual reference
+shared-test-predicates	builtin-bracket 51/52; sole additional D failure is case 13 reaching untranslated command dispatcher; reference 52/52
+shared-selection-boundary	full reachable shared-shell inventory and execution NOT_COMPLETE; the seven fixtures are bounded evidence
+remaining-failures	315 operation rows, refreshed from final transcripts; 59 lack a direct missing-operation diagnostic and need causal diagnosis
+exact-transcript-and-side-effects	NOT_ESTABLISHED globally; detailed actual transcripts are retained, but assertion counts do not assert exact stdout/stderr/status/side-effect parity
+transcript-archive	inherited-logs-arithmetic-2026-10-25.zip
+transcript-archive-sha256	9bc3aba0685e68cbc92f6d92b28e3ba9797580d3c928876f062a1f23e90b7506
+producer-program	FP 68c53d0daa64ec998701060abaaf225752ea1e93 scripts/qualify-icky-lua.grease; retained regression only, no managed dispatch
+producer-program-sha256	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+producer-result	PASS; actual pinned Icky C/Lua producer and embedded source semantics executed by exact final ysh-d; see il0-producer-arithmetic-2026-10-25.tsv
+runtime-controls-program	FP 68c53d0daa64ec998701060abaaf225752ea1e93 tests/modified-lua/negative-controls.grease
+runtime-controls-sha256	5beb210cb2c02cd1663660469181103b2bb576f4f417629c726f3321333c54b6
+runtime-controls-result	PASS all 13 actual negative/runtime controls on exact final executable; see il0-controls-arithmetic-2026-10-25.tsv
+dynamic-dependencies	readelf NEEDED: libgcc_s.so.1, libc.so.6, ld-linux-x86-64.so.2; no dynamic Python/C++ standard-library dependency
+native-audit	Link map and complete symbol table archived; no _ZNSt/_ZN3std/__gxx_personality/GLIBCXX_/CXXABI_ match; bounded evidence, not independent static/transitive closure acceptance
+benchmark-gate	NOT_ACCEPTED; prior unchanged Grease gate records legacy .. range failures in both reference and D, plus unavailable greasecpp; no gate fixture was changed or timing acceptance claimed
+interactive	NOT_QUALIFIED; main loop, prompts, completion/history, terminal state and stopped-job/PTY behavior remain incomplete
+independent-ai-ci	NOT_RUN; full native dependency-closure/package acceptance absent
+netbsd-amd64	NOT_RUN on this continuation; existing ICK/GDC compiler-runtime blocker and actual NetBSD execution requirement remain
+android-arm32-arm64	NOT_RUN; compilation and physical-device acceptance remain separate
+cat-food	NOT_SUBMITTED; no accepted greased closure
+promotion-and-release	NONE; no greased rename, default switch, immutable accepted artifact, consumer admission, PR reopening or merge
