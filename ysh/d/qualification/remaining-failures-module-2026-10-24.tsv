@@ -1,0 +1,366 @@
+fixture	case	candidate	reference	translation-area	first-diagnostic
+spec/ysh-assign.test.sh	17	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: readonly: No such file or directory
+spec/ysh-assign.test.sh	18	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-assign.test.sh	19	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-blocks.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'PWD'
+spec/ysh-blocks.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '~' at byte 53
+spec/ysh-blocks.test.sh	3	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'i'
+spec/ysh-blocks.test.sh	4	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: evalToDict
+spec/ysh-blocks.test.sh	7	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'PWD'
+spec/ysh-blocks.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-blocks.test.sh	13	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '{' at byte 30
+spec/ysh-bugs.test.sh	1	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected Dict key at byte 31
+spec/ysh-bugs.test.sh	5	FAIL	pass	CLI_OPTIONS	ysh-d: untranslated set flag: x
+spec/ysh-bugs.test.sh	6	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-bugs.test.sh	9	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-bugs.test.sh	10	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-bugs.test.sh	16	FAIL	FAIL	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 0
+spec/ysh-bugs.test.sh	18	FAIL	FAIL	CLI_OPTIONS	ysh-d: invalid write option beginning at byte 6
+spec/ysh-builtin-error.test.sh	16	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: assertion failed
+spec/ysh-builtin-error.test.sh	17	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: assertion failed
+spec/ysh-builtin-eval.test.sh	29	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Variable was already declared: d
+spec/ysh-builtin-help.test.sh	0	FAIL	pass	INTERACTIVE_HELP	ysh-d: help: No such file or directory
+spec/ysh-builtin-help.test.sh	1	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: help: No such file or directory
+spec/ysh-builtin-help.test.sh	2	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: help: No such file or directory
+spec/ysh-builtin-help.test.sh	3	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: help: No such file or directory
+spec/ysh-builtin-help.test.sh	4	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: unexpected command token '@' at byte 0
+spec/ysh-builtin-help.test.sh	5	FAIL	pass	INTERACTIVE_HELP	ysh-d: help: No such file or directory
+spec/ysh-builtin-meta.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'Bool'
+spec/ysh-builtin-meta.test.sh	1	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'List'
+spec/ysh-builtin-meta.test.sh	2	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'Bool'
+spec/ysh-builtin-meta.test.sh	3	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: runproc: No such file or directory
+spec/ysh-builtin-meta.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-builtin-meta.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: ASDL diagnostics for Stdin are not translated
+spec/ysh-builtin-meta.test.sh	7	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pp: invalid action gc
+spec/ysh-builtin-meta.test.sh	8	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pp: expected an action
+spec/ysh-builtin-meta.test.sh	9	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: ASDL diagnostics for BashArray are not translated
+spec/ysh-builtin-meta.test.sh	10	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '.' at byte 25
+spec/ysh-builtin-meta.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pp: expected an action
+spec/ysh-builtin-meta.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-module.test.sh	24	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-module.test.sh	27	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-module.test.sh	28	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-private.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: invoke: No such file or directory
+spec/ysh-builtin-private.test.sh	1	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: invoke: No such file or directory
+spec/ysh-builtin-private.test.sh	3	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 36
+spec/ysh-builtin-private.test.sh	4	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 36
+spec/ysh-builtin-private.test.sh	5	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: type: No such file or directory
+spec/ysh-builtin-private.test.sh	6	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: invoke: No such file or directory
+spec/ysh-builtin-private.test.sh	7	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: invoke: No such file or directory
+spec/ysh-builtin-private.test.sh	8	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-private.test.sh	9	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	10	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated or unknown builtin sleep
+spec/ysh-builtin-private.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated or unknown builtin sleep
+spec/ysh-builtin-private.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	14	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	15	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	16	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	17	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	18	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	19	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	20	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-builtin-private.test.sh	21	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtin-private.test.sh	22	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: compgen: No such file or directory
+spec/ysh-builtin-process.test.sh	0	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: fork: No such file or directory
+spec/ysh-builtin-process.test.sh	1	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: Undefined variable 'PWD'
+spec/ysh-builtin-process.test.sh	2	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: Undefined variable 'PWD'
+spec/ysh-builtin-shopt.test.sh	8	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: shopt: invalid flag --table
+spec/ysh-builtin-trap.test.sh	0	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: External commands do not accept typed arguments
+spec/ysh-builtin-trap.test.sh	1	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: External commands do not accept typed arguments
+spec/ysh-builtin-trap.test.sh	2	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: trap: No such file or directory
+spec/ysh-builtin-trap.test.sh	3	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: trap: No such file or directory
+spec/ysh-builtin-trap.test.sh	4	FAIL	pass	JOBS_SIGNALS_TRAPS	ysh-d: trap: No such file or directory
+spec/ysh-builtins.test.sh	5	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-builtins.test.sh	8	FAIL	pass	CLI_OPTIONS	ysh-d: invalid write option beginning at byte 23
+spec/ysh-builtins.test.sh	9	FAIL	pass	CLI_OPTIONS	ysh-d: invalid write option beginning at byte 23
+spec/ysh-builtins.test.sh	10	FAIL	pass	CLI_OPTIONS	ysh-d: invalid write option beginning at byte 56
+spec/ysh-builtins.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtins.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	16	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	18	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	19	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 23
+spec/ysh-builtins.test.sh	20	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 34
+spec/ysh-builtins.test.sh	21	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	22	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	23	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	27	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	28	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-builtins.test.sh	29	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Expected [[
+spec/ysh-builtins.test.sh	30	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtins.test.sh	31	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: unexpected ',' at byte 4
+spec/ysh-builtins.test.sh	32	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-builtins.test.sh	34	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-builtins.test.sh	35	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: push-registers: No such file or directory
+spec/ysh-builtins.test.sh	36	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: Unexpected words after block argument
+spec/ysh-builtins.test.sh	38	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: command: No such file or directory
+spec/ysh-bytecode.test.sh	0	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-closures.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-closures.test.sh	3	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-closures.test.sh	5	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: Unexpected words after block argument
+spec/ysh-closures.test.sh	6	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: Unexpected words after block argument
+spec/ysh-closures.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: use does not accept typed arguments
+spec/ysh-cmd-lang.test.sh	1	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-command-sub.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '@' at byte 13
+spec/ysh-command-sub.test.sh	1	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected '[' at byte 1
+spec/ysh-command-sub.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-command-sub.test.sh	3	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected '[' at byte 1
+spec/ysh-command-sub.test.sh	5	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '*' at byte 0
+spec/ysh-command-sub.test.sh	6	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-completion.test.sh	0	FAIL	pass	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	1	FAIL	pass	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	2	FAIL	pass	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	3	FAIL	pass	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	4	FAIL	pass	INTERACTIVE_HELP	ysh-d: D YSH command parser has not translated command beginning with '.' at byte 0
+spec/ysh-completion.test.sh	5	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: D YSH command parser has not translated command beginning with '.' at byte 0
+spec/ysh-completion.test.sh	6	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	7	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: complete: No such file or directory
+spec/ysh-completion.test.sh	8	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	9	FAIL	pass	INTERACTIVE_HELP	ysh-d: Not an Eggex character class: dev
+spec/ysh-completion.test.sh	10	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-completion.test.sh	11	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: compexport: No such file or directory
+spec/ysh-convert.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected Int or integer Str
+spec/ysh-convert.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-convert.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: dict() expects Dict or Obj
+spec/ysh-dev.test.sh	0	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: external command needs a program name
+spec/ysh-dev.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 11
+spec/ysh-dev.test.sh	2	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '(' at byte 0
+spec/ysh-dev.test.sh	3	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-env.test.sh	0	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-env.test.sh	1	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-env.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-env.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-env.test.sh	5	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: eval: No such file or directory
+spec/ysh-env.test.sh	7	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: export: No such file or directory
+spec/ysh-env.test.sh	8	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: export: No such file or directory
+spec/ysh-env.test.sh	9	FAIL	pass	CLI_OPTIONS	ysh-d: untranslated set flag: x
+spec/ysh-env.test.sh	10	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '~' at byte 17
+spec/ysh-env.test.sh	11	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: exec: No such file or directory
+spec/ysh-env.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-env.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: ENV must be a Dict
+spec/ysh-expr-bool.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-expr-compare.test.sh	9	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-expr-compare.test.sh	10	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected Int or integer Str
+spec/ysh-expr-compare.test.sh	14	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-expr-sub.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-expr-sub.test.sh	3	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-expr.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '~' at byte 33
+spec/ysh-expr.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-expr.test.sh	8	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '(' at byte 0
+spec/ysh-expr.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-expr.test.sh	12	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '(' at byte 0
+spec/ysh-expr.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: In expressions, remove $ and use c
+spec/ysh-expr.test.sh	14	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Illegal array word part (strict_array)
+spec/ysh-expr.test.sh	17	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-expr.test.sh	26	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected ']' at byte 3
+spec/ysh-for.test.sh	13	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: Unexpected words after block argument
+spec/ysh-func-builtin.test.sh	9	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-funcs-external.test.sh	0	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-funcs-external.test.sh	1	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: const cannot be inside proc or func; use var
+spec/ysh-funcs-external.test.sh	2	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-glob.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 17
+spec/ysh-int-float.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-interactive.test.sh	0	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: -
+spec/ysh-interactive.test.sh	1	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: -
+spec/ysh-introspect.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: getFrame
+spec/ysh-introspect.test.sh	1	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'bindFrame'
+spec/ysh-introspect.test.sh	2	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: getDebugStack
+spec/ysh-introspect.test.sh	3	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pipeline has an empty final stage
+spec/ysh-introspect.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pipeline has an empty final stage
+spec/ysh-introspect.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pipeline has an empty final stage
+spec/ysh-introspect.test.sh	6	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: getDebugStack
+spec/ysh-introspect.test.sh	7	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj proysh-introspect: FATAL: Got 14 total failures, but 0 are allowed
+spec/ysh-introspect.test.sh	8	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pipeline has an empty final stage
+spec/ysh-introspect.test.sh	9	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: pipeline has an empty final stage
+spec/ysh-introspect.test.sh	10	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'FUNCNAME'
+spec/ysh-introspect.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-introspect.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-introspect.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-json.test.sh	51	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '(' at byte 0
+spec/ysh-json.test.sh	55	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated declaration without initializer or flags
+spec/ysh-json.test.sh	60	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable '_reply'
+spec/ysh-json.test.sh	61	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-json.test.sh	62	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-keywords.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-list.test.sh	2	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: Unexpected words after block argument
+spec/ysh-list.test.sh	7	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '@' at byte 93
+spec/ysh-method-other.test.sh	0	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: unexpected command token '...' at byte 161
+spec/ysh-method-other.test.sh	1	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: value has no attribute 'sourceCode'
+spec/ysh-method-other.test.sh	2	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: value has no attribute 'sourceCode'
+spec/ysh-method-other.test.sh	3	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: value has no attribute 'sourceCode'
+spec/ysh-methods.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: startsWith() expects a Str argument
+spec/ysh-methods.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: startsWith() expects a Str argument
+spec/ysh-methods.test.sh	6	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: startsWith() expects a Str argument
+spec/ysh-methods.test.sh	14	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: trimStart() expects a Str pattern
+spec/ysh-methods.test.sh	15	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: trimStart() expects a Str pattern
+spec/ysh-methods.test.sh	19	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-methods.test.sh	20	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-methods.test.sh	21	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-methods.test.sh	22	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-methods.test.sh	25	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: split() expects a Str separator
+spec/ysh-methods.test.sh	27	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: split() expects a Str separator
+spec/ysh-methods.test.sh	28	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-methods.test.sh	29	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: split() expects a Str separator
+spec/ysh-multiline.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	2	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 34
+spec/ysh-multiline.test.sh	3	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	4	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 31
+spec/ysh-multiline.test.sh	5	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	6	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	7	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 0
+spec/ysh-multiline.test.sh	8	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 90
+spec/ysh-namespaces.test.sh	2	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'PWD'
+spec/ysh-namespaces.test.sh	3	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable '__defaults__'
+spec/ysh-namespaces.test.sh	6	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: compgen: No such file or directory
+spec/ysh-object.test.sh	12	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: type: No such file or directory
+spec/ysh-object.test.sh	14	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: keys() expects one Dict
+spec/ysh-options-assign.test.sh	4	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: hay: No such file or directory
+spec/ysh-options.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 65
+spec/ysh-options.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 44
+spec/ysh-options.test.sh	2	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 9
+spec/ysh-options.test.sh	3	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	4	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	6	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: command name cannot be a list splice
+spec/ysh-options.test.sh	13	FAIL	pass	CLI_OPTIONS	ysh-d: invalid set option: nullglob
+spec/ysh-options.test.sh	15	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '{' at byte 31
+spec/ysh-options.test.sh	16	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: External commands do not accept typed arguments
+spec/ysh-options.test.sh	19	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Empty if condition
+spec/ysh-options.test.sh	25	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Empty if condition
+spec/ysh-options.test.sh	26	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 10
+spec/ysh-options.test.sh	27	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 11
+spec/ysh-options.test.sh	28	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	29	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 52
+spec/ysh-options.test.sh	30	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'PIPESTATUS'
+spec/ysh-options.test.sh	31	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Undefined splice variable '_pipeline_status'
+spec/ysh-options.test.sh	32	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: i
+spec/ysh-options.test.sh	33	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	34	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: source: No such file or directory
+spec/ysh-options.test.sh	36	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-options.test.sh	38	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '(' at byte 32
+spec/ysh-place.test.sh	2	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-place.test.sh	3	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: value has no attribute 'key'
+spec/ysh-printing.test.sh	6	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-printing.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-printing.test.sh	8	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-printing.test.sh	9	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 49
+spec/ysh-printing.test.sh	10	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-printing.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-proc-meta.test.sh	0	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: value has no attribute 'docComment'
+spec/ysh-proc-meta.test.sh	1	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Undefined local variable '__sh_function__'
+spec/ysh-proc-meta.test.sh	7	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: evalToDict
+spec/ysh-proc.test.sh	11	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-proc.test.sh	23	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: unset: No such file or directory
+spec/ysh-proc.test.sh	28	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated declaration without initializer or flags
+spec/ysh-proc.test.sh	29	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: compgen: No such file or directory
+spec/ysh-proc.test.sh	30	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: type: No such file or directory
+spec/ysh-proc.test.sh	31	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: type: No such file or directory
+spec/ysh-prompt.test.sh	0	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-prompt.test.sh	1	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: Attribute not found on Obj prototype: promptVal
+spec/ysh-prompt.test.sh	2	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: Attribute not found on Obj prototype: promptVal
+spec/ysh-prompt.test.sh	3	FAIL	pass	INTERACTIVE_HELP	ysh-d: Attribute not found on Obj prototype: promptVal
+spec/ysh-prompt.test.sh	4	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-prompt.test.sh	5	FAIL	FAIL	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-prompt.test.sh	6	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-prompt.test.sh	7	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-prompt.test.sh	8	FAIL	pass	INTERACTIVE_HELP	ysh-d: invalid shell flag: i
+spec/ysh-purity.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'eval'
+spec/ysh-purity.test.sh	1	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'evalExpr'
+spec/ysh-purity.test.sh	2	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-purity.test.sh	3	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'eval'
+spec/ysh-purity.test.sh	4	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: hay: No such file or directory
+spec/ysh-purity.test.sh	5	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'eval'
+spec/ysh-purity.test.sh	6	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-purity.test.sh	7	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '(' at byte 0
+spec/ysh-purity.test.sh	8	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '&' at byte 12
+spec/ysh-purity.test.sh	9	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: hay: No such file or directory
+spec/ysh-purity.test.sh	10	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated or unknown builtin true
+spec/ysh-purity.test.sh	11	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'eval'
+spec/ysh-purity.test.sh	12	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: log: No such file or directory
+spec/ysh-purity.test.sh	13	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: getFrame
+spec/ysh-purity.test.sh	14	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-purity.test.sh	15	FAIL	FAIL	LEXER_COMMAND_GRAMMAR	ysh-d: untranslated command word '*' at byte 8
+spec/ysh-purity.test.sh	16	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'RANDOM'
+spec/ysh-purity.test.sh	17	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: trap: No such file or directory
+spec/ysh-regex-bytes-chars.test.sh	11	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: export: No such file or directory
+spec/ysh-regex-bytes-chars.test.sh	14	FAIL	FAIL	LEXER_COMMAND_GRAMMAR	ysh-d: invalid Unicode scalar in string literal
+spec/ysh-scope.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: read: unexpected flag
+spec/ysh-scope.test.sh	3	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-scope.test.sh	4	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'a'
+spec/ysh-scope.test.sh	5	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated declaration without initializer or flags
+spec/ysh-scope.test.sh	6	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Untranslated declaration without initializer or flags
+spec/ysh-scope.test.sh	7	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: unexpected command token '(' at byte 3
+spec/ysh-scope.test.sh	8	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: export: No such file or directory
+spec/ysh-scope.test.sh	14	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: unset: No such file or directory
+spec/ysh-scope.test.sh	15	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: unset: No such file or directory
+spec/ysh-scope.test.sh	16	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-scope.test.sh	18	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-scope.test.sh	20	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'shvarGet'
+spec/ysh-scope.test.sh	22	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-scope.test.sh	24	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'shvarGet'
+spec/ysh-slice-range.test.sh	10	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Range for loop accepts one variable
+spec/ysh-slice-range.test.sh	12	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: qtt: No such file or directory
+spec/ysh-special-vars.test.sh	0	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: i
+spec/ysh-stdlib-args.test.sh	0	FAIL	FAIL	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'Bool'
+spec/ysh-stdlib.test.sh	0	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: command: No such file or directory
+spec/ysh-stdlib.test.sh	1	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'LIB_OSH'
+spec/ysh-TODO-deprecate.test.sh	1	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-TODO-deprecate.test.sh	2	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable '_match'
+spec/ysh-TODO-deprecate.test.sh	4	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-TODO-deprecate.test.sh	9	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Attribute not found on Obj prototype: evalInFrame
+spec/ysh-TODO-deprecate.test.sh	12	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-tuple.test.sh	0	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: expected Int, Float, or numeric Str, got list
+spec/ysh-tuple.test.sh	2	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-unicode.test.sh	3	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: invalid Unicode scalar in string literal
+spec/ysh-unicode.test.sh	4	FAIL	FAIL	LEXER_COMMAND_GRAMMAR	ysh-d: invalid Unicode scalar in string literal
+spec/ysh-unicode.test.sh	5	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: invalid Unicode scalar in string literal
+spec/ysh-usage.test.sh	0	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-usage.test.sh	1	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	2	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	3	FAIL	FAIL	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	4	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	5	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	6	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	7	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	8	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	9	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: D YSH command parser has not translated command beginning with '...' at byte 109
+spec/ysh-usage.test.sh	10	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-usage.test.sh	11	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-usage.test.sh	12	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-usage.test.sh	13	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: shell option flag requires an option name
+spec/ysh-usage.test.sh	14	FAIL	pass	CLI_OPTIONS	ysh-d: invalid shell flag: -
+spec/ysh-user-feedback.test.sh	3	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: readarray: No such file or directory
+spec/ysh-user-feedback.test.sh	4	FAIL	pass	WORDS_STRINGS_COLLECTIONS	ysh-d: untranslated parameter operation
+spec/ysh-user-feedback.test.sh	8	FAIL	FAIL	WORDS_STRINGS_COLLECTIONS	ysh-d: Expected proc parameter name
+spec/ysh-user-feedback.test.sh	9	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Variable was already declared: name
+spec/ysh-user-feedback.test.sh	10	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: setvar could not find matching var x (OILS-ERR-10)
+spec/ysh-var-sub.test.sh	0	FAIL	FAIL	WORDS_STRINGS_COLLECTIONS	ysh-d: untranslated parameter operation
+spec/ysh-var-sub.test.sh	1	FAIL	FAIL	WORDS_STRINGS_COLLECTIONS	ysh-d: untranslated parameter operation
+spec/ysh-var-sub.test.sh	2	FAIL	FAIL	WORDS_STRINGS_COLLECTIONS	ysh-d: unsupported braced parameter
+spec/ysh-var-sub.test.sh	3	FAIL	FAIL	SEMANTIC_DIAGNOSIS_PENDING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-with-sh.test.sh	8	FAIL	pass	SEMANTIC_DIAGNOSIS_PENDING	ysh-d: Expected a shell array name
+spec/ysh-word-eval.test.sh	0	FAIL	pass	LEXER_COMMAND_GRAMMAR	ysh-d: expected expression at byte 0, got '%'
+spec/ysh-word-eval.test.sh	9	FAIL	pass	BUILTINS_VALUES_REFLECTION	ysh-d: Undefined variable 'List'
+spec/ysh-xtrace.test.sh	0	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	1	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	2	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	3	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	4	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	5	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	6	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	7	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	8	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	9	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	10	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	11	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	12	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	13	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	14	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	15	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	16	FAIL	pass	COMMAND_TRACING	stdout/status mismatch; underlying operation needs diagnosis
+spec/ysh-xtrace.test.sh	17	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	18	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x
+spec/ysh-xtrace.test.sh	19	FAIL	pass	COMMAND_TRACING	ysh-d: untranslated set flag: x

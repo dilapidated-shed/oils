@@ -1,0 +1,14 @@
+case	status	evidence
+stock_same_version_semantics	PASS	stock-probe.stderr
+stale_fork_source	PASS	stale-source/receipt.tsv
+stock_earlier_in_path	PASS	path-shadow/receipt.tsv
+wrong_linked_runtime_object	PASS	wrong-linked.stderr
+older_symbolic_fork	PASS	stale-fork-rejection/receipt.tsv
+substituted_ordinary_lua_source	PASS	substitution/receipt.tsv
+index_hidden_source_substitution	PASS	hidden-source-rejection/receipt.tsv
+preexisting_pass_receipt	PASS	preexisting.stderr
+missing_producer_dependency	PASS	missing-dependency/receipt.tsv
+missing_ick_frontend	PASS	missing-frontend/receipt.tsv
+missing_ick_link_driver	PASS	missing-link-driver/receipt.tsv
+stock_compiler_binary	PASS	wrong-compiler/receipt.tsv
+approved_source_and_producer_relocation	PASS	relocation/receipt.tsv

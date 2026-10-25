@@ -158,7 +158,83 @@ Current state:
 
 Only the final item closes the whole-hog translation.
 
-## Current host checkpoint: directory stack and shell bindings, 2026-10-21
+## Current host checkpoint: native modules and producer regression, 2026-10-24
+
+The whole translation remains **incomplete**. The unchanged inherited harness
+reports **754 assertion matches and 365 failures across 1,119 cases**, with
+no timeouts. A fresh build of the starting branch reproduced the preceding
+714/405 checkpoint exactly. This continuation adds **40 matches and loses no
+previous match**. Fixtures, timeouts, allowances and the original harness were
+not changed.
+
+The native module path translates `builtin/meta_oils.py`,
+`builtin/module_ysh.py` and `core/state.py`'s module/source contexts. It provides
+`use`, canonical-path caching, cache-before-evaluation for circular imports,
+isolated module globals, provided-value snapshots, picked names, module and
+nested object invocation, and retained defining frames for procs/functions.
+`source` now handles its own arguments, PATH and embedded-resource lookup,
+`is-main`, `source-guard` and the restoring `$_this_dir` stack. The current
+standard-library files are embedded as source bytes with D import expressions
+and `-Jstdlib`; their evaluation remains in D. This is not qualification of
+every function in those libraries.
+
+The value model now distinguishes `BuiltinProc` from expression functions.
+The same dispatch forwards typed/named/block arguments to module members.
+`__builtins__`, mutable-value `vm.id()`, `setVar()` and own-property `get()` on
+objects follow their reference implementations. New tests exercise actual
+files, circular imports, cached identity, closure/global isolation, error
+unwinding, export snapshots and nonexecuting parsing.
+
+The module fixture matches **26/29**, eval **30/31**, source **3/3**, proc-meta
+**6/9**, namespaces **4/7** and special variables **4/5**. Module cases 24, 27
+and 28 produce the same TODO stdout and failures on the actual reference.
+They remain FAIL in the ledger. A paired run of the original harness against
+the Python reference records 1,042 matches and 77 failures; these are assertion
+outcomes, not permission to suppress failures or a proof of full transcript
+equivalence. Four cases match assertions on D while failing them on the
+reference, and those differences remain visible as well.
+
+The actual retained FP producer and all **13 runtime/source-substitution
+controls** were rerun. That exercise exposed a later lexer regression:
+command words starting with `0b` were entering expression-number validation.
+The lexer now preserves numeric-looking command fragments while retaining
+numeric validation in expressions and descriptor-prefix tokens. The unchanged
+control script, real pinned ICK compiler, modified Lua interpreter, embedded
+runtime and same-version stock Lua execute successfully, including relocation
+with spaces. Parse-only accepts both original producer/control programs
+without running them.
+
+Source commit `87ac9ca2cf1a7ebb11f631b848c22500c4c5a0ff`, D source tree
+`e904eaeac83bbdc101a265db8016525e6344f7af`, compiles with the unchanged pinned
+Icky DMD and matching druntime/Phobos. The executable SHA-256 is
+`89d9a926fb197aa3da93e3bd6235cbcc057031a0b0ce257f8bf99ce8881e73c1`.
+A clean detached source checkout rebuilt identical bytes and passed the same
+29 CLI/module suites. The 28 library suites and full existing owner smoke
+also pass. This demonstrates two source builds on one host, not an independent
+second-host/toolchain reproducibility verdict.
+
+See the [surface ledger](qualification/translation-ledger.tsv),
+[host receipt](qualification/inherited-host-module-2026-10-24.tsv),
+[suite results](qualification/inherited-suites-module-2026-10-24.tsv),
+[all case results](qualification/inherited-cases-module-2026-10-24.tsv),
+[remaining failure diagnostics](qualification/remaining-failures-module-2026-10-24.tsv),
+[producer receipt](qualification/il0-producer-module-2026-10-24.tsv),
+[13 control results](qualification/il0-controls-module-2026-10-24.tsv) and
+[original harness transcripts](qualification/inherited-logs-module-2026-10-24.zip).
+Diagnostic grouping is triage; unresolved causes remain marked for diagnosis.
+The surface inventory itself remains incomplete until the whole reachable
+reference call graph has been accounted for.
+
+Remaining language/runtime work includes shell-word expansion and grammar,
+CLI/options, tracing, missing builtins/type/reflection operations, pure eval,
+jobs/process groups/signals/traps, interactive startup/history/completion and
+the full shared OSH fixture selection. Dynamic dependencies remain libc,
+libgcc_s and the loader; independent static/transitive AI-CI acceptance is
+NOT_RUN. NetBSD/Android/physical execution, managed admission, completed
+`greased` publication, default selection and merge are not claimed. The closed
+retained integration PR remains closed on this partial evidence.
+
+## Previous host checkpoint: directory stack and shell bindings, 2026-10-21
 
 The inherited diagnostic now reports **714 assertion matches and 405 failures
 across 1,119 cases**. It gains eight matches over

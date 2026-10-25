@@ -4,9 +4,9 @@ This directory is an independent D translation of YSH. The translation target is
 
 The translation remains incomplete. The latest host qualification ran all 1,119
 cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-714 assertion matches, 405 failures. The unchanged original harness, fixture
+754 assertion matches, 365 failures. The unchanged original harness, fixture
 hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-directory-2026-10-21.tsv).
+[the qualification ledger](qualification/inherited-host-module-2026-10-24.tsv).
 
 ## Source map
 
@@ -151,6 +151,13 @@ cells, and scoped blocks unwind them across returns and errors.
 Untranslated syntax continues to fail closed; each new feature should arrive with its corresponding YSH behavior tests rather than guessed scaffolding.
 
 ## Build and run
+
+The current native module loader embeds the original `stdlib/` resources as
+text through D import expressions. Builds require `-Jstdlib` in addition to
+the source and pinned runtime import paths. The workflow includes this flag
+and treats changes under `stdlib/` as material build inputs. The language
+implementation remains incomplete; the module fixture matches 26/29 and the
+retained Lua producer and all thirteen controls pass on this host checkpoint.
 
 The acceptance compiler is the Mars/Icky-DMD line in `dilapidated-shed/ick`, with its matching pinned druntime and Phobos. The workflow in `.github/workflows/ysh-d.yml` reconstructs that toolchain from exact commits, compiles all translated modules directly with Icky DMD, runs their unittests, and then runs the CLI smoke cases.
 

@@ -1,0 +1,74 @@
+field	value
+qualification	BLOCKED; whole-language completion is not established
+client-date	2026-10-24 America/Detroit
+host-run-utc	2026-10-25
+repository	dilapidated-shed/oils
+branch	d/ysh-first-slice
+starting-head	d12657c78194282491884e58f8aea040c9a2fff3
+tested-source-commit	87ac9ca2cf1a7ebb11f631b848c22500c4c5a0ff
+initial-local-validation-commit	e2e8bb845d3ed643bcc16da4b148c1c7db8fb7df; identical repository tree to tested-source-commit
+source-repository-tree	b0f6bc105657e90bfbece22565b889758b3c5ebb
+d-source-git-tree	e904eaeac83bbdc101a265db8016525e6344f7af
+reference-base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+icky-dmd-source	isomorphisms/ick ccf61ab82659b9eadee2d05b489fb195956cef88
+icky-dmd-version	DMD64 D Compiler v2.113.0
+icky-dmd-sha256	89ced0c720844810b3bcb3bcbf62a0ebff064de4b992a825fa2a2d3784b1843b
+druntime-source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos-source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos-archive-sha256	8be33121263f8f27a4189af33c5ea1aea18080aa0f96b275c57cd64b0822180f
+bootstrap	LDC 1.36.0 extracted from official Ubuntu packages under isolated host prefix; bootstrap only
+host	Ubuntu 24.04.3 Linux x86_64 disposable container
+binary-name	ysh-d; incomplete, not greased
+binary-sha256	89d9a926fb197aa3da93e3bd6235cbcc057031a0b0ce257f8bf99ce8881e73c1
+clean-rebuild	PASS; clean detached worktree at tested-source-commit; byte-identical binary; same compiler/runtime on this host
+reproducibility-boundary	Two source builds on one host; not a second independent toolchain reconstruction or multi-host reproducibility verdict
+cli-module-unittests	PASS 29 modules, including new module/cache/unwind and numeric-word regressions
+library-unittests	PASS 28 modules
+clean-rebuild-cli-unittests	PASS 29 modules
+owner-workflow-smoke	PASS unchanged owner run body, with RUNNER_TEMP supplied; host execution, not a hosted-CI claim
+parse-only	PASS --ast-format none -n on both unchanged FP producer/control programs; tests also reject nested invalid expressions without execution
+inherited-harness	unchanged test/sh_spec.py; test-only source-built Python 2.7.13
+inherited-harness-sha256	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a
+spec-lib-sha256	619f8cf2a88b5f4e1ed337a7a08f46e474b966697d636faebf9712545cf7f2ce
+inherited-timeout	Unchanged three seconds per case; serial fixture execution
+inherited-environment	Original spec/bin; LC_ALL=C.UTF-8; REPO_ROOT and LIB_YSH; separate TMP roots; exact mode binary in SH
+inherited-modes	our_shell ysh selects ysh-d; default OSH selects osh-d symlink to identical bytes
+inherited-fixtures	80 YSH fixtures plus Grease alias fixture; original fixtures/harness/allowances unchanged
+baseline-reproduction	714 matches, 405 failures, zero timeouts at starting-head
+candidate-final	754 matches, 365 failures, zero timeouts across 1119 cases
+baseline-comparison	40 additional matches; zero prior matches lost
+paired-reference-run	Same original harness and fixture modes; actual Python reference: 1042 matches, 77 failures
+paired-outcomes	750 both match; 292 D failure/reference match; 73 both fail; 4 D match/reference failure
+paired-boundary	These are original harness assertion outcomes, not proof of exact transcript or side-effect equality in every case
+module-fixture	26/29 matches; cases 24,27,28 fail with the same TODO stdout on the actual reference; none suppressed
+eval-fixture	30/31 matches
+source-fixture	3/3 matches
+namespace-fixture	4/7 matches
+special-variable-fixture	4/5 matches
+proc-meta-fixture	6/9 matches
+remaining-failures	All 365 retained in remaining-failures-module-2026-10-24.tsv; generic diagnostic grouping is triage, not completed causal diagnosis
+unexplained-compatibility-zero	FAIL; remaining implementation/diagnosis work is explicit
+reference-oracle	Owning build/py.sh minimal succeeded with separate Python/readline headers; five extension suites pass; oracle is not in D runtime closure
+fp-producer-source	68c53d0daa64ec998701060abaaf225752ea1e93
+fp-producer-qualifier-sha256	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+lua-source	87306483cec50f8c750a22dda1d0742246fad756
+stock-lua-source	0b29f408433e92953cc72b1d3e06c7ac8139e439
+lua-producer-ick-source	515c0f29fe6e2e96e10495fbaf25da93532e7722
+lua-producer-ick-artifact	isomorphisms/fastchat run 37589849631 artifact 11468256648
+lua-producer-ick-zip-sha256	03a86b94e862b1d726ffc369407168145485a055322fda46370a99ccde2e0475
+lua-producer	PASS actual interpreter and embedded literal-source semantics; exact embedded bytes
+lua-runtime-controls	PASS 13/13, including real stock Lua, linked-object/source/receipt substitution and relocation with spaces
+producer-regression-repaired	Expression numeric validation no longer runs on numeric-looking command-word fragments; negative-control script previously rejected a literal 0b-prefixed commit ID
+dynamic-needed	libgcc_s.so.1 libc.so.6 ld-linux-x86-64.so.2; no Python or C++ dynamic runtime
+source-execution-path	D interpreter plus embedded original stdlib text and declared libc/POSIX/ImportC/D-runtime boundaries; no reference-shell evaluation fallback
+independent-static-transitive-AICI	NOT_RUN; dynamic/symbol/source inspection is not independent static/transitive acceptance
+shared-specs	NOT_RUN; required before whole-language qualification
+interactive-jobs-traps	UNTRANSLATED; unchanged inherited failures retained
+netbsd	NOT_RUN; isomorphisms/ick PR #42, Qualify hosted GDC on NetBSD amd64, https://github.com/isomorphisms/ick/pull/42 at 22b41425cb478754346637db87ebd42e43b42863; historical libgcc complex-lowering failure, not a fresh target execution
+android-arm32	NOT_RUN
+android-arm64	NOT_RUN
+physical-device-acceptance	NOT_RUN
+Cat-Food-admission	NOT_RUN
+managed-FP-admission	NOT_RUN; diagnostic source work is not a managed job/package receipt
+integration-PR	Closed retained PR not reopened on this partial evidence
+release-default-switch-merge	NOT_RUN

@@ -1,0 +1,35 @@
+surface	reference-owner	d-owner	state	remaining-boundary
+entry-and-startup	core/shell.py;bin/oils_for_unix.py	app.d;state.d	PARTIAL	Full CLI flags, rc files, startup configuration and interactive entry
+value-model	core/value.asdl;core/runtime.asdl	value.d;state.d	PARTIAL	Full ASDL variants, type objects, frames and reflection
+identifiers-and-generated-tables	frontend/id_kind_def.py;frontend/option_def.py	lexer.d;option_data.d	PARTIAL	Option metadata is generated; remaining IDs and declarations are not fully generated or translated
+expression-lexing	frontend/lexer_def.py	lexer.d	PARTIAL	Full reference lexical modes and source-location parity
+expression-grammar	ysh/grammar.pgen2;ysh/expr_parse.py;ysh/expr_to_ast.py	expr.d;lexer.d	PARTIAL	Remaining grammar, annotations, nested mode transitions and diagnostics
+command-grammar	osh/cmd_parse.py;frontend/syntax.asdl	program.d	PARTIAL	Subshell/group syntax, multiline paths, background commands and unsupported grammar
+word-grammar	osh/word_parse.py;osh/word_eval.py	program.d;lexer.d	PARTIAL	General quote-sensitive expansion, brace/tilde/glob/split paths and substitutions
+expression-evaluation	ysh/expr_eval.py;ysh/val_ops.py	expr.d;value.d	PARTIAL	Remaining value/type/collection semantics and unsupported operations
+variables-and-scopes	core/state.py;osh/cmd_eval.py	state.d;command.d;eval_scope.d;var_check.d	PARTIAL	Remaining shell variables, declaration flags, frame reflection and mutation rules
+functions-procs-closures	ysh/func_proc.py	func_proc.d;expr.d;program.d	PARTIAL	Remaining signature/binding/deferred evaluation and introspection semantics
+objects-and-methods	builtin/method_*.py;ysh/val_ops.py	value.d;expr.d	PARTIAL	Full type/prototype/builtin/method surface; module tests are bounded evidence
+regex-and-eggex	ysh/regex_translate.py;builtin/func_eggex.py	eggex.d;pattern.d;expr.d	PARTIAL	Full byte/character and remaining regex behavior; current full regex fixtures pass
+modules	builtin/meta_oils.py;builtin/module_ysh.py;core/state.py	module_ysh.d;resources.d;program.d;state.d	PARTIAL	Native use/cache/export/invocation implemented; complete namespace/reflection and all reachable module code still need qualification
+source-and-eval	builtin/meta_oils.py;builtin/func_reflect.py	program.d;eval_scope.d;expr.d	PARTIAL	Source paths/arguments/is-main/this-dir translated; pure eval and full reflected operations remain
+standard-library-resources	stdlib/	resources.d;D import expressions	TRANSLATED_BOUNDARY	All current stdlib files embedded as source bytes with -Jstdlib; language execution stays in D; not every library function is qualified
+options	core/state.py;frontend/option_def.py	options.d;option_data.d;program.d	PARTIAL	Storing reference option metadata does not implement all consumers or set flags
+external-execution	core/process.py;core/executor.py	process.d	PARTIAL	POSIX fork/exec/wait and foreground paths; full job lifecycle and signal/trap integration remain
+pipelines-and-capture	core/process.py;core/executor.py	process.d	PARTIAL	Concurrent foreground streams/capture/isolation exist; background/job-control and interruption parity remain
+redirections-and-descriptors	core/process.py;osh/cmd_eval.py	program.d;process.d;io_stream.d	PARTIAL	Remaining descriptor ranges/ownership, error cases and interrupt/trap handling
+jobs-process-groups-terminal	core/process.py;core/executor.py	process.d	UNTRANSLATED	Background job table, wait/fork builtins, process groups and terminal job control
+signals-and-traps	builtin/trap_osh.py;core/signal_safe.py	process.d;program.d	UNTRANSLATED	Trap builtin, pending-trap execution and reference signal behavior
+directory-and-environment	builtin/dirs_osh.py;core/state.py	dirs.d;state.d;program.d	PARTIAL	Native stacks and temporary bindings exist; remaining shell environment/export facilities remain
+shell-builtins	builtin/	program.d;io_ysh.d;dirs.d	PARTIAL	Missing command/type/invoke/runproc/export/unset/help/completion and other inherited operations
+command-tracing	core/dev.py;osh/cmd_eval.py	program.d	UNTRANSLATED	set -x, PS4 expansion and trace context/formatting
+json-and-j8	data_lang/j8.py;builtin/json_ysh.py	data_decode.d;io_ysh.d	PARTIAL	Core codecs translated; full variant/array/error/display compatibility remains
+display-and-errors	display/;core/error.py	pretty.d;value.d;app.d	PARTIAL	Full reference diagnostic/source-location/terminal styling and heap displays
+interactive-input-history-completion	core/main_loop.py;core/completion.py;core/comp_ui.py;core/sh_init.py	app.d	UNTRANSLATED	Interactive loop, prompts, history, completion, terminal state and rc files
+os-library-abi	POSIX/libc;druntime/Phobos	process.d;libc_patterns.c;libc_text.c;runtime pins	EXPLICIT_BOUNDARY	Pinned D runtime, libc/POSIX and ImportC declarations; independent static/transitive audit is NOT_RUN
+inherited-ysh-fixtures	spec/ysh-*.test.sh;spec/grease-alias.test.sh	original test/sh_spec.py	FAIL	754 matches, 365 failures, no added allowances; 40 gains, zero lost baseline matches
+shared-osh-fixtures	test/spec-runner.sh;spec/	original harness	NOT_RUN	Full shared fixture selection and execution still required
+producer-regression	FP 68c53d0 scripts/qualify-icky-lua.grease and negative-controls.grease	actual ysh-d executable	PASS_BOUNDED	Actual ICK/Lua builds and all 13 controls pass; no whole-shell or managed acceptance follows
+independent-native-acceptance	isomorphisms/ai-ci	independent package verifier	NOT_RUN	No independent static/transitive C++ exclusion or managed package verdict
+delivery-and-admission	Cat Food;Flexible Pipes	qualified package closure	NOT_RUN	No greased promotion, default switch, consumer admission, release, merge or target acceptance
+inventory-completeness	whole reachable YSH call graph	this ledger and PORTING.md	INCOMPLETE	This is the current surface ledger, not proof that every reachable reference function has been inventoried or translated
