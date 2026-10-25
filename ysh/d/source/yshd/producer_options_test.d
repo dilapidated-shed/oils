@@ -45,6 +45,8 @@ unittest {
         auto output = File.tmpfile();
         auto errors = File.tmpfile();
         auto mem = new Memory(output, errors);
+        // The producer contract uses YSH $[expr], including len(ARGV).
+        mem.options.set("parse_ysh_expr_sub", true);
         int status;
         try { executeProgram(item.source, mem); status = mem.lastStatus; }
         catch (ShellExit stopped) { status = stopped.status; }

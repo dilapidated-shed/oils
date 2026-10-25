@@ -9,6 +9,8 @@ import std.stdio : File;
 import std.string : indexOf, join, split, strip, startsWith;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
+import yshd.arith : ShellArithmetic, shellArithmeticEnd, parseShellArithmetic,
+    parseShellArithmeticFor, parseShellArithmeticSlice, evaluateShellArithmetic, evaluateShellIndex;
 import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
     validateAssignmentTarget, parseTypedArguments, expressionAtomEnd;
 import yshd.func_proc : FunctionParameter, FunctionReturn, ProcReturn, YshFunction, YshProc, ProcSignature;
@@ -63,6 +65,7 @@ private struct ForCommand {
     bool expressionIterable;
     bool implicitArguments;
     bool legacySyntax;
+    ShellArithmetic arithmeticInit, arithmeticCondition, arithmeticStep;
 }
 
 private struct WhileCommand {
@@ -167,10 +170,8 @@ private class ShellCondition {
             auto text = right.text();
             if (operation == "<") return left < text;
             if (operation == ">") return left > text;
-            import std.bigint : BigInt;
-            BigInt a, b;
-            try { a = BigInt(left); b = BigInt(text); }
-            catch (Exception error) { throw new UsageError("Shell integer condition expected integer operands"); }
+            auto a = evaluateShellArithmetic(left, mem);
+            auto b = evaluateShellArithmetic(text, mem);
             switch (operation) {
             case "-eq": return a == b;
             case "-ne": return a != b;
@@ -220,6 +221,27 @@ private class CommandScanner {
     HereDocument[size_t] documents() { return lexer.hereDocuments; }
     Token next() {
         auto token = lexer.next();
+        if (token.kind == TokenKind.dollar && token.offset + 2 < source.length &&
+                source[token.offset + 1 .. token.offset + 3] == "((") {
+            if (options !is null && options.get("no_parse_sh_arith"))
+                throw new ParseError("Shell arithmetic substitutions are disabled (no_parse_sh_arith)");
+            auto end = shellArithmeticEnd(source, token.offset + 1);
+            parseShellArithmetic(source[token.offset + 3 .. end - 2], options);
+            lexer = new Lexer(source, true, end, true, options);
+            commandStart = false;
+            return Token(TokenKind.name, source[token.offset .. end], token.offset);
+        }
+        // Shell arithmetic is one command. Its operators must not be exposed
+        // to the enclosing pipeline/and-or scanner.
+        if (commandStart && token.kind == TokenKind.leftParen &&
+                token.offset + 1 < source.length && source[token.offset + 1] == '(') {
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            parser.parseSubshell(null);
+            auto end = token.offset + parser.current_.offset;
+            lexer = new Lexer(source, true, end, true, options);
+            commandStart = false;
+            return Token(TokenKind.name, source[token.offset .. end], token.offset);
+        }
         if (commandStart && token.kind == TokenKind.name) {
             auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
             ShellFunctionDefinition definition;
@@ -974,8 +996,16 @@ class ProgramParser {
     }
 
     private void parseSubshell(Memory mem) {
-        if (lexer_.peek().kind == TokenKind.leftParen && lexer_.peek().offset == current_.offset + 1)
-            throw new ParseError("shell arithmetic commands are untranslated");
+        if (current_.offset + 1 < source_.length && source_[current_.offset + 1] == '(') {
+            if (parserOptions_ !is null && parserOptions_.get("no_parse_dparen"))
+                throw new ParseError("Shell arithmetic commands are disabled (no_parse_dparen)");
+            auto start = current_.offset;
+            auto end = shellArithmeticEnd(source_, start);
+            auto arithmetic = parseShellArithmetic(source_[start + 2 .. end - 2], parserOptions_);
+            moveTo(end);
+            if (!syntaxOnly_) mem.lastStatus = arithmetic.evaluate(mem) != 0 ? 0 : 1;
+            return;
+        }
         if (parserOptions_ !is null && parserOptions_.get("no_parse_osh"))
             throw new ParseError("Use the 'forkwait' builtin instead of a subshell");
         size_t end;
@@ -1783,6 +1813,7 @@ class ProgramParser {
         if (offset < source_.length && source_[offset] == '[') {
             auto close = substitutionClose(source_, offset, '[', ']');
             indexSource = source_[offset + 1 .. close];
+            if (!indexSource.strip().length) throw new ParseError("Shell array index cannot be empty");
             indexed = true;
             offset = close + 1;
         }
@@ -1833,10 +1864,13 @@ class ProgramParser {
                     if (isAssociative) {
                         auto keyParser = new ProgramParser(keySource, syntaxOnly_, returnMode_, true, parserOptions_);
                         key = keyParser.readScalarWord(mem).text();
-                    } else if (!syntaxOnly_) {
-                        try { nextIndex = to!long(keySource); }
-                        catch (Exception error) { throw new FatalRuntimeError("Untranslated shell arithmetic index"); }
-                        if (nextIndex < 0) throw new FatalRuntimeError("Invalid shell array index");
+                    } else {
+                        auto arithmetic = parseShellArithmetic(keySource, parserOptions_);
+                        if (!syntaxOnly_) {
+                            import std.bigint : toDecimalString;
+                            nextIndex = to!long(toDecimalString(arithmetic.evaluate(mem)));
+                            if (nextIndex < 0) throw new FatalRuntimeError("Invalid shell array index");
+                        }
                     }
                 } else if (isAssociative) throw new ParseError("Associative literal requires [key]=value entries");
                 if (!isAssociative) key = to!string(nextIndex++);
@@ -1848,6 +1882,7 @@ class ProgramParser {
             if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after array literal");
             if (!syntaxOnly_) assignRetained(Value.shellArray(elements, isAssociative));
         } else {
+            if (indexed && syntaxOnly_) parseShellArithmetic(indexSource, parserOptions_);
             string value;
             if (offset < source_.length && !isCommandWhitespace(source_[offset]) && !isEndStatement(current_.kind))
                 value = readScalarWord(mem).text();
@@ -1860,12 +1895,12 @@ class ProgramParser {
                         elements.set("0", cell.value);
                     string key = "0";
                     if (indexed) {
-                        auto keyParser = new ProgramParser(indexSource, false, returnMode_, true, parserOptions_);
-                        key = keyParser.readScalarWord(mem).text();
-                        if (!isAssociative) {
-                            try { key = to!string(to!long(key)); }
-                            catch (Exception error) { throw new FatalRuntimeError("Untranslated shell arithmetic index"); }
-                        }
+                        if (isAssociative) {
+                            auto keyParser = new ProgramParser(indexSource, false, returnMode_, true, parserOptions_);
+                            key = keyParser.readScalarWord(mem).text();
+                        } else key = evaluateShellIndex(indexSource, Value.shellArray(elements), mem);
+                        if (!isAssociative && key.length && key[0] == '-')
+                            throw new FatalRuntimeError("Invalid negative shell array index");
                     }
                     if (append) if (auto prior = elements.find(key)) value = prior.stringValue ~ value;
                     elements.set(key, Value.str(value));
@@ -2886,7 +2921,8 @@ class ProgramParser {
         }
         advance();
         auto command = new IfCommand();
-        command.expressionCondition = current_.kind == TokenKind.leftParen;
+        command.expressionCondition = current_.kind == TokenKind.leftParen &&
+            !(current_.offset + 1 < source_.length && source_[current_.offset + 1] == '(');
         if (command.expressionCondition) {
             auto conditionStart = current_.offset;
             command.conditionSource = collectParenthesizedExpression();
@@ -3130,7 +3166,8 @@ class ProgramParser {
         command.negated = current_.text == "until";
         advance();
         bool legacy;
-        command.expressionCondition = current_.kind == TokenKind.leftParen;
+        command.expressionCondition = current_.kind == TokenKind.leftParen &&
+            !(current_.offset + 1 < source_.length && source_[current_.offset + 1] == '(');
         if (command.expressionCondition) {
             auto start = current_.offset;
             command.conditionSource = collectParenthesizedExpression();
@@ -3193,6 +3230,29 @@ class ProgramParser {
     private ForCommand parseForCommand() {
         ForCommand command;
         advance(); // for
+        if (current_.kind == TokenKind.leftParen && current_.offset + 1 < source_.length &&
+                source_[current_.offset + 1] == '(') {
+            if (parserOptions_ !is null && parserOptions_.get("no_parse_dparen"))
+                throw new ParseError("Shell arithmetic for is disabled (no_parse_dparen)");
+            auto start = current_.offset;
+            auto end = shellArithmeticEnd(source_, start);
+            auto parts = parseShellArithmeticFor(source_[start + 2 .. end - 2], parserOptions_);
+            command.arithmeticInit = parts[0];
+            command.arithmeticCondition = parts[1];
+            command.arithmeticStep = parts[2];
+            moveTo(end);
+            skipEndStatements();
+            if (current_.kind == TokenKind.leftBrace) {
+                command.bodySource = collectBlock();
+                lastCompoundEnd_ = lastBlockEnd_;
+            } else {
+                if (!atRawWord("do")) throw new ParseError("Expected do or { after arithmetic for header");
+                consumeRawWord("do");
+                command.legacySyntax = true;
+                command.bodySource = collectDoBody();
+            }
+            return command;
+        }
         while (true) {
             if (current_.kind != TokenKind.name) {
                 throw new ParseError(format("expected loop variable at byte %s", current_.offset));
@@ -3254,6 +3314,23 @@ class ProgramParser {
         parseProgram(bodySource);
         if (command.expressionIterable) validateExpression(command.iterableSource);
         if (syntaxOnly_) return;
+        if (command.arithmeticInit !is null) {
+            command.arithmeticInit.evaluate(mem);
+            int bodyStatus;
+            mem.enterLoop();
+            scope (exit) mem.leaveLoop();
+            while (command.arithmeticCondition.evaluate(mem) != 0) {
+                try { executeProgram(bodySource, mem); }
+                catch (LoopControl control) {
+                    if (control.levels > 1) { --control.levels; throw control; }
+                    if (control.shouldBreak) { bodyStatus = 0; break; }
+                }
+                bodyStatus = mem.lastStatus;
+                command.arithmeticStep.evaluate(mem);
+            }
+            mem.lastStatus = bodyStatus;
+            return;
+        }
         if (!command.expressionIterable) {
             string[] words;
             if (command.implicitArguments) words = mem.shellArguments.dup;
@@ -4040,7 +4117,9 @@ class ProgramParser {
                     content[position + 1] == '[') {
                 auto close = substitutionClose(content, position + 1, '[', ']');
                 auto expression = content[position + 2 .. close];
-                if (syntaxOnly_) validateExpression(expression);
+                if (parserOptions_ !is null && !parserOptions_.get("parse_ysh_expr_sub"))
+                    result ~= arithmeticSubstitution(expression, mem);
+                else if (syntaxOnly_) validateExpression(expression);
                 else result ~= stringify(evaluate(expression, mem));
                 position = close + 1;
                 continue;
@@ -4048,6 +4127,12 @@ class ProgramParser {
 
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '(') {
+                if (position + 2 < content.length && content[position + 2] == '(') {
+                    auto end = shellArithmeticEnd(content, position + 1);
+                    result ~= arithmeticSubstitution(content[position + 3 .. end - 2], mem);
+                    position = end;
+                    continue;
+                }
                 auto close = substitutionClose(content, position + 1, '(', ')');
                 auto command = content[position + 2 .. close];
                 auto output = captureCommandOutput(command, mem);
@@ -4107,23 +4192,76 @@ class ProgramParser {
         if (nameEnd == 0 || (!positional && !asciiIdentifierStart(parameter[0])))
             throw new YshError("unsupported braced parameter");
         auto name = parameter[0 .. nameEnd];
+        // Slice separators belong to the arithmetic grammar: the colon in a
+        // nested ?: expression cannot split the offset from the length.
+        bool arraySlice = nameEnd + 3 < parameter.length &&
+            (parameter[nameEnd .. nameEnd + 3] == "[@]" || parameter[nameEnd .. nameEnd + 3] == "[*]") &&
+            parameter[nameEnd + 3] == ':';
+        auto sliceOffset = nameEnd + (arraySlice ? 3 : 0);
+        if (sliceOffset < parameter.length && parameter[sliceOffset] == ':' &&
+                (sliceOffset + 1 == parameter.length || "-+=?".indexOf(parameter[sliceOffset + 1]) < 0)) {
+            if (parserOptions_ !is null && parserOptions_.get("no_parse_sh_arith"))
+                throw new ParseError("Shell arithmetic slices are disabled (no_parse_sh_arith)");
+            auto parts = parseShellArithmeticSlice(parameter[sliceOffset + 1 .. $], parserOptions_);
+            if (syntaxOnly_) return "";
+            import std.bigint : BigInt, toDecimalString;
+            auto begin = parts[0].evaluate(mem);
+            bool hasLength = parts[1] !is null;
+            auto count = hasLength ? parts[1].evaluate(mem) : BigInt(0);
+            if (arraySlice) {
+                auto value = mem.get(name);
+                if (value.kind != ValueKind.bashArrayValue) throw new FatalRuntimeError("Array slice expects BashArray");
+                if (hasLength && count < 0) throw new FatalRuntimeError("Array slice can't have negative length");
+                BigInt length;
+                foreach (key, unused; value.shellContainer) {
+                    auto next = BigInt(key) + 1;
+                    if (next > length) length = next;
+                }
+                if (begin < 0) begin += length;
+                auto keys = value.shellContainer.keys;
+                sort!((a, b) => BigInt(a) < BigInt(b))(keys);
+                string[] words;
+                foreach (key; keys) if (BigInt(key) >= begin && (!hasLength || BigInt(words.length) < count))
+                    words ~= value.shellContainer.find(key).stringValue;
+                return words.join(" ");
+            }
+            auto chars = toUTF32(mem.wordVariable(name));
+            auto length = BigInt(chars.length);
+            if (begin < 0) begin += length;
+            if (begin < 0) begin = 0;
+            if (begin > length) begin = length;
+            auto end = hasLength ? (count < 0 ? length + count : begin + count) : length;
+            if (end < begin) end = begin;
+            if (end > length) end = length;
+            import std.utf : toUTF8;
+            return toUTF8(chars[to!size_t(toDecimalString(begin)) .. to!size_t(toDecimalString(end))]);
+        }
         if (nameEnd < parameter.length && parameter[nameEnd] == '[') {
             auto close = substitutionClose(parameter, nameEnd, '[', ']');
             if (close + 1 != parameter.length) throw new YshError("Untranslated shell array parameter operation");
-            if (syntaxOnly_) return "";
+            auto key = parameter[nameEnd + 1 .. close];
+            if (!key.length) throw new ParseError("Shell array index cannot be empty");
+            if (syntaxOnly_) {
+                if (key != "@" && key != "*") arithmeticSubstitution(key, null);
+                return "";
+            }
+            auto cell = mem.getCell(name);
+            if (cell is null && name != "PIPESTATUS") {
+                if (mem.nounset) throw new FatalRuntimeError("Undefined shell array " ~ name);
+                return "";
+            }
             auto value = mem.get(name);
             if (value.kind != ValueKind.bashArrayValue && value.kind != ValueKind.bashAssocValue)
                 throw new YshTypeError("Shell indexed expansion expects BashArray or BashAssoc");
-            auto key = parameter[nameEnd + 1 .. close];
             if (key == "@" || key == "*") {
                 import yshd.value : shellArrayValues;
                 return shellArrayValues(value).join(" ");
             }
-            auto indexParser = new ProgramParser(key, false, returnMode_, true, parserOptions_);
-            key = indexParser.readScalarWord(mem).text();
             if (value.kind == ValueKind.bashArrayValue) {
-                try { key = to!string(to!long(key)); }
-                catch (Exception error) { throw new FatalRuntimeError("Untranslated shell arithmetic index"); }
+                key = evaluateShellIndex(key, value, mem);
+            } else {
+                auto indexParser = new ProgramParser(key, false, returnMode_, true, parserOptions_);
+                key = indexParser.readScalarWord(mem).text();
             }
             if (auto found = value.shellContainer.find(key)) return found.stringValue;
             if (mem.nounset) throw new FatalRuntimeError("Undefined shell array element");
@@ -4262,6 +4400,12 @@ class ProgramParser {
 
     private string parseScalarSubstitution(Memory mem, ref size_t endOffset) {
         auto dollarOffset = current_.offset;
+        if (dollarOffset + 2 < source_.length && source_[dollarOffset + 1 .. dollarOffset + 3] == "((") {
+            endOffset = shellArithmeticEnd(source_, dollarOffset + 1);
+            auto result = arithmeticSubstitution(source_[dollarOffset + 3 .. endOffset - 2], mem);
+            moveTo(endOffset);
+            return result;
+        }
         if (dollarOffset + 1 < source_.length &&
                 "0123456789?!@#$*-".indexOf(source_[dollarOffset + 1]) >= 0) {
             auto name = source_[dollarOffset + 1];
@@ -4297,6 +4441,8 @@ class ProgramParser {
         }
         if (current_.kind == TokenKind.leftBracket) {
             auto expression = collectBracketedExpression("$ expression", endOffset);
+            if (parserOptions_ !is null && !parserOptions_.get("parse_ysh_expr_sub"))
+                return arithmeticSubstitution(expression, mem);
             if (syntaxOnly_) {
                 validateExpression(expression);
                 return "";
@@ -4312,12 +4458,23 @@ class ProgramParser {
         return value;
     }
 
+    private string arithmeticSubstitution(string source, Memory mem) {
+        if (parserOptions_ !is null && parserOptions_.get("no_parse_sh_arith"))
+            throw new ParseError("Shell arithmetic substitutions are disabled (no_parse_sh_arith)");
+        auto arithmetic = parseShellArithmetic(source, parserOptions_);
+        if (syntaxOnly_) return "";
+        import std.bigint : toDecimalString;
+        return toDecimalString(arithmetic.evaluate(mem));
+    }
+
     private string captureCommandOutput(string command, Memory mem) {
         if (syntaxOnly_) {
             // Command substitution has its own CommandParser / VarChecker.
             .parseProgram(command, ReturnMode.shell, parserOptions_);
             return "";
         }
+        if (!mem.options.get("_allow_command_sub"))
+            throw new FatalRuntimeError("Command substitution is disabled in recursive arithmetic (eval_unsafe_arith)");
         auto result = captureSourceOutput(command, mem,
             (string source, Memory childMemory) {
                 .executeProgram(source, childMemory);
@@ -4999,6 +5156,8 @@ unittest {
 
 unittest {
     auto mem = new Memory();
+    // $[dict[...]] is a YSH substitution, not the OSH arithmetic synonym.
+    mem.options.set("parse_ysh_expr_sub", true);
     executeProgram(`var key = 'value'; var d = {key: 42}; var quoted = "key=$key $[d["key"]]";`, mem);
     assert(mem.get("quoted").stringValue == "key=value 42");
 }

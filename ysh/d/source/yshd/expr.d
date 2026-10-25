@@ -2731,6 +2731,19 @@ private class Parser {
             advance();
             return new VariableExpr(token.text);
         case TokenKind.dollar:
+            if (token.offset + 2 < source_.length && source_[token.offset + 1 .. token.offset + 3] == "((") {
+                import yshd.arith : shellArithmeticEnd;
+                auto end = shellArithmeticEnd(source_, token.offset + 1);
+                auto word = source_[token.offset .. end];
+                lastConsumedEnd_ = end;
+                lexer_ = new Lexer(source_, false, end, true, options_);
+                current_ = lexer_.next();
+                if (validateNested_) {
+                    import yshd.program : validateDoubleQuoted;
+                    validateDoubleQuoted(word, options_);
+                }
+                return new DoubleQuotedExpr(word);
+            }
             // Simple substitutions consume exactly two bytes. In particular,
             // $# must be recognized before the expression lexer sees a comment,
             // and $10 means $1 followed by an integer token rather than ${10}.

@@ -10,6 +10,8 @@ version (Posix) unittest {
     auto output = File.tmpfile();
     auto errors = File.tmpfile();
     auto mem = new Memory(output, errors);
+    // This suite uses YSH expression substitutions in shell words.
+    mem.options.set("parse_ysh_expr_sub", true);
     auto directory = getcwd();
     executeProgram(`
         var x = 1
