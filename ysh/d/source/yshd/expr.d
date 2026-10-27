@@ -162,6 +162,7 @@ private Numeric convertToNumber(Value value) {
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError(format("expected Int, Float, or numeric Str, got %s", value.kind));
     }
 }
@@ -203,6 +204,7 @@ private BigInt convertToInt(Value value) {
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError("expected Int or integer Str");
     }
 }
@@ -650,6 +652,7 @@ private Value subscriptGet(Value object, Value index, Memory mem = null) {
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError("obj[index] expected Str, List, or Dict");
     }
 }
@@ -758,6 +761,7 @@ private class SubscriptExpr : Expr {
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
         case ValueKind.stdinValue:
+        case ValueKind.frameValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }
@@ -915,6 +919,11 @@ private Value callBuiltinFunction(string name, Value[] arguments,
         if (arguments[0].kind == ValueKind.objectValue) return Value.dictRef(arguments[0].objectValue.properties.shallowCopy());
         if (arguments[0].kind == ValueKind.bashAssocValue)
             return Value.dictRef(arguments[0].shellContainer.shallowCopy());
+        if (arguments[0].kind == ValueKind.frameValue) {
+            auto values = new YshDict();
+            foreach (key, cell; arguments[0].frameValue.cells) values.set(key, cell.value);
+            return Value.dictRef(values);
+        }
         throw new YshTypeError("dict() expects Dict, Obj, or BashAssoc");
     }
 
@@ -1768,6 +1777,7 @@ private Value callValueMethod(Value receiver, string name,
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError("value has no method " ~ name);
     }
 }
@@ -1796,6 +1806,12 @@ private class YshNativeFunction {
     string name;
     this(string name) { this.name = name; }
     Value invoke(Value[] arguments, YshDict named, Memory mem) {
+        if (name == "vm.getFrame") {
+            if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue ||
+                    arguments[1].kind != ValueKind.integer || (named !is null && named.length))
+                throw new YshTypeError("vm.getFrame() expects one Int index");
+            return Value.frame(mem.indexedFrame(arguments[1].integerValue));
+        }
         if (name == "vm.id") {
             if (arguments.length != 2 || (named !is null && named.length))
                 throw new YshTypeError("vm.id() expects one value");
@@ -1812,13 +1828,26 @@ private class YshNativeFunction {
                 throw new YshTypeError("Obj.new() expects properties and optional prototype");
             return callBuiltinFunction("Object", [arguments.length == 2 ? arguments[1] : Value.nullValue(), arguments[0]], null, mem);
         }
-        if (name == "io.eval" || name == "io.evalExpr") {
+        if (name == "io.evalInFrame") {
+            if (arguments.length != 3 || arguments[0].kind != ValueKind.objectValue ||
+                    arguments[1].kind != ValueKind.commandValue || arguments[2].kind != ValueKind.frameValue ||
+                    (named !is null && named.length))
+                throw new YshTypeError("io.evalInFrame() expects Command and Frame");
+            import yshd.program : YshCommand;
+            mem.pushFrame(arguments[2].frameValue);
+            scope (exit) mem.popFrame();
+            (cast(YshCommand)arguments[1].callableValue).evalInCurrentFrame(mem);
+            return Value.nullValue();
+        }
+        if (name == "io.eval" || name == "io.evalToDict" || name == "io.evalExpr") {
             if (arguments.length != 2 || arguments[0].kind != ValueKind.objectValue)
                 throw new YshTypeError(name ~ "() expects one captured value");
-            if (name == "io.eval") {
+            if (name != "io.evalExpr") {
                 if (arguments[1].kind != ValueKind.commandValue) throw new YshTypeError("io.eval() expects Command");
                 import yshd.program : YshCommand;
-                return (cast(YshCommand)arguments[1].callableValue).evalValue(mem, parseEvalOptions(named, true));
+                auto options = parseEvalOptions(named, true);
+                if (name == "io.evalToDict") options.toDict = true;
+                return (cast(YshCommand)arguments[1].callableValue).evalValue(mem, options);
             }
             if (arguments[1].kind != ValueKind.expressionValue) throw new YshTypeError("io.evalExpr() expects Expr");
             return (cast(YshExpression)arguments[1].callableValue).eval(mem, parseEvalOptions(named, false));
@@ -1884,6 +1913,8 @@ Value[string] builtinNamespaces() {
     auto ioMethods = new YshDict();
     ioMethods.set("M/eval", Value.builtin(new YshNativeFunction("io.eval")));
     ioMethods.set("M/evalExpr", Value.builtin(new YshNativeFunction("io.evalExpr")));
+    ioMethods.set("M/evalToDict", Value.builtin(new YshNativeFunction("io.evalToDict")));
+    ioMethods.set("M/evalInFrame", Value.builtin(new YshNativeFunction("io.evalInFrame")));
     ioMethods.set("captureStdout", Value.builtin(new YshNativeFunction("io.captureStdout")));
     ioMethods.set("captureAll", Value.builtin(new YshNativeFunction("io.captureAll")));
     ioMethods.set("glob", Value.builtin(new YshNativeFunction("io.glob")));
@@ -1893,6 +1924,7 @@ Value[string] builtinNamespaces() {
     result["io"] = Value.object(new YshObject(new YshObject(null, ioMethods), ioProperties));
     auto vmMethods = new YshDict();
     vmMethods.set("id", Value.builtin(new YshNativeFunction("vm.id")));
+    vmMethods.set("getFrame", Value.builtin(new YshNativeFunction("vm.getFrame")));
     result["vm"] = Value.object(new YshObject(new YshObject(null, vmMethods), new YshDict()));
     return result;
 }
@@ -2842,38 +2874,55 @@ private class Parser {
             return new ListExpr(items);
         case TokenKind.leftBracket:
             return parseList();
+        case TokenKind.percent:
+            advance();
+            if (current_.kind != TokenKind.leftParen || current_.offset != token.offset + 1)
+                throw new ParseError("Expected adjacent ( after %");
+            return parseShellArray(TokenKind.rightParen);
         case TokenKind.colon:
             advance();
             if (current_.kind == TokenKind.orIf) {
                 advance();
                 return new ShellArrayExpr("");
             }
-            auto previousStrings = lexer_.expressionStrings;
-            lexer_.expressionStrings = false;
-            require(TokenKind.pipe, "|");
-            auto start = current_.offset;
-            int depth;
-            while (current_.kind != TokenKind.eof) {
-                if (current_.kind == TokenKind.pipe && depth == 0) {
-                    auto words = source_[start .. current_.offset];
-                    lexer_.expressionStrings = previousStrings;
-                    advance();
-                    if (validateNested_) {
-                        import yshd.program : validateShellWords;
-                        validateShellWords(words, options_);
-                    }
-                    return new ShellArrayExpr(words);
-                }
-                if (current_.kind == TokenKind.leftParen || current_.kind == TokenKind.leftBracket) ++depth;
-                if (current_.kind == TokenKind.rightParen || current_.kind == TokenKind.rightBracket) --depth;
-                advance();
-            }
-            throw new ParseError("unterminated shell array");
+            if (current_.kind != TokenKind.pipe) throw new ParseError("Expected | after :");
+            return parseShellArray(TokenKind.pipe);
         case TokenKind.leftBrace:
             return parseDict();
         default:
             throw new ParseError(format("expected expression at byte %s, got '%s'", token.offset, token.text));
         }
+    }
+
+    /// Both reference word-array spellings use shell word parsing and the
+    /// same evaluator. Their delimiters are syntax, never executable text.
+    private Expr parseShellArray(TokenKind closing) {
+        auto previousStrings = lexer_.expressionStrings;
+        lexer_.expressionStrings = false;
+        scope (exit) lexer_.expressionStrings = previousStrings;
+        advance(); // opening | or (
+        auto start = current_.offset;
+        int depth;
+        while (current_.kind != TokenKind.eof) {
+            if (current_.kind == closing && depth == 0) {
+                auto words = source_[start .. current_.offset];
+                lexer_.expressionStrings = previousStrings;
+                advance();
+                if (validateNested_) {
+                    import yshd.program : validateShellWords;
+                    validateShellWords(words, options_);
+                }
+                return new ShellArrayExpr(words);
+            }
+            if (depth == 0 && (current_.kind == TokenKind.semicolon || current_.kind == TokenKind.pipe ||
+                    current_.kind == TokenKind.orIf || current_.kind == TokenKind.andIf ||
+                    current_.kind == TokenKind.rightParen || current_.kind == TokenKind.rightBracket))
+                throw new ParseError("Unexpected token in word array");
+            if (current_.kind == TokenKind.leftParen || current_.kind == TokenKind.leftBracket) ++depth;
+            if (current_.kind == TokenKind.rightParen || current_.kind == TokenKind.rightBracket) --depth;
+            advance();
+        }
+        throw new ParseError("unterminated shell array");
     }
 
     private Expr parseList() {
@@ -3053,6 +3102,7 @@ private class ContainerResolvedPlace : ResolvedPlace {
         case ValueKind.bashArrayValue:
         case ValueKind.bashAssocValue:
         case ValueKind.stdinValue:
+        case ValueKind.frameValue:
             throw new YshTypeError("obj[index] expected List or Dict");
         }
     }

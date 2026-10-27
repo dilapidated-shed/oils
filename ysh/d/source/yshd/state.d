@@ -4,7 +4,8 @@ import std.format : format;
 import std.process : environment;
 import std.stdio : File, stderr, stdin, stdout;
 
-import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError, YshPlace;
+import yshd.value : Value, ValueKind, YshDict, YshError, FatalRuntimeError, YshPlace, StructuredError;
+import std.bigint : BigInt;
 import yshd.options : ShellOptions;
 import yshd.dirs : DirectoryStack;
 import yshd.traps : TrapState;
@@ -67,11 +68,18 @@ class BuiltinRegistry {
 /// remain in Memory's active frame stack and are never captured by this link.
 class Frame {
     FrameCells cells;
-    Frame enclosed;
+
+    @property Frame enclosed() {
+        auto cell = cells.find("__E__");
+        if (cell is null) return null;
+        if ((*cell).value.kind != ValueKind.frameValue)
+            throw new FatalRuntimeError("Lexical enclosure should be a Frame");
+        return (*cell).value.frameValue;
+    }
 
     this(Frame enclosed = null) {
         cells = new FrameCells();
-        this.enclosed = enclosed;
+        if (enclosed !is null) cells.set("__E__", new Cell(Value.frame(enclosed)));
     }
 }
 
@@ -194,6 +202,14 @@ class Memory {
     string[] sourceDirectories;
 
     bool atTopLevel() const { return frameStack.length == 1; }
+
+    Frame indexedFrame(BigInt index) {
+        auto normalized = index < 0 ? index + frameStack.length : index;
+        if (normalized < 0 || normalized >= frameStack.length)
+            throw new StructuredError(3, format("Invalid frame %s", index), new YshDict());
+        import std.conv : to;
+        return frameStack[to!size_t(normalized)];
+    }
 
     void pushSourceDirectory(string path) {
         import std.path : absolutePath, dirName;

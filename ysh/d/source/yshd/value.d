@@ -1,4 +1,5 @@
 module yshd.value;
+import yshd.state;
 
 import std.array : appender;
 import std.bigint : BigInt, toDecimalString;
@@ -147,6 +148,7 @@ enum ValueKind {
     bashArrayValue,
     bashAssocValue,
     stdinValue,
+    frameValue,
 }
 
 class YshObject {
@@ -272,6 +274,15 @@ struct Value {
     RegexMatch matchValue;
     YshObject objectValue;
     YshDict shellContainer;
+    yshd.state.Frame frameValue;
+
+    static Value frame(yshd.state.Frame frame) {
+        Value result;
+        result.kind = ValueKind.frameValue;
+        result.frameValue = frame;
+        result.scalarIdentity = nextScalarIdentity++;
+        return result;
+    }
 
     static Value shellArray(YshDict elements, bool associative = false) {
         Value result;
@@ -451,7 +462,7 @@ bool sameIdentity(Value left, Value right) {
     final switch (left.kind) {
     case ValueKind.nullValue: case ValueKind.stdinValue: return true;
     case ValueKind.boolean: case ValueKind.integer: case ValueKind.floating:
-    case ValueKind.stringValue: case ValueKind.sliceValue: case ValueKind.rangeValue:
+    case ValueKind.stringValue: case ValueKind.sliceValue: case ValueKind.rangeValue: case ValueKind.frameValue:
         return left.scalarIdentity == right.scalarIdentity;
     case ValueKind.list: return left.listValue is right.listValue;
     case ValueKind.dict: return left.dictValue is right.dictValue;
@@ -505,6 +516,7 @@ string kindName(Value value) {
     case ValueKind.bashArrayValue: return "BashArray";
     case ValueKind.bashAssocValue: return "BashAssoc";
     case ValueKind.stdinValue: return "Stdin";
+    case ValueKind.frameValue: return "Frame";
     }
 }
 
@@ -541,6 +553,7 @@ bool toBool(Value value) {
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         return true;
     }
 }
@@ -594,6 +607,7 @@ string stringify(Value value) {
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError("can't stringify " ~ kindName(value));
     }
 }
@@ -657,6 +671,7 @@ bool exactlyEqual(Value left, Value right) {
     case ValueKind.builtinProcValue:
     case ValueKind.boundFunctionValue:
     case ValueKind.stdinValue:
+    case ValueKind.frameValue:
         throw new YshTypeError("Equality isn't defined on " ~ kindName(left) ~ " values");
     case ValueKind.bashArrayValue:
     case ValueKind.bashAssocValue:
@@ -772,6 +787,7 @@ private string reprWithActive(Value value, ref bool[Object] active) {
     case ValueKind.bashArrayValue: return "<BashArray>";
     case ValueKind.bashAssocValue: return "<BashAssoc>";
     case ValueKind.stdinValue: return "<Stdin>";
+    case ValueKind.frameValue: return "<Frame>";
     }
 }
 

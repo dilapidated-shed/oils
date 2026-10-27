@@ -3725,7 +3725,6 @@ class ProgramParser {
         advance();
         if (action == "frame_vars_") {
             string[] names;
-            if (mem.currentFrame.enclosed !is null) names ~= "__E__";
             foreach (name, cell; mem.currentFrame.cells) names ~= name;
             mem.outputFile.writeln("    [frame_vars_] ", names.join(" "));
             mem.lastStatus = 0;
