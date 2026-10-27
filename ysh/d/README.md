@@ -2,11 +2,21 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The latest host qualification ran all 1,119
-cases in the 80 inherited YSH fixtures and the focused Grease alias fixture:
-777 assertion matches, 342 failures. The unchanged original harness, fixture
-hashes and per-case results are recorded in [PORTING.md](PORTING.md) and
-[the qualification ledger](qualification/inherited-host-values-2026-10-24.tsv).
+The translation remains incomplete. The October 27 host run records **858
+assertion matches and 261 failures** across all 1,119 cases in the 80 inherited
+YSH fixtures and focused Grease alias fixture. This preserves every previous
+match and adds 54 to the last published 804-match checkpoint. The fresh actual
+reference records 1,042 matches and 77 failures under the same UTF-8 environment.
+The unchanged harness, fixture hashes, remaining operations and exact source/build
+identities are recorded in [PORTING.md](PORTING.md) and
+[the host receipt](qualification/inherited-host-native-2026-10-27.tsv).
+
+Native command/builtin dispatch, exported cells, frame reflection and legacy
+word arrays now advance the existing evaluator. All 39 CLI/module suites,
+38 library suites, the original owner smoke, real Icky Lua producer and all
+13 negative/runtime controls pass. A clean same-host rebuild produces identical
+bytes. Interactive operation, full shared-shell parity, independent ai-ci
+acceptance and Cat Food delivery remain incomplete; the binary stays `ysh-d`.
 
 ## Source map
 

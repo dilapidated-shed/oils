@@ -158,7 +158,132 @@ Current state:
 
 All of these items are required to close the whole-hog translation.
 
-## Current host checkpoint: native shell arithmetic and test predicates, 2026-10-25
+## Current host checkpoint: native dispatch, frame reflection and word arrays, 2026-10-27
+
+The whole translation remains **incomplete**. The unchanged inherited harness
+records **858 assertion matches and 261 failures across 1,119 cases**, with
+zero timeouts. This adds **54 matches** to the last published 804-match
+checkpoint and preserves every match from that checkpoint, the earlier
+799/777/754 checkpoints and October 21's 714. The fresh actual reference
+records **1,042 matches and 77 failures**. Reference fixtures, the harness,
+timeouts and failure allowances are unchanged.
+
+The retained branch now contains the recovered native command lookup and
+builtin implementation. Dispatch operates on already expanded argv, preserving
+normal function/procedure lookup and the reference's `command`, `builtin`,
+`invoke` and `runproc` selection rules. Native PATH lookup, type/show
+reflection, private cat/rm/sleep, printf formatting, read/write/echo options,
+export/readonly/unset and exported environment cells advance the existing
+D evaluator. They do not implement every builtin or command grammar case.
+
+The new Frame value keeps real frame identity and enclosure cells.
+`vm.getFrame`, `dict(Frame)`, `io->evalInFrame` and `io->evalToDict`
+execute through the existing D memory/evaluation path. Supplied frames unwind
+on errors, snapshots preserve cell insertion order, and command capture retains
+the reference's lexical/module ownership. Legacy `%(...)` and `:|...|`
+word arrays now share one parser and the existing native word evaluator,
+including quoted delimiters, substitutions and nested words. This preserves
+the inherited language spelling. It does not introduce another parser project
+or a later Grease/Ish redesign.
+
+Under the historical `LC_ALL=C.UTF-8` environment, the recovered native
+dispatch baseline matches **846/1,119**. Frame reflection and word arrays add
+**12 matches**, with no regressions in either the inherited or shared selection.
+The initial fresh run omitted that locale and measured 855/264 for D and
+1,038/81 for the reference. All baseline, candidate and reference fixtures were
+then rerun under the historical UTF-8 environment; the final paired result is
+854 both matching, 188 D failures with a reference match, 73 both failing and
+four D matches where the reference fails. These are fixture assertion results,
+not a claim of exact global stdout/stderr/status/side-effect equivalence.
+
+The eleven selected shared-shell fixtures contain **360 cases**. D records
+**291 pass, 12 ok, six N-I and 51 FAIL**; the reference records
+**324 pass, 17 ok, six N-I and 13 FAIL**. These inherited harness categories
+remain separate. There are no regressions against the recovered baseline.
+This selection includes command/meta lookup, printf, variable builtins,
+test predicates, arithmetic, background jobs and traps; it does not exhaust
+the shared machinery reachable from YSH. The remaining `builtin-bracket`
+case now exposes a command-parser delimiter ambiguity in external
+`command [ --version`, rather than an absent command dispatcher.
+
+All **39 CLI/module suites**, **38 library suites**, regenerated option
+metadata and the byte-identical original owner smoke body pass. The exact
+final executable executes the actual retained Icky Lua producer and all
+**13 negative/runtime controls**. Native frame and word-array regressions
+exercise escaping frames, snapshots, enclosure ownership, structured-error
+unwinding, invalid types/indices/options, nested quoting and parse-only behavior.
+
+`--ast-format none -n FILE` parses the actual producer, controls and a
+division/exit/command-substitution sentinel with empty stdout/stderr and no
+sentinel files. The retained arithmetic/substitution/infinite-loop sentinel
+also passes when the reference's disabling options are explicitly unset:
+`+O no_parse_dparen +O no_parse_sh_arith`. Ordinary YSH mode rejects that
+disabled arithmetic; invalid expression syntax returns status 2. This is a
+real nonexecuting entrypoint. The separate Grease benchmark gate remains
+unaccepted: its preserved legacy range cases fail in both implementations
+and `greasecpp` is unavailable. No benchmark fixture or gate was relaxed.
+
+Canonical tested source
+`3aa39bbd2dede2b65ab731e8793fd2567306a78f` has full repository tree
+`39509d067b5e2d36dcbfaf6166f854fe45ec2ea6` and D source tree
+`c2e064c2ba60fe6757fd3acb7193007afeab1fa2`. Local validation commit
+`4074561649adf2205d424b8861f32eec726ec77f` has the identical full tree.
+Pinned Icky DMD `ccf61ab82659b9eadee2d05b489fb195956cef88`,
+druntime `74917954b53f7f35b13e61b4438c7253834929ed` and
+Phobos `7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95` build the
+3,082,592-byte executable with SHA-256
+`65853d7dd9524c2f6eee7253f1eb8b151a1c8fd659d315ebe07241cd679a0398`.
+A clean detached checkout produces identical bytes on this host.
+The exact-source [hosted owner build and tests](https://github.com/dilapidated-shed/oils/actions/runs/40475671772)
+also pass. That workflow is not independent ai-ci acceptance.
+
+The full link map, symbols and dynamic table show no dynamic Python/C++
+standard-library dependency and no scanned C++ runtime symbol signature.
+The only named dynamic dependencies are libc, libgcc_s and the ELF loader.
+Source execution remains in D. The reference's POSIX ENOEXEC retry through
+`/bin/sh` is restricted to explicit external executable files, not YSH
+program text. These bounded source/link checks do not establish independent
+static/transitive closure acceptance.
+
+See the [host/build receipt](qualification/inherited-host-native-2026-10-27.tsv),
+[all inherited cases](qualification/inherited-cases-native-2026-10-27.tsv),
+[suite totals](qualification/inherited-suites-native-2026-10-27.tsv),
+[remaining operations](qualification/remaining-failures-native-2026-10-27.tsv),
+[operation-family totals](qualification/remaining-families-native-2026-10-27.tsv),
+[shared cases](qualification/shared-shell-native-2026-10-27.tsv),
+[fixture hashes](qualification/inherited-fixture-hashes-native-2026-10-27.tsv),
+[producer](qualification/il0-producer-native-2026-10-27.tsv),
+[controls](qualification/il0-controls-native-2026-10-27.tsv) and
+[translation ledger](qualification/translation-ledger.tsv).
+The [complete test/audit transcript archive](qualification/inherited-logs-native-2026-10-27.zip)
+has SHA-256
+`1775727dacf56928a7c1092607d8210fc485e78d2a7466b769a5bee4af454200`.
+
+All **261 failures** retain operation families, original case descriptions
+and fresh diagnostics. **60 still lack a direct diagnostic and need causal
+diagnosis**; the zero-unexplained requirement is not met. The complete reachable
+call graph, remaining grammar/value/builtin operations, tracing and interactive
+runtime remain unfinished. Interactive input, prompts, completion/history,
+terminal ownership and stopped-job/PTY behavior are not qualified.
+
+The retained NetBSD lane remains blocked at ICK
+`22b41425cb478754346637db87ebd42e43b42863`.
+Its last actual failure is `make -j4 all-gcc all-target-libgcc all-target-libphobos`
+in [Grease run 37471577967](https://github.com/dilapidated-shed/grease/actions/runs/37471577967):
+libgcc complex lowering raises internal compiler errors in
+`update_complex_assignment` (`tree-complex.cc:925`) and
+`expand_complex_component_store` (`tree-complex.cc:1007`).
+YSH compilation and actual NetBSD 9.3 amd64 execution were skipped.
+The compiler dependency remains [isomorphisms/ick PR #42, "Qualify hosted GDC on NetBSD amd64"](https://github.com/isomorphisms/ick/pull/42),
+redirected from the original dilapidated-shed repository; the retained
+[Grease lane](https://github.com/dilapidated-shed/grease/pull/54) is unchanged.
+No new NetBSD or Android artifact/device result is claimed.
+
+Independent ai-ci acceptance and accepted Cat Food delivery have not occurred.
+The executable remains **ysh-d**. No `greased` promotion, default switch,
+accepted release, consumer admission, PR reopening or merge has occurred.
+
+## Previous host checkpoint: native shell arithmetic and test predicates, 2026-10-25
 
 The whole translation remains **incomplete**. The unchanged inherited harness
 records **804 assertion matches and 315 failures across 1,119 cases**, with zero
