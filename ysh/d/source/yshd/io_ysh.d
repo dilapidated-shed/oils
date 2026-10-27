@@ -453,7 +453,7 @@ string renderWrite(string[] arguments, string separator = "\n",
     return result ~ ending;
 }
 
-private struct EchoEscapeResult {
+struct EchoEscapeResult {
     string text;
     bool stop;
 }
@@ -462,7 +462,7 @@ private struct EchoEscapeResult {
 /// osh/word_compile.py:EvalCStringToken. The special \\c escape terminates
 /// the current argument, suppresses following arguments, and suppresses the
 /// final newline.
-private EchoEscapeResult decodeEchoEscapes(string value) {
+EchoEscapeResult decodeEchoEscapes(string value) {
     EchoEscapeResult result;
     size_t i;
 

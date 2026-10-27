@@ -19,6 +19,7 @@ private Memory shellMemory(string argumentZero, string[] arguments,
         ShellOptions options = null) {
     auto mem = new Memory();
     mem.options = options is null ? new ShellOptions(true) : options;
+    mem.initializeShellEnvironment();
     mem.initializeDirectory();
     mem.initializeArguments(argumentZero, arguments);
     return mem;

@@ -18,6 +18,7 @@ public import yshd.value : RegexMatch;
 /// enough for the D translation to preserve identity when a frame is enclosed.
 class Cell {
     bool readOnly;
+    bool exported;
     Value value;
 
     this(Value value, bool readOnly = false) {
@@ -183,6 +184,8 @@ class Memory {
     DirectoryStack directoryStack;
     string[] shellArguments;
     long rootPid;
+    long shellStartTime;
+    bool shellEnvironmentInitialized;
     long lastBackgroundPid = -1;
     bool isMain = true;
     bool[string] sourceGuards;
@@ -270,6 +273,8 @@ class Memory {
         workingDirectory = getcwd();
         import core.sys.posix.unistd : getpid;
         rootPid = getpid();
+        import core.stdc.time : time;
+        shellStartTime = time(null);
         directoryStack = new DirectoryStack();
         globalFrame = new Frame();
         currentFrame = globalFrame;
@@ -313,6 +318,19 @@ class Memory {
         globalFrame.cells.set("ARGV", new Cell(Value.list(values)));
     }
 
+    /// OSH imports exported cells; YSH's no_init_globals leaves ENV as the
+    /// sole initial environment owner. Later option changes keep both stores.
+    void initializeShellEnvironment() {
+        shellEnvironmentInitialized = true;
+        if (options.get("no_init_globals")) return;
+        foreach (name, value; get("ENV").dictValue) {
+            if (globalFrame.cells.find(name) !is null) continue;
+            auto cell = new Cell(value);
+            cell.exported = true;
+            globalFrame.cells.set(name, cell);
+        }
+    }
+
     /// core/sh_init.py:InitVarsAfterEnv. OSH exports PWD even in an empty
     /// environment. YSH's no_init_globals keeps only the private cwd register.
     void initializeDirectory() {
@@ -350,6 +368,11 @@ class Memory {
     }
 
     string getEnv(string name, string fallback = "") {
+        if (!options.get("env_obj")) {
+            auto cell = getCell(name);
+            if (cell !is null) return cell.value.kind == ValueKind.stringValue ? cell.value.stringValue : fallback;
+            if (shellEnvironmentInitialized) return fallback;
+        }
         auto env = get("ENV");
         if (env.kind != ValueKind.dict) {
             throw new YshError("ENV must be a Dict");
@@ -377,6 +400,13 @@ class Memory {
             }
             result[name] = value.stringValue;
         }
+        if (!options.get("env_obj") && shellEnvironmentInitialized) result = null;
+        if (!options.get("no_exported")) foreach (frame; frameStack) foreach (name, cell; frame.cells) {
+            if (cell.exported && cell.value.kind == ValueKind.stringValue) result[name] = cell.value.stringValue;
+        }
+        // ENV overlays exported cells in ysh:upgrade, as GetEnv does in the
+        // reference. A removed ENV property must not revive a host variable.
+        if (options.get("env_obj")) foreach (name, value; env.dictValue) result[name] = value.stringValue;
         return result;
     }
 
@@ -463,6 +493,21 @@ class Memory {
         Frame found;
         auto cell = lookupFrame(currentFrame, name, false, found);
         if (cell !is null) { requireWritable(name, cell); found.cells.remove(name); }
+    }
+
+    bool unsetShellVariable(string name) {
+        Frame found;
+        Cell cell;
+        if (options.get("dynamic_scope")) {
+            foreach_reverse (frame; frameStack) {
+                cell = lookupFrame(frame, name, false, found);
+                if (cell !is null) break;
+            }
+        } else cell = lookupFrame(currentFrame, name, false, found);
+        if (cell is null) return false;
+        requireWritable(name, cell);
+        found.cells.remove(name);
+        return true;
     }
 
     Value getGlobal(string name) {

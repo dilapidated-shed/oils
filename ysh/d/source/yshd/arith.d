@@ -338,9 +338,12 @@ private struct Reference {
     }
 
     void store(BigInt number) {
+        store(Value.str(toDecimalString(number)));
+    }
+
+    void store(Value value) {
         auto cell = mem.getShellAssignmentCell(name);
         if (cell !is null && cell.readOnly) throw new FatalRuntimeError("Can't assign to readonly arithmetic variable " ~ name);
-        auto value = Value.str(toDecimalString(number));
         if (!indexed) { mem.setShellVar(name, value); return; }
         Value array;
         if (cell is null) array = Value.shellArray(new YshDict());
@@ -535,6 +538,15 @@ ShellArithmetic parseShellArithmetic(string source, ShellOptions options = null)
 
 BigInt evaluateShellArithmetic(string source, Memory mem) {
     return parseShellArithmetic(source, mem.options).evaluate(mem);
+}
+
+/// Builtin string assignment shares the same lvalue and single-resolution
+/// index path as retained arithmetic, without converting text to a number.
+void assignShellString(string destination, string text, Memory mem) {
+    auto parsed = parseShellArithmetic(destination, mem.options);
+    requirePlace(parsed.root);
+    auto target = (new ArithmeticContext(mem)).place(parsed.root);
+    target.store(Value.str(text));
 }
 
 ShellArithmetic[3] parseShellArithmeticFor(string source, ShellOptions options = null) {

@@ -326,7 +326,7 @@ string captureSourceOutput(string source, Memory mem,
 }
 
 private int launchExternal(string[] argv, File input, File output,
-        File errors, string[string] childEnvironment, bool replaceProcess = false) {
+        File errors, string[string] childEnvironment, bool replaceProcess = false, bool useDefaultPath = false) {
     if (argv.length == 0 || argv[0].length == 0) {
         throw new YshError("external command needs a program name");
     }
@@ -347,7 +347,9 @@ private int launchExternal(string[] argv, File input, File output,
         if (argv[0].indexOf('/') >= 0) paths = [argv[0]];
         else {
             auto path = "PATH" in childEnvironment;
-            foreach (directory; (path is null ? "/bin:/usr/bin" : *path).split(":"))
+            auto searchPath = useDefaultPath ? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" :
+                (path is null ? "/bin:/usr/bin" : *path);
+            foreach (directory; searchPath.split(":"))
                 paths ~= directory.length ? directory ~ "/" ~ argv[0] : argv[0];
         }
         output.flush();
@@ -407,9 +409,10 @@ private int launchExternal(string[] argv, File input, File output,
 /// This deliberately receives words rather than source text: YSH parsing and
 /// expansion stay in the D implementation, while process creation itself is a
 /// normal POSIX/library boundary.
-int runExternal(string[] argv, Memory mem) {
+int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
+    auto environment = mem.childEnvironment();
     auto child = launchExternal(argv, mem.inputFile, mem.outputFile,
-        mem.errorFile, mem.childEnvironment(), mem.canReplaceProcess && !mem.traps.hasActions());
+        mem.errorFile, environment, mem.canReplaceProcess && !mem.traps.hasActions(), useDefaultPath);
     return waitSourceChild(child, mem);
 }
 

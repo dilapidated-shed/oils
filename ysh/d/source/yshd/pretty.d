@@ -147,7 +147,7 @@ private string render(Doc document, size_t width) {
 
 /// YSH shell-style strings: single quotes where possible, byte escapes when
 /// quotes, controls or invalid UTF-8 require the b'' representation.
-private string yshString(string value) {
+string encodeYshString(string value) {
     bool raw = true;
     size_t offset;
     while (offset < value.length) {
@@ -176,7 +176,7 @@ private class ValueEncoder {
         case ValueKind.floating:
             return text(isFinite(value.floatValue) ? stringify(value) : isNaN(value.floatValue)
                 ? "NAN" : value.floatValue < 0 ? "-INFINITY" : "INFINITY");
-        case ValueKind.stringValue: return text(yshString(value.stringValue));
+        case ValueKind.stringValue: return text(encodeYshString(value.stringValue));
         case ValueKind.list:
             Object identity = value.listValue;
             if (identity in visiting) return text("[...]");
@@ -194,7 +194,7 @@ private class ValueEncoder {
             if (!value.dictValue.length) return text("{}");
             Doc[] items;
             foreach (key, item; value.dictValue)
-                items ~= concat([text(identifier(key) ? key : yshString(key)), text(": "), encode(item)]);
+                items ~= concat([text(identifier(key) ? key : encodeYshString(key)), text(": "), encode(item)]);
             return surrounded("{", joined(items), "}");
         case ValueKind.rangeValue:
             auto upper = value.rangeUpper;
@@ -225,7 +225,7 @@ private class ValueEncoder {
             scope (exit) visiting.remove(identity);
             Doc[] properties;
             foreach (key, item; value.objectValue.properties)
-                properties ~= concat([text(identifier(key) ? key : yshString(key)), text(": "), encode(item)]);
+                properties ~= concat([text(identifier(key) ? key : encodeYshString(key)), text(": "), encode(item)]);
             auto own = surrounded("(", joined(properties), ")");
             return value.objectValue.prototype is null ? own
                 : concat([own, text(" --> "), encode(Value.object(value.objectValue.prototype))]);

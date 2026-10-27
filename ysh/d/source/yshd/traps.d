@@ -84,7 +84,7 @@ private int signalNumber(string name) {
 
 private struct TrapAction { bool ignored; string source; string displayCode; }
 
-private string shellQuote(string source) {
+string shellQuote(string source) {
     // data_lang/j8.h:BourneShellEncodeOne/BashDollarEncodeOne. Fall back
     // to $'' for controls, quotes, backslashes and invalid UTF-8 bytes.
     bool plain = true;

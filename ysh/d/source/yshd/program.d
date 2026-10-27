@@ -9,10 +9,12 @@ import std.stdio : File;
 import std.string : indexOf, join, split, strip, startsWith;
 
 import yshd.command : Mutation, VarDecl, executeMutation, executeVarDecl;
+import yshd.command_lookup : BuiltinKind, builtinKind, hasProcedure,
+    resolveCommand, executablePaths, printResolution;
 import yshd.arith : ShellArithmetic, shellArithmeticEnd, parseShellArithmetic,
     parseShellArithmeticFor, parseShellArithmeticSlice, evaluateShellArithmetic, evaluateShellIndex;
 import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
-    validateAssignmentTarget, parseTypedArguments, expressionAtomEnd;
+    validateAssignmentTarget, parseTypedArguments, expressionAtomEnd, ParsedArguments;
 import yshd.func_proc : FunctionParameter, FunctionReturn, ProcReturn, YshFunction, YshProc, ProcSignature;
 import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
     renderWrite, spliceArray, DataEncodeError, dataOptions;
@@ -643,17 +645,9 @@ class ProgramParser {
                 parseLoopControl(mem, false);
                 break;
             case TokenKind.trueKeyword:
-                advance();
-                while (!isEndStatement(current_.kind)) readCommandWord(mem);
-                mem.lastStatus = 0;
-                break;
             case TokenKind.falseKeyword:
-                advance();
-                while (!isEndStatement(current_.kind)) readCommandWord(mem);
-                mem.lastStatus = 1;
-                break;
             case TokenKind.colon:
-                parseNoOp(mem);
+                parseCommandInvocation(mem);
                 break;
             case TokenKind.equal:
                 parseExpressionDisplay(mem);
@@ -669,27 +663,6 @@ class ProgramParser {
                     advance();
                     if (current_.kind != TokenKind.procKeyword) throw new ParseError("Expected proc after typed");
                     parseProc(mem);
-                    break;
-                }
-                if (current_.text == "builtin") {
-                    advance();
-                    if (current_.text == "set") parseSet(mem);
-                    else if (current_.text == "echo") parseEcho(mem);
-                    else if (current_.text == "read") parseRead(mem);
-                    else if (current_.text == "cd") parseCd(mem);
-                    else throw new UsageError("Untranslated or unknown builtin " ~ current_.text);
-                    break;
-                }
-                if (current_.text == "set") {
-                    parseSet(mem);
-                    break;
-                }
-                if (current_.text == "alias") {
-                    parseAlias(mem);
-                    break;
-                }
-                if (current_.text == "unalias") {
-                    parseUnalias(mem);
                     break;
                 }
                 if (current_.text == "try") {
@@ -723,40 +696,8 @@ class ProgramParser {
                     parsePrettyPrint(mem);
                     break;
                 }
-                if (current_.text == "read") {
-                    parseRead(mem);
-                    break;
-                }
-                if (current_.text == "write") {
-                    parseWrite(mem);
-                    break;
-                }
-                if (current_.text == "echo") {
-                    parseEcho(mem);
-                    break;
-                }
                 if (current_.text == "call") {
                     parseCall(mem);
-                    break;
-                }
-                if (current_.text == "shopt") {
-                    parseShopt(mem);
-                    break;
-                }
-                if (current_.text == "cd") {
-                    parseCd(mem);
-                    break;
-                }
-                if (current_.text == "source") {
-                    parseSource(mem);
-                    break;
-                }
-                if (current_.text == "eval") {
-                    parseEval(mem);
-                    break;
-                }
-                if (current_.text == "exit") {
-                    parseExit(mem);
                     break;
                 }
                 parseCommandInvocation(mem);
@@ -798,6 +739,10 @@ class ProgramParser {
         advance();
         string[] words;
         while (!isEndStatement(current_.kind)) words ~= readCommandWord(mem);
+        runSet(words, mem);
+    }
+
+    private void runSet(string[] words, Memory mem) {
         // Unsupported options must fail rather than pretend to be enabled.
         for (size_t index; index < words.length; ++index) {
             auto word = words[index];
@@ -1438,10 +1383,12 @@ class ProgramParser {
     }
 
     private bool scanShellFunction(out ShellFunctionDefinition definition) {
-        if (current_.kind != TokenKind.name) return false;
+        if (current_.kind != TokenKind.name && current_.kind != TokenKind.trueKeyword &&
+                current_.kind != TokenKind.falseKeyword) return false;
         bool explicitKeyword = current_.text == "function" && completeCommandWord(source_, current_);
         if (explicitKeyword) advance();
-        if (current_.kind != TokenKind.name) {
+        if (current_.kind != TokenKind.name && current_.kind != TokenKind.trueKeyword &&
+                current_.kind != TokenKind.falseKeyword) {
             if (explicitKeyword) throw new ParseError("Expected a shell function name");
             return false;
         }
@@ -1495,7 +1442,8 @@ class ProgramParser {
     }
 
     private bool tryParseShellFunction(Memory mem) {
-        if (current_.kind != TokenKind.name) return false;
+        if (current_.kind != TokenKind.name && current_.kind != TokenKind.trueKeyword &&
+                current_.kind != TokenKind.falseKeyword) return false;
         auto start = current_.offset;
         auto parser = new ProgramParser(source_[start .. $], true, returnMode_, false, parserOptions_);
         ShellFunctionDefinition definition;
@@ -2001,6 +1949,11 @@ class ProgramParser {
             operands ~= readCommandWord(mem);
         }
 
+        runAlias(operands, mem);
+    }
+
+    private void runAlias(string[] operands, Memory mem) {
+
         if (operands.length == 0 ||
                 (operands.length == 1 && operands[0] == "--")) {
             auto names = mem.aliases.keys;
@@ -2050,6 +2003,10 @@ class ProgramParser {
         while (!isEndStatement(current_.kind)) {
             operands ~= readCommandWord(mem);
         }
+        runUnalias(operands, mem);
+    }
+
+    private void runUnalias(string[] operands, Memory mem) {
         if (operands.length == 0) {
             mem.errorFile.write("unalias: requires at least one name\n");
             mem.lastStatus = 2;
@@ -2080,10 +2037,13 @@ class ProgramParser {
     private void parseCommandInvocation(Memory mem) {
         auto subEpoch = mem.commandSubEpoch;
         auto commandNameParts = readCommandWord(mem, true);
-        bool attributeBlock = lastWordStatic_ && commandNameParts.length == 1 && attributeCommandName(commandNameParts[0]);
-        if (commandNameParts.length != 1) {
-            throw new YshError("command name cannot be a list splice");
+        while (!commandNameParts.length && !isEndStatement(current_.kind))
+            commandNameParts = readCommandWord(mem, true);
+        if (!commandNameParts.length) {
+            mem.lastStatus = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
+            return;
         }
+        bool attributeBlock = lastWordStatic_ && commandNameParts.length == 1 && attributeCommandName(commandNameParts[0]);
 
         string[string] tempBindings;
         auto commandName = commandNameParts[0];
@@ -2099,14 +2059,14 @@ class ProgramParser {
                 return;
             }
             commandNameParts = readCommandWord(mem, true);
-            if (commandNameParts.length != 1) {
-                throw new YshError("command name cannot be a list splice");
-            }
+            while (!commandNameParts.length && !isEndStatement(current_.kind))
+                commandNameParts = readCommandWord(mem, true);
+            if (!commandNameParts.length) { mem.lastStatus = 0; return; }
             commandName = commandNameParts[0];
         }
 
         string[][] pipeline;
-        string[] argv = [commandName];
+        string[] argv = commandNameParts;
         import yshd.expr : ParsedArguments, EvaluatedArguments;
         ParsedArguments typedArguments;
         string blockSource;
@@ -2161,6 +2121,185 @@ class ProgramParser {
         }
 
         if (pipeline.length == 0) {
+            bool builtinOnly, skipProcedures, useDefaultPath;
+            // Prefixes operate on this already-expanded argv. Never turn words
+            // back into source or evaluate a typed argument a second time.
+            while (argv.length) {
+                if (!skipProcedures && builtinKind(argv[0]) != BuiltinKind.special) {
+                    import yshd.func_proc : invokeProcedure;
+                    if (hasProcedure(argv[0], mem) &&
+                            invokeProcedure(mem.getCell(argv[0]).value, argv[1 .. $], mem, evalArguments())) return;
+                    if (auto functionValue = mem.builtins.shellFunctions.find(argv[0])) {
+                        (cast(YshProc)functionValue.callableValue).invoke(argv[1 .. $], mem, evalArguments());
+                        return;
+                    }
+                }
+                if (argv[0] == "runproc") {
+                    size_t start = argv.length > 1 && argv[1] == "--" ? 2 : 1;
+                    if (start == argv.length) { mem.errorFile.writeln("runproc requires a command"); mem.lastStatus = 2; return; }
+                    auto name = argv[start];
+                    if (!hasProcedure(name, mem)) { mem.errorFile.writeln("runproc: no invokable named ", name); mem.lastStatus = 1; return; }
+                    import yshd.func_proc : invokeProcedure;
+                    invokeProcedure(mem.getCell(name).value, argv[start + 1 .. $], mem, evalArguments());
+                    return;
+                }
+                if (argv[0] == "invoke") {
+                    size_t start = 1;
+                    bool procedures, functions, builtins, external, show;
+                    for (; start < argv.length; ++start) {
+                        auto word = argv[start];
+                        if (word == "--") { ++start; break; }
+                        if (word.length < 2 || word[0] != '-') break;
+                        if (word == "--proc") procedures = true;
+                        else if (word == "--sh-func") functions = true;
+                        else if (word == "--builtin") builtins = true;
+                        else if (word == "--extern") external = true;
+                        else if (word == "--show") show = true;
+                        else { mem.errorFile.writeln("invoke: invalid flag ", word); mem.lastStatus = 2; return; }
+                    }
+                    if (start == argv.length) { mem.errorFile.writeln("invoke requires a command"); mem.lastStatus = 2; return; }
+                    if (show) {
+                        if (typedArguments !is null || hasBlock) { mem.lastStatus = 2; return; }
+                        runInvokeShow(argv[start .. $], mem); return;
+                    }
+                    if (!(procedures || functions || builtins || external)) {
+                        mem.errorFile.writeln("invoke requires a lookup flag"); mem.lastStatus = 2; return;
+                    }
+                    auto name = argv[start];
+                    if (procedures && hasProcedure(name, mem)) {
+                        import yshd.func_proc : invokeProcedure;
+                        invokeProcedure(mem.getCell(name).value, argv[start + 1 .. $], mem, evalArguments()); return;
+                    }
+                    if (functions) if (auto functionValue = mem.builtins.shellFunctions.find(name)) {
+                        (cast(YshProc)functionValue.callableValue).invoke(argv[start + 1 .. $], mem, evalArguments()); return;
+                    }
+                    auto kind = builtinKind(name);
+                    if (builtins && kind != BuiltinKind.none && kind != BuiltinKind.assignment) {
+                        argv = argv[start .. $]; builtinOnly = true; skipProcedures = true; continue;
+                    }
+                    if (external) {
+                        if (typedArguments !is null || hasBlock) { mem.lastStatus = 2; return; }
+                        mem.lastStatus = runExternal(argv[start .. $], mem); return;
+                    }
+                    mem.errorFile.writeln("invoke: command not found: ", name); mem.lastStatus = 127; return;
+                }
+                if (argv[0] != "builtin" && argv[0] != "command") break;
+                auto prefix = argv[0];
+                size_t index = 1;
+                bool query, verbose;
+                if (prefix == "command") {
+                    while (index < argv.length) {
+                        auto word = argv[index];
+                        if (word == "--") { ++index; break; }
+                        if (word.length < 2 || word[0] != '-') break;
+                        foreach (flag; word[1 .. $]) {
+                            if (flag == 'p') useDefaultPath = true;
+                            else if (flag == 'v') { query = true; verbose = false; }
+                            else if (flag == 'V') { query = true; verbose = true; }
+                            else { mem.errorFile.writeln("command: invalid flag ", word); mem.lastStatus = 2; return; }
+                        }
+                        ++index;
+                    }
+                    if (query) {
+                        if (typedArguments !is null || hasBlock) { mem.lastStatus = 2; return; }
+                        mem.lastStatus = 0;
+                        foreach (name; argv[index .. $]) {
+                            auto resolutions = resolveCommand(name, mem, false);
+                            if (!resolutions.length) {
+                                mem.errorFile.writeln(name, ": not found"); mem.lastStatus = 1;
+                            } else if (verbose) printResolution(resolutions[0], mem);
+                            else mem.outputFile.writeln(resolutions[0].kind == "file" ? resolutions[0].detail : name);
+                        }
+                        return;
+                    }
+                    skipProcedures = true;
+                    builtinOnly = false;
+                } else {
+                    if (index < argv.length && argv[index] == "--") ++index;
+                    else if (index < argv.length && argv[index].length > 1 && argv[index][0] == '-') {
+                        mem.errorFile.writeln("builtin: invalid flag ", argv[index]); mem.lastStatus = 2; return;
+                    }
+                    skipProcedures = true;
+                    builtinOnly = true;
+                }
+                argv = argv[index .. $];
+                if (!argv.length) { mem.lastStatus = 0; return; }
+                if (builtinOnly && (builtinKind(argv[0]) == BuiltinKind.none ||
+                        builtinKind(argv[0]) == BuiltinKind.assignment)) {
+                    mem.errorFile.writeln("builtin: '", argv[0], "' isn't a shell builtin"); mem.lastStatus = 1; return;
+                }
+            }
+            commandName = argv[0];
+            auto selectedBuiltin = builtinKind(commandName);
+            try {
+                auto words = argv[1 .. $];
+                switch (commandName) {
+                case "read": runRead(words, typedArguments, hasBlock, mem); return;
+                case "export": case "readonly": case "unset":
+                    if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
+                    import yshd.assignment_builtins : runAssignmentBuiltin;
+                    mem.lastStatus = runAssignmentBuiltin(commandName, words, mem);
+                    return;
+                case "printf":
+                    if (typedArguments !is null || hasBlock) throw new UsageError("printf does not accept typed arguments");
+                    import yshd.printf_osh : runPrintf;
+                    mem.lastStatus = runPrintf(words, mem);
+                    return;
+                case "cat": case "rm": case "sleep":
+                    if (!builtinOnly) break;
+                    if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
+                    import yshd.private_builtins : runPrivateBuiltin;
+                    mem.lastStatus = runPrivateBuiltin(commandName, words, mem);
+                    return;
+                case "cd": case "chdir":
+                    auto arguments = evalArguments();
+                    if (arguments.positional.length || (arguments.named !is null && arguments.named.length))
+                        throw new YshTypeError("cd accepts only a block typed argument");
+                    if (arguments.hasBlock && arguments.block.kind != ValueKind.commandValue)
+                        throw new YshTypeError("cd block should be Command");
+                    auto block = arguments.hasBlock ? cast(YshCommand)arguments.block.callableValue : null;
+                    runCd(words, block !is null, block is null ? "" : block.source,
+                        block !is null && block.attributeScope, mem);
+                    return;
+                case "shopt":
+                    auto arguments = evalArguments();
+                    if (arguments.positional.length || (arguments.named !is null && arguments.named.length))
+                        throw new YshTypeError("shopt accepts only a block typed argument");
+                    if (arguments.hasBlock && arguments.block.kind != ValueKind.commandValue)
+                        throw new YshTypeError("shopt block should be Command");
+                    auto block = arguments.hasBlock ? cast(YshCommand)arguments.block.callableValue : null;
+                    runShopt(words, block !is null, block is null ? "" : block.source, mem);
+                    return;
+                case "true": case "false": case ":": case "echo": case "write":
+                case "set": case "alias": case "unalias": case "source": case ".": case "eval": case "exit": case "type":
+                    if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
+                    switch (commandName) {
+                    case "true": case ":": mem.lastStatus = 0; break;
+                    case "false": mem.lastStatus = 1; break;
+                    case "echo": runEcho(words, mem); break;
+                    case "write": runWrite(words, mem); break;
+                    case "set": runSet(words, mem); break;
+                    case "alias": runAlias(words, mem); break;
+                    case "unalias": runUnalias(words, mem); break;
+                    case "source": case ".": runSource(words, mem); break;
+                    case "eval": runEval(words, mem); break;
+                    case "type": runType(words, mem); break;
+                    case "exit":
+                        if (words.length > 1) throw new UsageError("exit accepts zero or one status");
+                        int status = mem.lastStatus;
+                        if (words.length) {
+                            try { status = to!int(words[0]); }
+                            catch (Exception error) { throw new UsageError("exit status must be an integer"); }
+                        }
+                        throw new ShellExit(status);
+                    default: assert(0);
+                    }
+                    return;
+                default: break;
+                }
+            } catch (UsageError error) {
+                mem.errorFile.writeln("ysh-d: ", error.msg); mem.lastStatus = 2; return;
+            }
             if (commandName == "fork" || commandName == "forkwait" || commandName == "wait" ||
                     commandName == "jobs" || commandName == "fg" || commandName == "bg") {
                 try {
@@ -2345,21 +2484,6 @@ class ProgramParser {
                 mem.lastStatus = 0;
                 return;
             }
-            auto cell = mem.getCell(commandName);
-            Value callable = cell is null ? Value.nullValue() : cell.value;
-            import yshd.func_proc : invokeProcedure;
-            if (callable.kind == ValueKind.procValue || callable.kind == ValueKind.builtinProcValue ||
-                    callable.kind == ValueKind.objectValue)
-                if (invokeProcedure(callable, argv[1 .. $], mem, evalArguments())) return;
-
-            if (auto shellFunction = mem.builtins.shellFunctions.find(commandName)) {
-                if (shellFunction.kind == ValueKind.procValue) {
-                    auto userProc = cast(YshProc)shellFunction.callableValue;
-                    userProc.invoke(argv[1 .. $], mem, evalArguments());
-                    return;
-                }
-            }
-
             if (commandName == "test" || commandName == "[") {
                 if (typedArguments !is null || hasBlock) throw new YshTypeError("test does not accept typed arguments");
                 import yshd.bracket : runTest;
@@ -2368,9 +2492,11 @@ class ProgramParser {
             }
 
             if (typedArguments !is null || hasBlock) throw new UsageError("External commands do not accept typed arguments");
+            if (builtinOnly || (selectedBuiltin != BuiltinKind.none && selectedBuiltin != BuiltinKind.privateBuiltin))
+                throw new YshError("Untranslated builtin: " ~ commandName);
             mem.canReplaceProcess = allowProcessReplacement_ && atProgramEnd();
             scope (exit) mem.canReplaceProcess = false;
-            mem.lastStatus = runExternal(argv, mem);
+            mem.lastStatus = runExternal(argv, mem, useDefaultPath);
             return;
         }
 
@@ -2389,6 +2515,10 @@ class ProgramParser {
             if (hasBlock) parseBlockArgument(body, false);
             return;
         }
+        runShopt(words, hasBlock, body, mem);
+    }
+
+    private void runShopt(string[] words, bool hasBlock, string body, Memory mem) {
         try {
             bool setting, enabled, query, setOptions;
             size_t index;
@@ -2473,6 +2603,10 @@ class ProgramParser {
         advance(); // source
         string[] words;
         while (!isEndStatement(current_.kind)) words ~= readCommandWord(mem);
+        runSource(words, mem);
+    }
+
+    private void runSource(string[] words, Memory mem) {
         bool embedded;
         if (words.length && words[0] == "--builtin") { embedded = true; words = words[1 .. $]; }
         else if (words.length && words[0] == "--") words = words[1 .. $];
@@ -2535,6 +2669,10 @@ class ProgramParser {
                 throw new UsageError("eval does not accept typed arguments or literal blocks");
             words ~= readCommandWord(mem);
         }
+        runEval(words, mem);
+    }
+
+    private void runEval(string[] words, Memory mem) {
         if (mem.options.get("simple_eval_builtin") && words.length != 1) {
             mem.errorFile.writeln("ysh-d: eval requires exactly one argument");
             mem.lastStatus = 2;
@@ -2584,6 +2722,10 @@ class ProgramParser {
             body = (cast(YshCommand)arguments.block.callableValue).source;
             bodyAttributeScope = (cast(YshCommand)arguments.block.callableValue).attributeScope;
         }
+        runCd(words, hasBlock, body, bodyAttributeScope, mem);
+    }
+
+    private void runCd(string[] words, bool hasBlock, string body, bool bodyAttributeScope, Memory mem) {
         bool physical;
         size_t index;
         for (; index < words.length; ++index) {
@@ -3622,32 +3764,28 @@ class ProgramParser {
         mem.lastStatus = 0;
     }
 
-    private void parseRead(Memory mem) {
-        advance(); // read
+    private void runRead(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
         bool all;
         bool line;
         bool rawLine;
         bool withEol;
         long byteCount = -1;
 
-        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen) {
-            if (atRawWord("--all")) {
-                consumeRawWord("--all");
+        for (size_t index; index < words.length; ++index) {
+            auto word = words[index];
+            if (word == "--all") {
                 all = true;
                 continue;
             }
-            if (atRawWord("--line")) {
-                consumeRawWord("--line");
+            if (word == "--line") {
                 line = true;
                 continue;
             }
-            if (atRawWord("--raw-line")) { consumeRawWord("--raw-line"); rawLine = true; continue; }
-            if (atRawWord("--with-eol")) { consumeRawWord("--with-eol"); withEol = true; continue; }
-            if (atRawWord("--num-bytes")) {
-                consumeRawWord("--num-bytes");
-                auto words = readCommandWord(mem);
-                if (words.length != 1) throw new UsageError("read --num-bytes expects an integer");
-                try { byteCount = to!long(words[0]); }
+            if (word == "--raw-line") { rawLine = true; continue; }
+            if (word == "--with-eol") { withEol = true; continue; }
+            if (word == "--num-bytes") {
+                if (++index == words.length) throw new UsageError("read --num-bytes expects an integer");
+                try { byteCount = to!long(words[index]); }
                 catch (Exception error) { throw new UsageError("read --num-bytes expects an integer"); }
                 continue;
             }
@@ -3660,14 +3798,14 @@ class ProgramParser {
 
         import yshd.state : FramePlace;
         Value place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
-        if (current_.kind == TokenKind.leftParen) {
-            auto values = parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true).eval(mem);
+        if (hasBlock) throw new UsageError("read does not accept a block");
+        if (parsed !is null) {
+            auto values = parsed.eval(mem);
             if (values.positional.length != 1 || values.named.length || values.hasBlock ||
                     values.positional[0].kind != ValueKind.placeValue)
                 throw new YshTypeError("read expects one Place argument");
             place = values.positional[0];
         }
-        if (!isEndStatement(current_.kind)) throw new UsageError("read: unexpected word arguments");
 
         string result;
         bool endOfInput;
@@ -3892,6 +4030,116 @@ class ProgramParser {
         }
         consumeRawWord(word);
         return true;
+    }
+
+    private void runWrite(string[] words, Memory mem) {
+        string separator = "\n", ending = "\n";
+        bool noNewline, jsonEncoding, j8Encoding;
+        string[] arguments;
+        bool flags = true;
+        for (size_t index; index < words.length; ++index) {
+            auto word = words[index];
+            if (flags && word == "--") { flags = false; continue; }
+            if (flags && (word == "--sep" || word == "--end")) {
+                if (++index == words.length) throw new UsageError(word ~ " requires an argument");
+                if (word == "--sep") separator = words[index];
+                else ending = words[index];
+            } else if (flags && word == "--json") jsonEncoding = true;
+            else if (flags && word == "--j8") j8Encoding = true;
+            else if (flags && word == "-n") noNewline = true;
+            else if (flags && word.length > 1 && word[0] == '-') throw new UsageError("write: invalid flag " ~ word);
+            else { flags = false; arguments ~= word; }
+        }
+        if (noNewline) ending = "";
+        auto encoding = jsonEncoding ? WriteEncoding.json : (j8Encoding ? WriteEncoding.j8 : WriteEncoding.plain);
+        mem.outputFile.write(renderWrite(arguments, separator, ending, encoding));
+        mem.lastStatus = 0;
+    }
+
+    private void runEcho(string[] words, Memory mem) {
+        bool noNewline, interpretEscapes;
+        size_t index;
+        for (; index < words.length; ++index) {
+            auto word = words[index];
+            if (word.length < 2 || word[0] != '-') break;
+            bool valid = true;
+            foreach (flag; word[1 .. $]) if (flag != 'e' && flag != 'n') valid = false;
+            if (!valid) break;
+            foreach (flag; word[1 .. $]) {
+                if (flag == 'n') noNewline = true;
+                else interpretEscapes = true;
+            }
+        }
+        mem.outputFile.write(renderEcho(words[index .. $], noNewline, interpretEscapes));
+        mem.lastStatus = 0;
+    }
+
+    private void runType(string[] words, Memory mem) {
+        bool all, pathOnly, forcePath, shortKind, skipFunctions;
+        size_t index;
+        for (; index < words.length; ++index) {
+            auto word = words[index];
+            if (word == "--") { ++index; break; }
+            if (word.length < 2 || word[0] != '-') break;
+            foreach (flag; word[1 .. $]) {
+                switch (flag) {
+                case 'a': all = true; break;
+                case 'p': pathOnly = true; break;
+                case 'P': forcePath = true; break;
+                case 't': shortKind = true; break;
+                case 'f': skipFunctions = true; break;
+                default: throw new UsageError("type: invalid flag " ~ word);
+                }
+            }
+        }
+        mem.lastStatus = 0;
+        foreach (name; words[index .. $]) {
+            if (forcePath) {
+                auto paths = executablePaths(name, mem.getEnv("PATH"), all);
+                foreach (path; paths) mem.outputFile.writeln(path);
+                if (!paths.length) mem.lastStatus = 1;
+                continue;
+            }
+            auto resolutions = resolveCommand(name, mem, all, !skipFunctions);
+            if (!resolutions.length) {
+                if (!shortKind) mem.errorFile.writeln(name, ": not found");
+                mem.lastStatus = 1;
+                continue;
+            }
+            foreach (resolution; all ? resolutions : resolutions[0 .. 1]) {
+                if (shortKind) mem.outputFile.writeln(resolution.kind);
+                else if (pathOnly) { if (resolution.kind == "file") mem.outputFile.writeln(resolution.detail); }
+                else {
+                    printResolution(resolution, mem);
+                    if (resolution.kind == "function") {
+                        auto functionValue = mem.builtins.shellFunctions.get(name);
+                        auto functionBody = (cast(YshProc)functionValue.callableValue).bodySource;
+                        mem.outputFile.writeln(name, " () \n{\n", functionBody, "\n}");
+                    }
+                }
+            }
+        }
+    }
+
+    private void runInvokeShow(string[] names, Memory mem) {
+        import yshd.command_lookup : CommandResolution;
+        import yshd.pretty : encodeYshString;
+        string tableWord(string word) {
+            bool bare = word.length != 0;
+            foreach (ch; word) if (!asciiIdentifierContinue(ch) && "-./".indexOf(ch) < 0) bare = false;
+            return bare ? word : encodeYshString(word);
+        }
+        mem.outputFile.write(format("%-8s%-12s%-12s%s\n", "#.qtt8", "name", "kind", "detail"));
+        foreach (name; names) {
+            auto resolutions = resolveCommand(name, mem, true, true, true);
+            if (!resolutions.length) resolutions ~= CommandResolution(name, "-", "-");
+            foreach (resolution; resolutions) {
+                auto kind = resolution.kind == "function" ? "sh-func" : resolution.kind == "file" ? "extern" : resolution.kind;
+                mem.outputFile.write(format("%-8s%-12s%-12s%s\n", "", tableWord(name), kind,
+                    resolution.detail.length ? tableWord(resolution.detail) : "-"));
+            }
+        }
+        mem.lastStatus = 0;
     }
 
     private string[] readCommandWord(Memory mem, bool assignmentPosition = false) {
