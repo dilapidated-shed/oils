@@ -100,6 +100,10 @@ struct Token {
     TokenKind kind;
     string text;
     size_t offset;
+    // In retained shell word mode, [ and ] are literal word bytes.  Keep
+    // their spelling for the word evaluator without inventing a nesting
+    // boundary in command/operator discovery.
+    bool wordBracket;
 }
 
 struct HereDocument {
@@ -141,13 +145,20 @@ class Lexer {
     private bool recognizeHereDocuments_;
     private ShellOptions options_;
     bool expressionStrings;
+    // The command parser enables this only for the ... and/or production.
+    // Source bytes and offsets stay intact; only emitted newline tokens change.
+    bool multiline;
+    private size_t newlineState_;
     private bool commandStart_ = true;
     private bool expressionCommand_;
+    private bool bracketArguments_;
     private size_t expressionDepth_;
     private struct Boundary {
         TokenKind close;
         bool parameter;
         bool expression;
+        bool conditional;
+        bool multiline;
     }
     private Boundary[] boundaries_;
     private Token previousToken_;
@@ -182,60 +193,94 @@ class Lexer {
         auto saved = position_;
         auto savedStart = commandStart_;
         auto savedExpression = expressionCommand_;
+        auto savedBracketArguments = bracketArguments_;
         auto savedDepth = expressionDepth_;
         auto savedBoundaries = boundaries_.dup;
         auto savedPrevious = previousToken_;
         auto savedPending = pendingDocuments_.dup;
         auto savedDocuments = hereDocuments.dup;
+        auto savedNewlineState = newlineState_;
         scope (exit) {
             position_ = saved;
             commandStart_ = savedStart;
             expressionCommand_ = savedExpression;
+            bracketArguments_ = savedBracketArguments;
             expressionDepth_ = savedDepth;
             boundaries_ = savedBoundaries;
             previousToken_ = savedPrevious;
             pendingDocuments_ = savedPending;
             hereDocuments = savedDocuments;
+            newlineState_ = savedNewlineState;
         }
         return next();
     }
 
     Token next() {
+        while (true) {
+            auto token = nextRaw();
+            if (token.kind == TokenKind.newline) {
+                ++newlineState_;
+                if (multilineActive()) {
+                    if (newlineState_ > 1) throw new LexError("Invalid blank line in multiline mode");
+                    continue;
+                }
+            } else newlineState_ = 0;
+            return token;
+        }
+    }
+
+    private bool multilineActive() const {
+        return boundaries_.length ? boundaries_[$ - 1].multiline : multiline;
+    }
+
+    private Token nextRaw() {
         auto token = nextToken();
         auto boundary = boundaries_.length ? boundaries_[$ - 1]
-            : Boundary(TokenKind.eof, false, !emitNewlines_ || expressionCommand_);
+            : Boundary(TokenKind.eof, false, !emitNewlines_ || expressionCommand_, false, multiline);
         bool substitution = previousToken_.kind == TokenKind.dollar && previousToken_.offset + 1 == token.offset;
-        if (token.kind == TokenKind.leftBrace || token.kind == TokenKind.leftBracket || token.kind == TokenKind.leftParen) {
+        bool conditional = boundary.conditional || (commandStart_ && token.kind == TokenKind.leftBracket &&
+            token.offset + 1 < input_.length && input_[token.offset + 1] == '[');
+        token.wordBracket = emitNewlines_ && options_ !is null && !options_.get("parse_bracket") &&
+            !expressionCommand_ && !bracketArguments_ && !boundary.expression && !substitution && !conditional &&
+            (token.kind == TokenKind.leftBracket || token.kind == TokenKind.rightBracket);
+        if (!token.wordBracket && (token.kind == TokenKind.leftBrace || token.kind == TokenKind.leftBracket || token.kind == TokenKind.leftParen)) {
             auto close = token.kind == TokenKind.leftBrace ? TokenKind.rightBrace
                 : token.kind == TokenKind.leftBracket ? TokenKind.rightBracket : TokenKind.rightParen;
             if (substitution) {
                 boundary.parameter = token.kind == TokenKind.leftBrace;
                 boundary.expression = token.kind == TokenKind.leftBracket;
             }
-            boundaries_ ~= Boundary(close, boundary.parameter, boundary.expression);
-        } else if (boundaries_.length && token.kind == boundaries_[$ - 1].close) --boundaries_.length;
+            // A substitution has a fresh word parser in Oils. Likewise typed
+            // expressions own their newlines rather than inheriting ... mode.
+            bool nestedMultiline = boundary.multiline;
+            if (substitution || expressionCommand_ || boundary.expression ||
+                    (token.kind == TokenKind.leftParen && !commandStart_) ||
+                    (token.kind == TokenKind.leftBracket && !conditional)) nestedMultiline = false;
+            boundaries_ ~= Boundary(close, boundary.parameter, boundary.expression, conditional, nestedMultiline);
+        } else if (!token.wordBracket && boundaries_.length && token.kind == boundaries_[$ - 1].close) --boundaries_.length;
         previousToken_ = token;
         if (!emitNewlines_) return token;
         if (commandStart_) {
             expressionCommand_ = token.kind == TokenKind.varKeyword || token.kind == TokenKind.constKeyword ||
                 token.kind == TokenKind.setvarKeyword || token.kind == TokenKind.setglobalKeyword ||
                 token.kind == TokenKind.equal || (token.kind == TokenKind.name && token.text == "call");
+            bracketArguments_ = token.kind == TokenKind.name && token.text == "assert";
             commandStart_ = false;
         }
         if (recognizeHereDocuments_ && token.kind == TokenKind.shiftLeft && !expressionCommand_ && expressionDepth_ == 0)
             registerHereDocument(token.offset);
-        if (token.kind == TokenKind.leftParen || token.kind == TokenKind.leftBracket ||
+        if (token.kind == TokenKind.leftParen || (token.kind == TokenKind.leftBracket && !token.wordBracket) ||
                 (expressionCommand_ && token.kind == TokenKind.leftBrace)) ++expressionDepth_;
-        else if (token.kind == TokenKind.rightParen || token.kind == TokenKind.rightBracket ||
+        else if (token.kind == TokenKind.rightParen || (token.kind == TokenKind.rightBracket && !token.wordBracket) ||
                 (expressionCommand_ && token.kind == TokenKind.rightBrace)) {
             if (expressionDepth_) --expressionDepth_;
-        } else if (!expressionCommand_ && token.kind == TokenKind.leftBrace) commandStart_ = true;
+        } else if (!expressionCommand_ && !expressionDepth_ && token.kind == TokenKind.leftBrace) commandStart_ = true;
         if (token.kind == TokenKind.newline) {
             if (pendingDocuments_.length) {
                 position_ = pendingDocuments_[$ - 1].endOffset;
                 pendingDocuments_.length = 0;
             }
-            if (!expressionDepth_) { commandStart_ = true; expressionCommand_ = false; }
+            if (!multilineActive() && !expressionDepth_) { commandStart_ = true; expressionCommand_ = false; }
         } else if (!expressionDepth_ && (token.kind == TokenKind.semicolon || token.kind == TokenKind.amp ||
                 (!expressionCommand_ && (token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)))) {
             commandStart_ = true;
@@ -563,6 +608,7 @@ class Lexer {
             // Shell line continuation disappears before word boundaries.
             if (emitNewlines_ && c == '\\' && position_ + 1 < input_.length &&
                     input_[position_ + 1] == '\n') {
+                newlineState_ = 0;
                 position_ += 2;
                 continue;
             }
@@ -584,6 +630,7 @@ class Lexer {
                 : Boundary(TokenKind.eof, false, !emitNewlines_ || expressionCommand_);
             bool wordBoundary = position_ == 0 || " \t\r\n;|&()<>".indexOf(position_ ? input_[position_ - 1] : ' ') >= 0;
             if (c == '#' && !boundary.parameter && (boundary.expression || wordBoundary)) {
+                newlineState_ = 0;
                 while (position_ < input_.length && input_[position_] != '\n') {
                     ++position_;
                 }

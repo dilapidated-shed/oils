@@ -82,7 +82,7 @@ private int signalNumber(string name) {
     throw new UsageError("unknown signal " ~ name);
 }
 
-private struct TrapAction { bool ignored; string source; string displayCode; }
+private struct TrapAction { bool ignored; string source; string displayCode; bool multiline; }
 
 string shellQuote(string source) {
     // data_lang/j8.h:BourneShellEncodeOne/BashDollarEncodeOne. Fall back
@@ -234,11 +234,12 @@ class TrapState {
             }
             if (action.ignored) continue;
             auto source = action.source;
+            auto multiline = action.multiline;
             auto status = mem.lastStatus;
             auto pipeline = mem.pipelineStatus.dup;
             auto line = mem.currentLine;
             scope (exit) { mem.lastStatus = status; mem.pipelineStatus = pipeline; mem.currentLine = line; }
-            executeProgram(source, mem);
+            executeProgram(source, mem, false, multiline);
         }
     }
 
@@ -246,13 +247,14 @@ class TrapState {
         auto action = "DEBUG" in actions;
         if (action is null || action.ignored || runningDebug || !mem.atTopLevel()) return;
         auto source = action.source;
+            auto multiline = action.multiline;
         auto status = mem.lastStatus;
         auto pipeline = mem.pipelineStatus.dup;
         auto savedLine = mem.preserveLine;
         mem.preserveLine = true;
         runningDebug = true;
         scope (exit) { runningDebug = false; mem.lastStatus = status; mem.pipelineStatus = pipeline; mem.preserveLine = savedLine; }
-        executeProgram(source, mem);
+        executeProgram(source, mem, false, multiline);
     }
 
     void runErr(Memory mem) {
@@ -261,12 +263,13 @@ class TrapState {
             return;
         if (!mem.atTopLevel() && !mem.options.get("errtrace")) return;
         auto source = action.source;
+            auto multiline = action.multiline;
         auto status = mem.lastStatus;
         runningErr = true;
         auto savedLine = mem.preserveLine;
         mem.preserveLine = true;
         scope (exit) { runningErr = false; mem.lastStatus = status; mem.preserveLine = savedLine; }
-        executeProgram(source, mem);
+        executeProgram(source, mem, false, multiline);
     }
 
     int finish(Memory mem, int status) {
@@ -277,7 +280,8 @@ class TrapState {
         auto action = "EXIT" in actions;
         if (action !is null && !action.ignored) {
             auto source = action.source;
-            try { executeProgram(source, mem); }
+            auto multiline = action.multiline;
+            try { executeProgram(source, mem, false, multiline); }
             catch (ShellExit control) { status = control.status; }
             catch (ProcReturn control) { status = control.status; }
             catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); }
@@ -285,7 +289,7 @@ class TrapState {
         return status;
     }
 
-    int builtin(string[] words, bool hasBlock, string body, Memory mem) {
+    int builtin(string[] words, bool hasBlock, string body, Memory mem, bool bodyMultiline = false) {
         bool addFlag, removeFlag, ignoreFlag, printFlag, listFlag;
         size_t index;
         for (; index < words.length; ++index) {
@@ -302,7 +306,7 @@ class TrapState {
         auto rest = words[index .. $];
         if (addFlag && !hasBlock) throw new UsageError("trap --add requires a block");
         if (hasBlock && !addFlag) throw new UsageError("trap block requires --add");
-        if (addFlag) parseProgram(body, mem.returnMode, mem.options);
+        if (addFlag) parseProgram(body, mem.returnMode, mem.options, null, false, bodyMultiline);
         if (listFlag) {
             foreach (name; ["EXIT", "ERR", "RETURN", "DEBUG"]) mem.outputFile.writeln("   ", name);
             foreach (item; signalNames()) mem.outputFile.writef("%2d SIG%s\n", item.number, item.name);
@@ -340,7 +344,7 @@ class TrapState {
                     catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); return 1; }
                 }
             }
-        } else { action.ignored = ignoreFlag; action.source = body; action.displayCode = "<unknown>"; }
+        } else { action.ignored = ignoreFlag; action.source = body; action.displayCode = "<unknown>"; action.multiline = bodyMultiline; }
         foreach (word; rest) {
             auto name = parseSignal(word, legacy);
             if (removeFlag) remove(name);

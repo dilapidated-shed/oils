@@ -16,6 +16,42 @@ version (unittest) {
     }
 
     unittest {
+        import yshd.options : ShellOptions;
+        import yshd.state : ReturnMode;
+        // The word grammar owns ordinary shell brackets. An unpaired byte
+        // must not swallow the next operator, command boundary or here-doc.
+        auto source = `
+            echo left[ | builtin cat
+            echo right] && echo selected
+            { echo inner[; echo after; }
+            builtin printf '%s\n' '[' ']'
+            builtin cat <<EOF
+literal[body]
+EOF
+            [[ x = x ]] && echo conditional
+            echo $[1 + 2]
+        `;
+        parseProgram(source, ReturnMode.shell, new ShellOptions());
+        auto output = File.tmpfile();
+        auto mem = new Memory(output, File.tmpfile());
+        executeProgram(source, mem);
+        output.rewind();
+        string actual;
+        while (!output.eof()) actual ~= output.readln();
+        assert(actual == "left[\nright]\nselected\ninner[\nafter\n[\n]\nliteral[body]\nconditional\n3\n", actual);
+
+        // Expression and conditional brackets retain structural meaning.
+        bool rejected;
+        try { parseProgram("echo $[1 +]", ReturnMode.shell, new ShellOptions()); }
+        catch (YshError error) { rejected = error.status == 2; }
+        assert(rejected);
+        rejected = false;
+        try { parseProgram("[[ x = x ]", ReturnMode.shell, new ShellOptions()); }
+        catch (YshError error) { rejected = error.status == 2; }
+        assert(rejected);
+    }
+
+    unittest {
         // Unbound names, failed commands and runtime errors must not be
         // evaluated. Both arms and bodies of uncalled functions still parse.
         parseProgram(`

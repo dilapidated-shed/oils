@@ -89,6 +89,7 @@ class YshFunction {
 
     string bodySource;
     bool attributeScope;
+    bool multiline;
     Frame closure;
     Frame moduleFrame;
     BuiltinRegistry builtins;
@@ -96,7 +97,7 @@ class YshFunction {
     this(string name, FunctionParameter[] parameters, string bodySource,
             Memory definitionMemory, string restPositionalName = "",
             FunctionParameter[] namedParameters = [],
-            string restNamedName = "", bool attributeScope = false) {
+            string restNamedName = "", bool attributeScope = false, bool multiline = false) {
         this.name = name;
         this.parameters = parameters;
         this.restPositionalName = restPositionalName;
@@ -104,6 +105,7 @@ class YshFunction {
         this.restNamedName = restNamedName;
         this.bodySource = bodySource;
         this.attributeScope = attributeScope;
+        this.multiline = multiline;
         closure = definitionMemory.currentFrame;
         moduleFrame = definitionMemory.globalFrame;
         builtins = definitionMemory.builtins;
@@ -222,7 +224,7 @@ class YshFunction {
         }
 
         try {
-            executeProcedureBody(bodySource, memory, attributeScope);
+            executeProcedureBody(bodySource, memory, attributeScope, multiline);
         } catch (FunctionReturn returned) {
             return returned.value;
         }
@@ -247,6 +249,7 @@ class YshProc {
     bool[] hasDefaults;
     string bodySource;
     bool attributeScope;
+    bool multiline;
     Frame closure;
     BuiltinRegistry builtins;
     ProcSignature signature;
@@ -261,7 +264,7 @@ class YshProc {
             bool openSignature = true,
             FunctionParameter[] wordParameters = [],
             string restWordName = "", ProcSignature signature = ProcSignature.init,
-            bool shellCompatible = false, bool attributeScope = false) {
+            bool shellCompatible = false, bool attributeScope = false, bool multiline = false) {
         this.name = name;
         this.shellCompatible = shellCompatible;
         moduleFrame = definitionMemory.globalFrame;
@@ -270,6 +273,7 @@ class YshProc {
         this.restWordName = restWordName;
         this.bodySource = bodySource;
         this.attributeScope = attributeScope;
+        this.multiline = multiline;
         this.signature = signature;
         closure = shellCompatible ? null : definitionMemory.currentFrame;
         builtins = definitionMemory.builtins;
@@ -415,7 +419,7 @@ class YshProc {
         }
 
         try {
-            executeProcedureBody(bodySource, memory, attributeScope);
+            executeProcedureBody(bodySource, memory, attributeScope, multiline);
         } catch (ProcReturn returned) {
             memory.lastStatus = returned.status;
             return Value.integer(returned.status);
@@ -444,7 +448,7 @@ class YshProc {
             memory.shellArguments = previousArguments;
             memory.returnMode = previousMode;
         }
-        try { executeProcedureBody(bodySource, memory, attributeScope); }
+        try { executeProcedureBody(bodySource, memory, attributeScope, multiline); }
         catch (ProcReturn returned) { memory.lastStatus = returned.status; }
         return Value.integer(memory.lastStatus);
     }

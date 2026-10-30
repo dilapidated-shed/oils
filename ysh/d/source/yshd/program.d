@@ -87,9 +87,11 @@ class YshCommand {
     Frame captured;
     Frame moduleFrame;
     bool attributeScope;
-    this(string source, Memory mem, bool attributeScope = false) {
+    bool multiline;
+    this(string source, Memory mem, bool attributeScope = false, bool multiline = false) {
         this.source = source;
         this.attributeScope = attributeScope;
+        this.multiline = multiline;
         captured = mem.currentFrame;
         moduleFrame = mem.globalFrame;
     }
@@ -110,7 +112,7 @@ class YshCommand {
         return Value.dictRef(dictionary);
     }
     int evalInCurrentFrame(Memory mem) {
-        executeProgram(source, mem, attributeScope);
+        executeProgram(source, mem, attributeScope, multiline);
         return mem.lastStatus;
     }
 }
@@ -215,11 +217,14 @@ private class CommandScanner {
     private bool commandStart = true;
     private bool bracketCommand;
     private ShellOptions options;
-    this(string source, ReturnMode returnMode, ShellOptions options = null) {
+    private bool multiline;
+    this(string source, ReturnMode returnMode, ShellOptions options = null, bool multiline = false) {
         this.source = source;
         this.returnMode = returnMode;
         this.options = options;
+        this.multiline = multiline;
         lexer = new Lexer(source, true, 0, true, options);
+        lexer.multiline = multiline;
     }
     HereDocument[size_t] documents() { return lexer.hereDocuments; }
     Token next() {
@@ -228,7 +233,7 @@ private class CommandScanner {
             token.kind == TokenKind.leftBracket && !(token.offset + 1 < source.length && source[token.offset + 1] == '[');
         // In test/[ argv, square brackets are ordinary word bytes rather
         // than command-language grouping. Runtime arity checks own the ].
-        if (bracketCommand && (token.kind == TokenKind.leftBracket || token.kind == TokenKind.rightBracket)) {
+        if (token.wordBracket || (bracketCommand && (token.kind == TokenKind.leftBracket || token.kind == TokenKind.rightBracket))) {
             commandStart = false;
             return Token(TokenKind.name, token.text, token.offset);
         }
@@ -239,6 +244,7 @@ private class CommandScanner {
             auto end = shellArithmeticEnd(source, token.offset + 1);
             parseShellArithmetic(source[token.offset + 3 .. end - 2], options);
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
@@ -246,56 +252,62 @@ private class CommandScanner {
         // to the enclosing pipeline/and-or scanner.
         if (commandStart && token.kind == TokenKind.leftParen &&
                 token.offset + 1 < source.length && source[token.offset + 1] == '(') {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             parser.parseSubshell(null);
             auto end = token.offset + parser.current_.offset;
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
         if (commandStart && token.kind == TokenKind.name) {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             ShellFunctionDefinition definition;
             if (parser.scanShellFunction(definition)) {
                 auto end = token.offset + definition.endOffset;
                 lexer = new Lexer(source, true, end, true, options,
                     shiftedDocuments(definition.pendingDocuments, token.offset));
+                lexer.multiline = multiline;
                 commandStart = false;
                 return Token(TokenKind.name, source[token.offset .. end], token.offset);
             }
         }
         if (commandStart && (token.kind == TokenKind.forKeyword || token.kind == TokenKind.whileKeyword ||
                 (token.kind == TokenKind.name && token.text == "until" && completeCommandWord(source, token)))) {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             if (token.kind == TokenKind.forKeyword) parser.parseForCommand();
             else parser.parseWhileCommand();
             auto end = token.offset + parser.lastCompoundEnd_;
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
         if (commandStart && token.kind == TokenKind.ifKeyword) {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             parser.parseIfCommand();
             auto end = token.offset + parser.lastCompoundEnd_;
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
         if (commandStart && token.kind == TokenKind.leftBracket && lexer.peek().kind == TokenKind.leftBracket &&
                 lexer.peek().offset == token.offset + 1) {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             parser.parseDoubleBracket(null);
             auto end = token.offset + parser.current_.offset;
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
         if (commandStart && token.kind == TokenKind.caseKeyword) {
-            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options);
+            auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             parser.parseCase(null);
             auto end = token.offset + parser.current_.offset;
             lexer = new Lexer(source, true, end, true, options);
+            lexer.multiline = multiline;
             commandStart = false;
             return Token(TokenKind.caseKeyword, source[token.offset .. end], token.offset);
         }
@@ -370,19 +382,22 @@ class ProgramParser {
     private bool lastWordTriple_;
     private bool lastWordStatic_;
     private bool attributeScope_;
+    private bool multiline_;
     private size_t lastBlockEnd_;
     private size_t lastCompoundEnd_;
     private VariableChecker variableChecker_;
 
     this(string source, bool syntaxOnly = false, ReturnMode returnMode = ReturnMode.shell, bool wordsOnly = false,
-            ShellOptions options = null, VariableChecker variableChecker = null, bool attributeScope = false) {
+            ShellOptions options = null, VariableChecker variableChecker = null, bool attributeScope = false, bool multiline = false) {
         source_ = source;
         returnMode_ = returnMode;
         syntaxOnly_ = syntaxOnly;
         attributeScope_ = attributeScope;
+        multiline_ = multiline;
         parserOptions_ = options;
         variableChecker_ = variableChecker is null ? new VariableChecker() : variableChecker;
         lexer_ = new Lexer(source, true, 0, !wordsOnly, options);
+        lexer_.multiline = multiline_;
         current_ = lexer_.next();
     }
 
@@ -397,7 +412,7 @@ class ProgramParser {
             ++parsedCommands_;
             parsedSimple_ = false;
             simpleOffset_ = current_.offset;
-            if (tryExecuteAsync(null) || tryExecuteAndOr(null) || tryExecuteTopLevelPipeline(null)) {
+            if (tryMultiline(null) || tryExecuteAsync(null) || tryExecuteAndOr(null) || tryExecuteTopLevelPipeline(null)) {
                 skipEndStatements();
                 continue;
             }
@@ -506,15 +521,15 @@ class ProgramParser {
     }
 
     private void parseProgram(string source) {
-        .parseProgram(source, returnMode_, parserOptions_, variableChecker_, attributeScope_);
+        .parseProgram(source, returnMode_, parserOptions_, variableChecker_, attributeScope_, multiline_);
     }
 
     private void parseBlockArgument(string source, bool attributeScope) {
-        .parseProgram(source, returnMode_, parserOptions_, variableChecker_, attributeScope);
+        .parseProgram(source, returnMode_, parserOptions_, variableChecker_, attributeScope, multiline_);
     }
 
     private void executeProgram(string source, Memory mem) {
-        .executeProgram(source, mem, attributeScope_);
+        .executeProgram(source, mem, attributeScope_, multiline_);
     }
 
     private static bool attributeCommandName(string name) {
@@ -560,6 +575,7 @@ class ProgramParser {
                 return;
             }
             executedCommand_ = true;
+            if (tryMultiline(mem)) { skipEndStatements(); continue; }
             if (tryExecuteAsync(mem)) { skipEndStatements(); continue; }
             if (tryExecuteAndOr(mem)) {
                 // Each eligible command owns its errexit decision. A failed
@@ -822,7 +838,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
         size_t statementEnd = source_.length;
         int depth;
         while (true) {
@@ -836,7 +852,7 @@ class ProgramParser {
                 statementEnd = statementStart + token.offset;
                 break;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
         }
 
         // Preserve the original, *unexpanded* argument source. In particular,
@@ -857,11 +873,39 @@ class ProgramParser {
         return true;
     }
 
+
+    /// ParseAndOr enters the reference word parser's ... mode for one command
+    /// list. Keep the raw source and pass its lexical mode with deferred bodies.
+    private bool tryMultiline(Memory mem) {
+        if (current_.kind != TokenKind.ellipsis || !completeCommandWord(source_, current_)) return false;
+        auto start = current_.offset + current_.text.length;
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, true);
+        int depth;
+        size_t end;
+        bool content;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof || (depth == 0 && token.kind == TokenKind.semicolon)) {
+                if (depth) throw new ParseError("Unterminated multiline command");
+                end = token.offset;
+                break;
+            }
+            content = true;
+            adjustDepth(depth, token);
+        }
+        if (!content) throw new ParseError("Expected a command after ...");
+        auto fragment = source_[start .. start + end];
+        .parseProgram(fragment, returnMode_, parserOptions_, variableChecker_, attributeScope_, true);
+        if (!syntaxOnly_) .executeProgram(fragment, mem, attributeScope_, true);
+        moveTo(start + end);
+        return true;
+    }
+
     private bool tryExecuteAndOr(Memory mem) {
         if (!pipelineStatementStart(current_.kind) && current_.kind != TokenKind.bang &&
                 current_.kind != TokenKind.ifKeyword) return false;
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         Token[] operators;
         int depth;
         size_t end;
@@ -878,7 +922,7 @@ class ProgramParser {
             }
             if (depth == 0 && (token.kind == TokenKind.andIf || token.kind == TokenKind.orIf))
                 operators ~= token;
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
         }
         if (operators.length == 0) return false;
         string[] clauses;
@@ -912,7 +956,7 @@ class ProgramParser {
     private bool tryExecuteAsync(Memory mem) {
         if (!pipelineStatementStart(current_.kind) && current_.kind != TokenKind.bang) return false;
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         size_t[] separators;
         bool compoundList = current_.kind == TokenKind.bang;
@@ -945,7 +989,7 @@ class ProgramParser {
             }
             if (depth == 0 && token.kind == TokenKind.pipe) separators ~= token.offset;
             if (depth == 0 && (token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)) compoundList = true;
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
         }
     }
 
@@ -973,7 +1017,7 @@ class ProgramParser {
 
     private bool pipelineStatementStart(TokenKind kind) const {
         return kind == TokenKind.name || kind == TokenKind.leftParen || kind == TokenKind.leftBracket || kind == TokenKind.leftBrace || kind == TokenKind.ifKeyword ||
-            kind == TokenKind.integer || kind == TokenKind.floating || kind == TokenKind.percent ||
+            kind == TokenKind.integer || kind == TokenKind.floating || kind == TokenKind.percent || kind == TokenKind.ellipsis ||
             kind == TokenKind.greater || kind == TokenKind.less || kind == TokenKind.shiftRight ||
             kind == TokenKind.shiftLeft || kind == TokenKind.tripleLess ||
             kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
@@ -1005,7 +1049,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         size_t[] separators;
         size_t statementEnd = source_.length - statementStart;
@@ -1026,7 +1070,7 @@ class ProgramParser {
                 separators ~= token.offset;
                 continue;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
         }
 
         if (separators.length == 0) {
@@ -1067,7 +1111,7 @@ class ProgramParser {
 
     private bool redirectableStatementStart(TokenKind kind) const {
         return kind == TokenKind.name || kind == TokenKind.leftParen || kind == TokenKind.leftBracket || kind == TokenKind.leftBrace ||
-            kind == TokenKind.integer || kind == TokenKind.floating || kind == TokenKind.percent ||
+            kind == TokenKind.integer || kind == TokenKind.floating || kind == TokenKind.percent || kind == TokenKind.ellipsis ||
             kind == TokenKind.greater || kind == TokenKind.less || kind == TokenKind.shiftRight ||
             kind == TokenKind.shiftLeft || kind == TokenKind.tripleLess ||
             kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
@@ -1096,7 +1140,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         size_t statementEnd = source_.length - statementStart;
         Token[] tokens;
@@ -1119,7 +1163,7 @@ class ProgramParser {
                     (token.kind == TokenKind.elseKeyword || token.kind == TokenKind.elifKeyword))
                 suffixReady = false;
             if (depth == 0 && (!compound || suffixReady)) tokens ~= token;
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
             if (compound && depth == 0 && token.kind == TokenKind.rightBrace) suffixReady = true;
         }
         struct Redirection {
@@ -1160,7 +1204,7 @@ class ProgramParser {
             auto operandStart = token.offset + token.text.length;
             // Keep the following source available to the command lexer: its
             // lookahead may encounter a later here-document on this header.
-            auto operandParser = new ProgramParser(source_[statementStart + operandStart .. $], syntaxOnly_, returnMode_, false, parserOptions_);
+            auto operandParser = new ProgramParser(source_[statementStart + operandStart .. $], syntaxOnly_, returnMode_, false, parserOptions_, null, false, multiline_);
             bool duplicate = operandParser.current_.kind == TokenKind.amp;
             if (duplicate) operandParser.advance();
             auto parts = operandParser.readCommandWord(mem);
@@ -1242,7 +1286,7 @@ class ProgramParser {
 
     private void consumeStatement() {
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         size_t end;
         while (true) {
@@ -1251,7 +1295,7 @@ class ProgramParser {
                 end = start + token.offset;
                 break;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
         }
         if (scanner.documents().length == 0) moveTo(end);
         else while (current_.kind != TokenKind.eof && current_.offset < end) advance();
@@ -1415,7 +1459,7 @@ class ProgramParser {
                 current_.kind == TokenKind.shiftRight || current_.kind == TokenKind.shiftLeft ||
                 current_.kind == TokenKind.tripleLess) {
             auto suffixStart = current_.offset;
-            auto scanner = new CommandScanner(source_[suffixStart .. $], returnMode_, parserOptions_);
+            auto scanner = new CommandScanner(source_[suffixStart .. $], returnMode_, parserOptions_, multiline_);
             int depth;
             size_t suffixEnd;
             while (true) {
@@ -1425,7 +1469,7 @@ class ProgramParser {
                     suffixEnd = token.offset;
                     break;
                 }
-                adjustDepth(depth, token.kind);
+                adjustDepth(depth, token);
             }
             auto suffix = commandFragment(suffixStart, 0, suffixEnd, scanner);
             body = source_[bodyStart .. bodyEnd] ~ " " ~ suffix;
@@ -1445,15 +1489,15 @@ class ProgramParser {
         if (current_.kind != TokenKind.name && current_.kind != TokenKind.trueKeyword &&
                 current_.kind != TokenKind.falseKeyword) return false;
         auto start = current_.offset;
-        auto parser = new ProgramParser(source_[start .. $], true, returnMode_, false, parserOptions_);
+        auto parser = new ProgramParser(source_[start .. $], true, returnMode_, false, parserOptions_, null, false, multiline_);
         ShellFunctionDefinition definition;
         if (!parser.scanShellFunction(definition)) return false;
         variableChecker_.enter(DefinitionKind.shellFunction);
         scope (exit) variableChecker_.leave();
-        .parseProgram(definition.body, ReturnMode.procValue, parserOptions_, variableChecker_, attributeScope_);
+        .parseProgram(definition.body, ReturnMode.procValue, parserOptions_, variableChecker_, attributeScope_, multiline_);
         moveTo(start + definition.endOffset, shiftedDocuments(definition.pendingDocuments, start));
         if (!syntaxOnly_) {
-            auto functionProc = new YshProc(definition.name, definition.body, mem, true, [], "", ProcSignature.init, true, attributeScope_);
+            auto functionProc = new YshProc(definition.name, definition.body, mem, true, [], "", ProcSignature.init, true, attributeScope_, multiline_);
             mem.builtins.shellFunctions.set(definition.name, Value.proc(functionProc));
             mem.lastStatus = 0;
         }
@@ -1590,10 +1634,10 @@ class ProgramParser {
         foreach (parameter; namedParameters) variableChecker_.declare(parameter.name);
         if (restPositionalName.length) variableChecker_.declare(restPositionalName);
         if (restNamedName.length) variableChecker_.declare(restNamedName);
-        .parseProgram(body, ReturnMode.functionValue, parserOptions_, variableChecker_, attributeScope_);
+        .parseProgram(body, ReturnMode.functionValue, parserOptions_, variableChecker_, attributeScope_, multiline_);
         if (syntaxOnly_) return;
         auto userFunction = new YshFunction(name, parameters, body, mem,
-            restPositionalName, namedParameters, restNamedName, attributeScope_);
+            restPositionalName, namedParameters, restNamedName, attributeScope_, multiline_);
         mem.declareLocal(name, Value.callable(userFunction));
     }
 
@@ -1701,10 +1745,10 @@ class ProgramParser {
         if (signature.restPositional.length) variableChecker_.declare(signature.restPositional);
         if (signature.restNamed.length) variableChecker_.declare(signature.restNamed);
         if (signature.hasBlock) variableChecker_.declare(signature.block.name);
-        .parseProgram(body, ReturnMode.procValue, parserOptions_, variableChecker_, attributeScope_);
+        .parseProgram(body, ReturnMode.procValue, parserOptions_, variableChecker_, attributeScope_, multiline_);
         if (syntaxOnly_) return;
         auto userProc = new YshProc(name, body, mem, openSignature,
-            wordParameters, restWordName, signature, false, attributeScope_);
+            wordParameters, restWordName, signature, false, attributeScope_, multiline_);
         mem.declareLocal(name, Value.proc(userProc));
     }
 
@@ -2115,7 +2159,7 @@ class ProgramParser {
             if (hasBlock) {
                 if (arguments.hasBlock) throw new FatalRuntimeError("Can't accept both block expression and block literal");
                 arguments.hasBlock = true;
-                arguments.block = Value.closure(ValueKind.commandValue, new YshCommand(blockSource, mem, attributeBlock));
+                arguments.block = Value.closure(ValueKind.commandValue, new YshCommand(blockSource, mem, attributeBlock, multiline_));
             }
             return arguments;
         }
@@ -2259,7 +2303,7 @@ class ProgramParser {
                         throw new YshTypeError("cd block should be Command");
                     auto block = arguments.hasBlock ? cast(YshCommand)arguments.block.callableValue : null;
                     runCd(words, block !is null, block is null ? "" : block.source,
-                        block !is null && block.attributeScope, mem);
+                        block !is null && block.attributeScope, mem, block !is null && block.multiline);
                     return;
                 case "shopt":
                     auto arguments = evalArguments();
@@ -2268,7 +2312,7 @@ class ProgramParser {
                     if (arguments.hasBlock && arguments.block.kind != ValueKind.commandValue)
                         throw new YshTypeError("shopt block should be Command");
                     auto block = arguments.hasBlock ? cast(YshCommand)arguments.block.callableValue : null;
-                    runShopt(words, block !is null, block is null ? "" : block.source, mem);
+                    runShopt(words, block !is null, block is null ? "" : block.source, mem, block !is null && block.multiline);
                     return;
                 case "true": case "false": case ":": case "echo": case "write":
                 case "set": case "alias": case "unalias": case "source": case ".": case "eval": case "exit": case "type":
@@ -2316,7 +2360,7 @@ class ProgramParser {
                         // RequiredBlockAsFrag discards captured frames, as cd
                         // and trap do. The OS child inherits the current frame.
                         mem.lastStatus = runSourceJob([command.source], mem,
-                            (string stage, Memory child) { executeProgram(stage, child); return child.lastStatus; }, commandName == "fork");
+                            (string stage, Memory child) { return command.evalInCurrentFrame(child); }, commandName == "fork");
                     } else {
                         if (arguments.hasBlock || typedArguments !is null)
                             throw new UsageError(commandName ~ " does not accept typed arguments");
@@ -2335,8 +2379,10 @@ class ProgramParser {
                         throw new YshTypeError("trap expects only a block argument");
                     if (arguments.hasBlock && arguments.block.kind != ValueKind.commandValue)
                         throw new YshTypeError("trap block should be Command");
-                    auto fragment = arguments.hasBlock ? (cast(YshCommand)arguments.block.callableValue).source : "";
-                    mem.lastStatus = mem.traps.builtin(argv[1 .. $], arguments.hasBlock, fragment, mem);
+                    auto block = arguments.hasBlock ? cast(YshCommand)arguments.block.callableValue : null;
+                    auto fragment = block is null ? "" : block.source;
+                    mem.lastStatus = mem.traps.builtin(argv[1 .. $], arguments.hasBlock, fragment, mem,
+                        block !is null && block.multiline);
                 } catch (UsageError error) {
                     mem.errorFile.writeln("ysh-d: ", error.msg);
                     mem.lastStatus = 2;
@@ -2515,10 +2561,10 @@ class ProgramParser {
             if (hasBlock) parseBlockArgument(body, false);
             return;
         }
-        runShopt(words, hasBlock, body, mem);
+        runShopt(words, hasBlock, body, mem, multiline_);
     }
 
-    private void runShopt(string[] words, bool hasBlock, string body, Memory mem) {
+    private void runShopt(string[] words, bool hasBlock, string body, Memory mem, bool bodyMultiline = false) {
         try {
             bool setting, enabled, query, setOptions;
             size_t index;
@@ -2555,7 +2601,7 @@ class ProgramParser {
                     foreach (name; names) numbers ~= mem.options.expand(name);
                     mem.options.push(numbers, enabled);
                     scope (exit) mem.options.pop(numbers);
-                    .executeProgram(body, mem, false);
+                    .executeProgram(body, mem, false, bodyMultiline);
                 } else {
                     foreach (name; names) mem.options.set(name, enabled);
                 }
@@ -2710,6 +2756,7 @@ class ProgramParser {
         bool literalBlock = current_.kind == TokenKind.leftBrace;
         auto body = literalBlock ? collectBlock() : "";
         bool bodyAttributeScope;
+        bool bodyMultiline;
         if (literalBlock) parseBlockArgument(body, false);
         if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after cd block");
         auto arguments = parsed is null ? EvaluatedArguments.init : parsed.eval(mem);
@@ -2721,11 +2768,12 @@ class ProgramParser {
             if (arguments.block.kind != ValueKind.commandValue) throw new YshTypeError("cd block should be Command");
             body = (cast(YshCommand)arguments.block.callableValue).source;
             bodyAttributeScope = (cast(YshCommand)arguments.block.callableValue).attributeScope;
+            bodyMultiline = (cast(YshCommand)arguments.block.callableValue).multiline;
         }
-        runCd(words, hasBlock, body, bodyAttributeScope, mem);
+        runCd(words, hasBlock, body, bodyAttributeScope, mem, bodyMultiline);
     }
 
-    private void runCd(string[] words, bool hasBlock, string body, bool bodyAttributeScope, Memory mem) {
+    private void runCd(string[] words, bool hasBlock, string body, bool bodyAttributeScope, Memory mem, bool bodyMultiline = false) {
         bool physical;
         size_t index;
         for (; index < words.length; ++index) {
@@ -2769,7 +2817,7 @@ class ProgramParser {
             }
             scope (exit) restoreDirectory();
             setDirectory(mem, destination);
-            .executeProgram(body, mem, bodyAttributeScope);
+            .executeProgram(body, mem, bodyAttributeScope, bodyMultiline);
             // Restore before deciding the builtin's status. Nonlocal control
             // still runs the same cleanup through the scope guard.
             restoreDirectory();
@@ -3021,7 +3069,7 @@ class ProgramParser {
                 }
             }
             auto kind = current_.kind;
-            adjustDepth(depth, kind);
+            adjustDepth(depth, current_);
             advance();
             commandStart = isEndStatement(kind) || kind == TokenKind.pipe ||
                 kind == TokenKind.andIf || kind == TokenKind.orIf;
@@ -3133,12 +3181,13 @@ class ProgramParser {
 
     private void moveTo(size_t offset, HereDocument[] pendingDocuments = []) {
         lexer_ = new Lexer(source_, true, offset, true, parserOptions_, pendingDocuments);
+        lexer_.multiline = multiline_;
         current_ = lexer_.next();
     }
 
     private string collectIfCondition(out bool legacy, string keyword = "then") {
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         bool commandStart = true;
         while (true) {
@@ -3162,7 +3211,7 @@ class ProgramParser {
                 moveTo(start + token.offset);
                 return result;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
             commandStart = token.kind == TokenKind.newline || token.kind == TokenKind.semicolon ||
                 token.kind == TokenKind.andIf || token.kind == TokenKind.orIf || token.kind == TokenKind.pipe;
         }
@@ -3170,7 +3219,7 @@ class ProgramParser {
 
     private string collectLegacyIfBody() {
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         bool commandStart = true;
         while (true) {
@@ -3186,7 +3235,7 @@ class ProgramParser {
                 moveTo(start + token.offset);
                 return result;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
             commandStart = token.kind == TokenKind.newline || token.kind == TokenKind.semicolon ||
                 token.kind == TokenKind.andIf || token.kind == TokenKind.orIf || token.kind == TokenKind.pipe;
         }
@@ -3290,6 +3339,7 @@ class ProgramParser {
         // ERE bracket expressions have their own grammar. Finish the command
         // lexical context instead of carrying their delimiter counts onward.
         lexer_ = new Lexer(source_, true, end, true, parserOptions_);
+        lexer_.multiline = multiline_;
         current_ = lexer_.next();
         if (previousSyntax) return;
         try { mem.lastStatus = condition.eval(mem) ? 0 : 1; }
@@ -3301,7 +3351,7 @@ class ProgramParser {
 
     private string collectDoBody() {
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_);
+        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
         int depth;
         bool commandStart = true;
         while (true) {
@@ -3318,7 +3368,7 @@ class ProgramParser {
                 consumeRawWord("done");
                 return body;
             }
-            adjustDepth(depth, token.kind);
+            adjustDepth(depth, token);
             commandStart = token.kind == TokenKind.newline || token.kind == TokenKind.semicolon ||
                 token.kind == TokenKind.andIf || token.kind == TokenKind.orIf || token.kind == TokenKind.pipe;
         }
@@ -3846,7 +3896,7 @@ class ProgramParser {
         mem.errexitSuppression = 0;
         scope (exit) mem.errexitSuppression = savedSuppression;
         try {
-            .executeProgram(body, mem, false);
+            .executeProgram(body, mem, false, multiline_);
             error.dictValue.set("code", Value.integer(0));
         } catch (Errexit caught) {
             error.dictValue.set("code", Value.integer(caught.status));
@@ -4555,7 +4605,7 @@ class ProgramParser {
                  parameter[operatorOffset] == '=' || parameter[operatorOffset] == '?')) {
             operation = parameter[operatorOffset];
             auto word = parameter[operatorOffset + 1 .. $];
-            auto wordParser = new ProgramParser(word, syntaxOnly_, returnMode_, false, parserOptions_);
+            auto wordParser = new ProgramParser(word, syntaxOnly_, returnMode_, false, parserOptions_, null, false, multiline_);
             if (syntaxOnly_) {
                 // Syntax is checked even when the default would be unused,
                 // while nested commands and assignments remain unevaluated.
@@ -4788,7 +4838,7 @@ class ProgramParser {
                 advance();
                 return command;
             }
-            adjustDepth(depth, current_.kind);
+            adjustDepth(depth, current_);
             advance();
         }
         throw new YshError("unterminated " ~ description);
@@ -4900,6 +4950,7 @@ class ProgramParser {
         case TokenKind.minus:
         case TokenKind.plus:
         case TokenKind.dot:
+        case TokenKind.ellipsis:
         case TokenKind.colon:
         case TokenKind.slash:
         case TokenKind.percent:
@@ -5069,6 +5120,10 @@ class ProgramParser {
         return false;
     }
 
+    private static void adjustDepth(ref int depth, Token token) {
+        if (!token.wordBracket) adjustDepth(depth, token.kind);
+    }
+
     private static void adjustDepth(ref int depth, TokenKind kind) {
         switch (kind) {
         case TokenKind.leftParen:
@@ -5108,6 +5163,7 @@ class ProgramParser {
 
     private bool atProgramEnd() {
         auto remaining = new Lexer(source_, true, current_.offset, true, parserOptions_);
+        remaining.multiline = multiline_;
         auto token = remaining.next();
         while (token.kind == TokenKind.newline || token.kind == TokenKind.semicolon) token = remaining.next();
         return token.kind == TokenKind.eof;
@@ -5129,25 +5185,25 @@ string evaluateCommandSubstitution(string command, Memory mem) {
     return output;
 }
 
-void executeProgram(string source, Memory mem, bool attributeScope = false) {
+void executeProgram(string source, Memory mem, bool attributeScope = false, bool multiline = false) {
     mem.registerSource(source);
-    auto parser = new ProgramParser(source, false, mem.returnMode, false, mem.options, null, attributeScope);
+    auto parser = new ProgramParser(source, false, mem.returnMode, false, mem.options, null, attributeScope, multiline);
     parser.execute(mem);
     // Batch and command-list evaluation return zero for an empty program.
     // Do this afterward so a first command's $? still sees its caller's status.
     if (!parser.executedCommand_) mem.lastStatus = 0;
 }
 
-void executeProcedureBody(string source, Memory mem, bool attributeScope = false) {
-    try { executeProgram(source, mem, attributeScope); }
+void executeProcedureBody(string source, Memory mem, bool attributeScope = false, bool multiline = false) {
+    try { executeProgram(source, mem, attributeScope, multiline); }
     catch (LoopControl control) { throw new FatalRuntimeError("Unexpected break or continue across a procedure call"); }
 }
 
 /// Parse with no interpreter state. No command or expression is evaluated.
 void parseProgram(string source, ReturnMode returnMode = ReturnMode.shell, ShellOptions options = null,
-        VariableChecker variableChecker = null, bool attributeScope = false) {
+        VariableChecker variableChecker = null, bool attributeScope = false, bool multiline = false) {
     try {
-        (new ProgramParser(source, true, returnMode, false, options, variableChecker, attributeScope)).parse();
+        (new ProgramParser(source, true, returnMode, false, options, variableChecker, attributeScope, multiline)).parse();
     } catch (ParseError error) {
         throw error;
     } catch (YshError error) {
