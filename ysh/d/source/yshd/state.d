@@ -10,6 +10,7 @@ import yshd.options : ShellOptions;
 import yshd.dirs : DirectoryStack;
 import yshd.traps : TrapState;
 import yshd.jobs : JobTable;
+import yshd.trace : TraceState;
 
 enum ReturnMode { shell, functionValue, procValue }
 
@@ -177,6 +178,7 @@ class Memory {
     RegexMatch regexMatch;
     YshDict[] contextStack;
     ShellOptions options;
+    TraceState trace;
     @property bool errexit() const { return options.get("errexit"); }
     @property void errexit(bool enabled) { options.set("errexit", enabled); }
     @property bool nounset() const { return options.get("nounset"); }
@@ -283,6 +285,7 @@ class Memory {
         this.outputFile = outputFile;
         this.errorFile = errorFile;
         options = new ShellOptions();
+        trace = new TraceState();
         traps = new TrapState();
         jobs = new JobTable();
         import std.file : getcwd;
@@ -307,6 +310,7 @@ class Memory {
         globalFrame.cells.set("ARGV", new Cell(Value.list([])));
         // InitDefaultVars sets IFS even when no_init_globals is enabled.
         globalFrame.cells.set("IFS", new Cell(Value.str(" \t\n")));
+        globalFrame.cells.set("PS4", new Cell(Value.str("${SHX_indent}${SHX_punct}${SHX_pid_str} ")));
         globalFrame.cells.set("_error", new Cell(Value.dict()));
         globalFrame.cells.set("NAN", new Cell(Value.floating(double.nan)));
         globalFrame.cells.set("INFINITY", new Cell(Value.floating(double.infinity)));

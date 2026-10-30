@@ -180,6 +180,27 @@ EOF
     }
 
     unittest {
+        // Ordinary shell operators allow a newline before their right side;
+        // this is independent of the ... multiline production.
+        auto output = File.tmpfile();
+        auto mem = new Memory(output, File.tmpfile());
+        executeProgram(`
+            echo streamed |
+                builtin cat
+            false ||
+                echo recovered
+            true &&
+                # intervening comments and blank lines are allowed
+
+                echo selected
+        `, mem);
+        output.rewind();
+        string actual;
+        while (!output.eof()) actual ~= output.readln();
+        assert(actual == "streamed\nrecovered\nselected\n", actual);
+    }
+
+    unittest {
         auto mem = new Memory(File.tmpfile(), File.tmpfile());
         executeProgram(`
             var a = [8, 16]

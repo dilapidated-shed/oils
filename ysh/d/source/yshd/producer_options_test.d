@@ -57,7 +57,7 @@ unittest {
         assert(actual == item.output, item.source ~ ": " ~ actual);
     }
     foreach (source; ["set -u; echo $UNBOUND_IL0_CASE", "set -u; echo \"$UNBOUND_IL0_CASE\"",
-            "set -u; echo ${UNBOUND_IL0_CASE}", "set -o unsupported", "set -x",
+            "set -u; echo ${UNBOUND_IL0_CASE}", "set -o unsupported", "set -z",
             "set -o", "var expression = UNBOUND_IL0_CASE", "var invalid = 0b29",
             "var invalid = 0xnohex", "echo $[0o89]"]) {
         auto mem = new Memory(File.tmpfile(), File.tmpfile());

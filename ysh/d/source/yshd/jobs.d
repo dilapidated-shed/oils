@@ -78,6 +78,8 @@ class JobTable {
             if (result > 0) {
                 import yshd.process : reportChildSignal;
                 reportChildSignal(raw, mem);
+                if (WIFEXITED(raw) || WIFSIGNALED(raw))
+                    mem.trace.processEnd(result, WIFEXITED(raw) ? WEXITSTATUS(raw) : 128 + WTERMSIG(raw), mem);
                 changed = record(result, raw); return 0;
             }
             if (result == 0) return -1;

@@ -23,6 +23,7 @@ import yshd.lexer : Lexer, Token, TokenKind, HereDocument;
 import yshd.process : runExternal, runPipeline, runSourcePipeline, runSourceJob, captureSourceOutput;
 import yshd.state : Memory, ReturnMode, Frame;
 import yshd.options : ShellOptions;
+import yshd.trace : TraceScope;
 import yshd.var_check : VariableChecker, DefinitionKind;
 import yshd.eval_scope : EvalOptions, withEvalBindings;
 import yshd.dirs : setDirectory, popDirectory, physicalDirectory, runDirectoryBuiltin;
@@ -216,6 +217,7 @@ private class CommandScanner {
     private ReturnMode returnMode;
     private bool commandStart = true;
     private bool bracketCommand;
+    private bool continuation;
     private ShellOptions options;
     private bool multiline;
     this(string source, ReturnMode returnMode, ShellOptions options = null, bool multiline = false) {
@@ -228,7 +230,10 @@ private class CommandScanner {
     }
     HereDocument[size_t] documents() { return lexer.hereDocuments; }
     Token next() {
-        auto token = lexer.next();
+        Token token;
+        do { token = lexer.next(); }
+        while (continuation && token.kind == TokenKind.newline);
+        continuation = token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf;
         if (commandStart) bracketCommand = token.kind == TokenKind.name && token.text == "test" ||
             token.kind == TokenKind.leftBracket && !(token.offset + 1 < source.length && source[token.offset + 1] == '[');
         // In test/[ argv, square brackets are ordinary word bytes rather
@@ -331,7 +336,8 @@ class ShellExit : Exception {
 /// Automatic failure propagation is catchable by try. An explicit exit still
 /// terminates the shell even inside try, as in the reference error model.
 class Errexit : ShellExit {
-    this(int status) { super(status); }
+    string diagnostic;
+    this(int status, string diagnostic = "") { super(status); this.diagnostic = diagnostic; }
 }
 
 private class LoopControl : Exception {
@@ -779,6 +785,7 @@ class ProgramParser {
                 case 'u': mem.nounset = enabled; break;
                 case 'n': mem.options.setOld("noexec", enabled); break;
                 case 'E': mem.options.setOld("errtrace", enabled); break;
+                case 'x': mem.options.setOld("xtrace", enabled); break;
                 case 'o':
                     if (flagIndex + 2 != word.length || index + 1 >= words.length) {
                         throw new YshError("set -o/+o requires a supported option name");
@@ -789,6 +796,7 @@ class ProgramParser {
                     case "nounset": mem.nounset = enabled; break;
                     case "pipefail": mem.pipefail = enabled; break;
                     case "errtrace": mem.options.setOld("errtrace", enabled); break;
+                    case "xtrace": mem.options.setOld("xtrace", enabled); break;
                     default: throw new YshError("untranslated set option: " ~ words[index]);
                     }
                     break;
@@ -1001,7 +1009,10 @@ class ProgramParser {
             auto end = shellArithmeticEnd(source_, start);
             auto arithmetic = parseShellArithmetic(source_[start + 2 .. end - 2], parserOptions_);
             moveTo(end);
-            if (!syntaxOnly_) mem.lastStatus = arithmetic.evaluate(mem) != 0 ? 0 : 1;
+            if (!syntaxOnly_) {
+                mem.trace.sourceCode(source_[start .. end], mem);
+                mem.lastStatus = arithmetic.evaluate(mem) != 0 ? 0 : 1;
+            }
             return;
         }
         if (parserOptions_ !is null && parserOptions_.get("no_parse_osh"))
@@ -2098,6 +2109,7 @@ class ProgramParser {
             if (isEndStatement(current_.kind)) {
                 foreach (name, text; tempBindings) {
                     mem.setShellVar(name, Value.str(text));
+                    mem.trace.assignment(name, "=", Value.str(text), mem);
                 }
                 mem.lastStatus = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
                 return;
@@ -2165,6 +2177,7 @@ class ProgramParser {
         }
 
         if (pipeline.length == 0) {
+            mem.trace.simpleCommand(argv, mem);
             bool builtinOnly, skipProcedures, useDefaultPath;
             // Prefixes operate on this already-expanded argv. Never turn words
             // back into source or evaluate a typed argument a second time.
@@ -2172,7 +2185,7 @@ class ProgramParser {
                 if (!skipProcedures && builtinKind(argv[0]) != BuiltinKind.special) {
                     import yshd.func_proc : invokeProcedure;
                     if (hasProcedure(argv[0], mem) &&
-                            invokeProcedure(mem.getCell(argv[0]).value, argv[1 .. $], mem, evalArguments())) return;
+                            invokeProcedure(mem.getCell(argv[0]).value, argv[1 .. $], mem, evalArguments(), argv[0])) return;
                     if (auto functionValue = mem.builtins.shellFunctions.find(argv[0])) {
                         (cast(YshProc)functionValue.callableValue).invoke(argv[1 .. $], mem, evalArguments());
                         return;
@@ -2184,7 +2197,7 @@ class ProgramParser {
                     auto name = argv[start];
                     if (!hasProcedure(name, mem)) { mem.errorFile.writeln("runproc: no invokable named ", name); mem.lastStatus = 1; return; }
                     import yshd.func_proc : invokeProcedure;
-                    invokeProcedure(mem.getCell(name).value, argv[start + 1 .. $], mem, evalArguments());
+                    invokeProcedure(mem.getCell(name).value, argv[start + 1 .. $], mem, evalArguments(), name);
                     return;
                 }
                 if (argv[0] == "invoke") {
@@ -2275,6 +2288,8 @@ class ProgramParser {
             }
             commandName = argv[0];
             auto selectedBuiltin = builtinKind(commandName);
+            if (selectedBuiltin != BuiltinKind.none && (selectedBuiltin != BuiltinKind.privateBuiltin || builtinOnly))
+                mem.trace.builtin(argv, mem);
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
@@ -2335,6 +2350,7 @@ class ProgramParser {
                             try { status = to!int(words[0]); }
                             catch (Exception error) { throw new UsageError("exit status must be an integer"); }
                         }
+                        mem.trace.control("exit", status, mem);
                         throw new ShellExit(status);
                     default: assert(0);
                     }
@@ -2364,7 +2380,10 @@ class ProgramParser {
                     } else {
                         if (arguments.hasBlock || typedArguments !is null)
                             throw new UsageError(commandName ~ " does not accept typed arguments");
-                        if (commandName == "wait") mem.lastStatus = mem.jobs.waitBuiltin(argv[1 .. $], mem);
+                        if (commandName == "wait") {
+                            auto traceScope = TraceScope(mem, "wait", argv);
+                            mem.lastStatus = mem.jobs.waitBuiltin(argv[1 .. $], mem);
+                        }
                         else if (commandName == "jobs") mem.lastStatus = mem.jobs.jobsBuiltin(argv[1 .. $], mem);
                         else if (commandName == "fg") mem.lastStatus = mem.jobs.foreground(argv[1 .. $], mem);
                         else throw new UsageError("bg isn't implemented"); // Same reference boundary.
@@ -2687,6 +2706,7 @@ class ProgramParser {
                 return;
             }
         }
+        auto traceScope = TraceScope(mem, "source", ["source"] ~ words);
         auto savedMode = mem.returnMode;
         auto savedMain = mem.isMain;
         auto savedArguments = mem.shellArguments;
@@ -2724,6 +2744,7 @@ class ProgramParser {
             mem.lastStatus = 2;
             return;
         }
+        auto traceScope = TraceScope(mem, "eval");
         .executeProgram(words.join(" "), mem);
     }
 
@@ -2873,6 +2894,7 @@ class ProgramParser {
             try { status = to!int(words[0]); }
             catch (Exception error) { throw new FatalRuntimeError("return status must be an integer"); }
         }
+        mem.trace.control("return", status, mem);
         throw new ProcReturn(status & 255);
     }
 
@@ -3342,6 +3364,7 @@ class ProgramParser {
         lexer_.multiline = multiline_;
         current_ = lexer_.next();
         if (previousSyntax) return;
+        mem.trace.sourceCode(source_[first .. end], mem);
         try { mem.lastStatus = condition.eval(mem) ? 0 : 1; }
         catch (EreError error) {
             mem.errorFile.writeln(error.msg);
@@ -4809,8 +4832,9 @@ class ProgramParser {
                 .executeProgram(source, childMemory);
                 return childMemory.lastStatus;
             });
-        if (mem.options.get("command_sub_errexit") && mem.lastStatus != 0)
-            throw new Errexit(mem.lastStatus);
+        if (mem.options.get("command_sub_errexit") && mem.commandSubLastStatus != 0)
+            throw new Errexit(mem.commandSubLastStatus,
+                "Command Sub exited with status " ~ to!string(mem.commandSubLastStatus));
         return result;
     }
 
@@ -5004,6 +5028,7 @@ class ProgramParser {
             return;
         }
         mem.lastStatus = 0;
+        mem.trace.control(shouldBreak ? "break" : "continue", levels, mem);
         throw new LoopControl(shouldBreak, levels);
     }
 

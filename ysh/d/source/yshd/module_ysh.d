@@ -12,6 +12,7 @@ import yshd.func_proc : YshBuiltinProc, ProcReturn, invokeProcedure;
 import yshd.program : executeProgram;
 import yshd.resources : standardLibrarySource;
 import yshd.state : Memory, Frame, ReturnMode;
+import yshd.trace : TraceScope;
 import yshd.value : Value, ValueKind, YshDict, YshObject, UsageError, YshTypeError;
 
 /// builtin/module_ysh.py:ModuleInvoke forwards words and typed arguments
@@ -29,8 +30,11 @@ class ModuleInvoke : YshBuiltinProc {
                 if (method !is null && method.kind != ValueKind.procValue)
                     throw new YshTypeError("module member __invoke__ should be a user-defined Proc");
             }
-            if ((value.kind == ValueKind.procValue || value.kind == ValueKind.objectValue) &&
-                    invokeProcedure(*value, words[1 .. $], mem, arguments)) return;
+            if (value.kind == ValueKind.procValue || (value.kind == ValueKind.objectValue &&
+                    value.objectValue.prototype !is null && value.objectValue.prototype.find("__invoke__") !is null)) {
+                auto traceScope = TraceScope(mem, "module-invoke", mem.trace.commandArgv);
+                if (invokeProcedure(*value, words[1 .. $], mem, arguments, "", false)) return;
+            }
         }
         throw new UsageError("module doesn't contain invokable " ~ words[0]);
     }
@@ -137,6 +141,7 @@ int useModule(string[] words, Memory mem) {
         if (auto cell = mem.globalFrame.cells.get(sharedName)) frame.cells.set(sharedName, cell);
     int status;
     {
+        auto traceScope = TraceScope(mem, "use", ["use"] ~ words);
         auto previousFrame = mem.setActiveGlobalFrame(frame);
         auto previousMain = mem.isMain;
         auto previousMode = mem.returnMode;

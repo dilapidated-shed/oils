@@ -4,6 +4,7 @@ import std.format : format;
 
 import yshd.expr : evaluate, EvaluatedArguments;
 import yshd.program : executeProcedureBody;
+import yshd.trace : TraceScope;
 import yshd.state : Frame, Memory, ReturnMode, BuiltinRegistry;
 import yshd.value : Value, ValueKind, YshDict, YshError, YshTypeError;
 
@@ -15,7 +16,7 @@ abstract class YshBuiltinProc {
 
 /// Shared command dispatch for direct procs and Obj prototype __invoke__.
 bool invokeProcedure(Value callable, string[] words, Memory mem,
-        EvaluatedArguments arguments) {
+        EvaluatedArguments arguments, string invokedName = "", bool traceCall = true) {
     Value self;
     if (callable.kind == ValueKind.objectValue && callable.objectValue.prototype !is null) {
         auto method = callable.objectValue.prototype.find("__invoke__");
@@ -23,6 +24,9 @@ bool invokeProcedure(Value callable, string[] words, Memory mem,
         self = callable;
         callable = *method;
     }
+    auto savedArgv = mem.trace.commandArgv;
+    if (invokedName.length) mem.trace.commandArgv = [invokedName] ~ words;
+    scope (exit) mem.trace.commandArgv = savedArgv;
     if (callable.kind == ValueKind.builtinProcValue) {
         (cast(YshBuiltinProc)callable.callableValue).invoke(words, mem, arguments, self);
         return true;
@@ -34,7 +38,10 @@ bool invokeProcedure(Value callable, string[] words, Memory mem,
             throw new YshError("Using a proc as __invoke__ requires a self param");
         arguments.positional = [self] ~ arguments.positional;
     }
-    proc.invoke(words, mem, arguments);
+    if (traceCall) {
+        auto traceScope = TraceScope(mem, "proc", [invokedName.length ? invokedName : proc.name] ~ words);
+        proc.invoke(words, mem, arguments);
+    } else proc.invoke(words, mem, arguments);
     return true;
 }
 
@@ -322,7 +329,9 @@ class YshProc {
         if (shellCompatible) {
             if (arguments.positional.length || (arguments.named !is null && arguments.named.length) || arguments.hasBlock)
                 throw new YshTypeError("Shell functions do not accept typed arguments");
-            return invokeShell(words, callerMemory is null ? new Memory() : callerMemory);
+            auto memory = callerMemory is null ? new Memory() : callerMemory;
+            auto traceScope = TraceScope(memory, "proc", [name] ~ words);
+            return invokeShell(words, memory);
         }
         auto memory = callerMemory is null ? new Memory() : callerMemory;
         auto previousGlobal = memory.setActiveGlobalFrame(moduleFrame);

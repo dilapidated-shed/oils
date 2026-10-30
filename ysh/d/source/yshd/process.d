@@ -10,6 +10,7 @@ import yshd.state : Memory, ReturnMode;
 import yshd.func_proc : ProcReturn;
 import yshd.value : YshError;
 import yshd.program : ShellExit, Errexit;
+import yshd.trace : TraceScope, TraceProcessKind;
 
 version (Posix) {
     import core.stdc.errno : errno, EINTR, EACCES, ENOENT, ENOTDIR, ENOEXEC;
@@ -18,7 +19,7 @@ version (Posix) {
     import core.sys.posix.sys.wait : waitpid, WIFEXITED, WEXITSTATUS,
         WIFSIGNALED, WTERMSIG;
     import core.sys.posix.unistd : fork, _exit, execve, dup2, close, read, write, setpgid,
-        sysconf, _SC_OPEN_MAX;
+        sysconf, _SC_OPEN_MAX, getpid;
     import core.sys.posix.poll : poll, pollfd, POLLIN;
     import core.sys.posix.fcntl : fcntl, F_DUPFD;
     import core.sys.posix.signal : signal, SIGPIPE, SIG_DFL, kill, SIGINT, SIGTERM;
@@ -41,8 +42,12 @@ private int waitSourceChild(int child, Memory mem = null) {
             }
         }
         if (result < 0) throw new YshError("waitpid failed for pipeline child");
-        if (WIFEXITED(status)) return WEXITSTATUS(status);
-        if (WIFSIGNALED(status)) { reportChildSignal(status, mem); return 128 + WTERMSIG(status); }
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+            auto resultStatus = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+            if (mem !is null) mem.trace.processEnd(child, resultStatus, mem);
+            if (WIFSIGNALED(status)) reportChildSignal(status, mem);
+            return resultStatus;
+        }
         throw new YshError("pipeline child has no terminal status");
     } else {
         throw new YshError("source pipelines require POSIX process support");
@@ -63,6 +68,7 @@ void reportChildSignal(int rawStatus, Memory mem) {
 /// The subprogram owns copied shell state, not the parent's job list or traps.
 /// Root $$ remains the original shell PID, independently of the OS child PID.
 private void prepareSubProgram(Memory mem) {
+    mem.trace.newProcess(getpid());
     mem.traps.clearForSubProgram(mem.options.get("errtrace"));
     mem.returnMode = ReturnMode.shell;
     mem.canReplaceProcess = true;
@@ -124,6 +130,8 @@ int runSourceJob(string[] stages, Memory mem,
             // Both sides set the group, closing the parent/exec race.
             setpgid(child, group);
         }
+        mem.trace.processStart(child, stages.length > 1 ? TraceProcessKind.pipelinePart :
+            background ? TraceProcessKind.fork : TraceProcessKind.forkWait, [], mem);
         children ~= child;
         descriptions ~= "Simple";
     }
@@ -144,6 +152,7 @@ int runSourcePipeline(string[] stages, Memory mem,
         int delegate(string, Memory) executeStage) {
     if (stages.length == 0) throw new YshError("pipeline needs a command");
     if (stages.length == 1) return executeStage(stages[0], mem);
+    auto traceScope = TraceScope(mem, "pipeline");
     ++mem.errTrapSuppression;
     scope (exit) --mem.errTrapSuppression;
     version (Posix) {
@@ -191,6 +200,7 @@ int runSourcePipeline(string[] stages, Memory mem,
                 mem.errorFile.flush();
                 _exit(status);
             }
+            mem.trace.processStart(child, TraceProcessKind.pipelinePart, [], mem);
             children ~= child;
         }
         foreach (index, ref link; links) {
@@ -272,6 +282,7 @@ SourceCapture captureSource(string source, Memory mem,
             mem.errorFile.flush();
             _exit(status);
         }
+        mem.trace.processStart(child, TraceProcessKind.commandSub, [], mem);
         foreach (ref link; links) link.writeEnd.close();
         bool reaped;
         scope (exit) {
@@ -319,7 +330,10 @@ SourceCapture captureSource(string source, Memory mem,
 string captureSourceOutput(string source, Memory mem,
         int delegate(string, Memory) executeStage) {
     auto result = captureSource(source, mem, executeStage);
-    mem.lastStatus = result.status;
+    // With command_sub_errexit, RunCommandSub reports failure directly and
+    // leaves the caller's status register alone. The POSIX path records the
+    // substitution status for assignment-only commands instead.
+    if (!mem.options.get("command_sub_errexit")) mem.lastStatus = result.status;
     ++mem.commandSubEpoch;
     mem.commandSubLastStatus = result.status;
     return result.stdoutText.replace("\0", "");
@@ -411,8 +425,11 @@ private int launchExternal(string[] argv, File input, File output,
 /// normal POSIX/library boundary.
 int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
     auto environment = mem.childEnvironment();
+    auto replacing = mem.canReplaceProcess && !mem.traps.hasActions();
+    if (replacing) mem.trace.exec(argv, mem);
     auto child = launchExternal(argv, mem.inputFile, mem.outputFile,
-        mem.errorFile, environment, mem.canReplaceProcess && !mem.traps.hasActions(), useDefaultPath);
+        mem.errorFile, environment, replacing, useDefaultPath);
+    mem.trace.processStart(child, TraceProcessKind.external, argv, mem);
     return waitSourceChild(child, mem);
 }
 
