@@ -84,6 +84,9 @@ string readDelimitedFd(int fd, ubyte delimiter, out bool eof,
             result ~= character;
         } else if (allowEscape && character == '\\') {
             escaped = true;
+            // The reference does not count an escape introducer against -n;
+            // only the escaped character counts, unless it is a newline.
+            continue;
         } else if (cast(ubyte)character == delimiter) {
             break;
         } else if (character != '\0') {
