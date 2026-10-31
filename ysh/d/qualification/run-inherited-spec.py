@@ -90,6 +90,13 @@ def main():
         encoding="utf-8")
     osh_wrapper.chmod(0o755)
 
+    # ENV fixtures derive the YSH sibling by replacing 'osh' in $SH.
+    # Keep that sibling executable while preserving YSH mode on argv[0].
+    ysh_partner = RESULTS / "native-ysh"
+    if ysh_partner.is_symlink() or ysh_partner.exists():
+        ysh_partner.unlink()
+    ysh_partner.symlink_to(binary)
+
     previous = read_tsv(BASELINE)
     fixtures = {}
     for item in previous:
