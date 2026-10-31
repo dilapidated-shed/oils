@@ -315,6 +315,12 @@ jobs:
           set -euxo pipefail
           python3 ysh/d/qualification/run-inherited-spec.py
 
+      - name: Compare unchanged shared OSH read fixture
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ysh/d/qualification/run-shared-read.py
+
       - name: Preserve tested partial translation
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
