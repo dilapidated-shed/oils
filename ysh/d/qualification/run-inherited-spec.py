@@ -32,7 +32,7 @@ def run(fixture, mode, python2):
     stem = Path(fixture).name.removesuffix(".test.sh")
     results = RESULTS / (stem + ".tsv")
     log = RESULTS / (stem + ".log")
-    candidate = (RESULTS / (mode + "-d")).resolve()
+    candidate_label = "native-osh" if mode == "osh" else "ysh-d"
     reference = ROOT / "bin" / mode
     command = [
         python2, str(ROOT / "test/sh_spec.py"),
@@ -45,7 +45,7 @@ def run(fixture, mode, python2):
         "--env-pair", "REPO_ROOT=" + str(ROOT),
         "--env-pair", "LIB_YSH=" + str(ROOT / "stdlib/ysh"),
         "--tsv-output", str(results),
-        fixture, str(RESULTS / (mode + "-d")), str(reference),
+        fixture, str(RESULTS / candidate_label), str(reference),
     ]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT) + ":" + str(ROOT / "vendor")
@@ -74,11 +74,21 @@ def main():
     binary = ROOT / "ysh/d/.build/ysh-d"
     if not binary.is_file():
         raise RuntimeError("D executable missing: " + str(binary))
-    for mode in ("osh", "ysh"):
-        alias = RESULTS / (mode + "-d")
-        if alias.is_symlink() or alias.exists():
-            alias.unlink()
-        alias.symlink_to(binary)
+    ysh_alias = RESULTS / "ysh-d"
+    if ysh_alias.is_symlink() or ysh_alias.exists():
+        ysh_alias.unlink()
+    ysh_alias.symlink_to(binary)
+
+    # The original harness exposes $SH, and OSH fixtures test its suffix.
+    # The D entrypoint needs argv[0]=osh-d, while the *path* used by a
+    # fixture must end in 'osh'.  A one-line exec wrapper supplies both;
+    # no shell evaluates any YSH source code.
+    osh_wrapper = RESULTS / "native-osh"
+    osh_wrapper.write_text(
+        "#!/usr/bin/env bash\nexec -a osh-d " +
+        __import__("shlex").quote(str(binary)) + ' "$@"\n',
+        encoding="utf-8")
+    osh_wrapper.chmod(0o755)
 
     previous = read_tsv(BASELINE)
     fixtures = {}
@@ -98,7 +108,8 @@ def main():
     for fixture, mode in fixtures.items():
         earlier = [item for item in previous if item["fixture"] == fixture]
         found, exit_status = run(fixture, mode, args.python2)
-        candidate_label, reference_label = mode + "-d", mode
+        candidate_label, reference_label = (
+            ("native-osh" if mode == "osh" else "ysh-d"), mode)
         counts = {"candidate-matched": 0, "reference-matched": 0,
                   "candidate-failed": 0, "reference-failed": 0}
         for item in earlier:
@@ -161,7 +172,12 @@ def main():
     # The harness's nonzero exit is expected while translation is incomplete.
     # Losing a previously matched case or changing reference expectations is
     # not expected, so those invalidate the qualification.
-    return 1 if failures or reference_divergences else 0
+    lost_reference_matches = sum(1 for _, _, previous, current in
+                                 reference_divergences
+                                 if previous == "pass" and
+                                 current in ("FAIL", "TIMEOUT"))
+    print("REFERENCE_LOST_MATCHES " + str(lost_reference_matches), flush=True)
+    return 1 if failures or lost_reference_matches else 0
 
 
 if __name__ == "__main__":
