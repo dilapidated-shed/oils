@@ -291,6 +291,17 @@ jobs:
             'import sys; assert sys.maxunicode == 1114111'
           echo "$RUNNER_TEMP/python2/bin" >> "$GITHUB_PATH"
 
+      - name: Build actual Oils Python reference for spec comparison
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # This is a separate test-only reference and never substitutes for
+          # the native D evaluator.
+          PYTHONPATH=.:vendor build/py.sh minimal
+          test -f _devbuild/gen/syntax_asdl.py
+          actual=$(bin/osh -c 'echo reference-ready')
+          test "$actual" = reference-ready
+
       - name: Compare unchanged inherited read fixture with Oils reference
         shell: bash
         run: |
