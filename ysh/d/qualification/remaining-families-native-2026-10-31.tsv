@@ -1,0 +1,56 @@
+operation-family	2026-10-27-native-failures	2026-10-31-native-failures	2026-10-31-reference-passes-among-native-failures	recovered-native-cases	reference-gains-while-native-failing	unexplained-under-oct27-diagnostic-classification
+Assignments and recursive value display	3	3	1	0	0	2
+Command blocks and dynamic evaluation	1	1	0	0	0	0
+Shared command grammar and builtin contracts	7	6	2	1	0	1
+Structured error contents and blame	2	2	2	0	0	0
+Evaluation frames and declaration lifetime	1	1	0	0	0	0
+Help topics and resource lookup	6	6	2	0	0	0
+Type objects, meta builtins and diagnostic display	8	8	7	0	0	2
+Module cache reflection and import selections	3	3	0	0	0	3
+Command lookup, builtin and invoke dispatch	3	3	2	0	0	2
+Option table display and usage	1	1	0	0	0	0
+Read/write, test and meta builtin contracts	14	7	5	7	0	0
+Legacy bytecode entrypoint fixture	1	1	0	0	0	1
+Closure capture, command blocks and loop frames	5	5	5	0	0	2
+Shared command grammar and redirection errors	1	1	0	0	0	0
+Substitution grammar, output splitting and isolation	5	5	5	0	0	1
+Completion builtins and execution context	12	12	6	0	0	0
+CLI diagnostic entrypoints and usage errors	4	4	4	0	0	1
+ENV object, exported variables and temporary bindings	8	8	8	0	0	5
+Boolean conversion of retained shell arrays	1	1	1	0	0	1
+Comparison coercions and value error status	1	1	0	0	0	1
+Expression grammar, interpolation and shell variables	5	5	5	0	0	2
+Loop command grammar and iteration binding	1	1	1	0	0	0
+Builtin functions and Unicode transformations	1	1	0	0	0	1
+Functions, external calls and effect rules	3	3	0	0	0	1
+Interactive CLI, input and startup	2	2	2	0	0	0
+Frame and debug-stack reflection	13	13	12	0	0	0
+Here-doc input, retained array codecs and diagnostics	4	4	3	0	0	2
+List expansion and loop grammar	2	2	2	0	0	0
+Retained value method surface	4	4	3	0	0	0
+Multiline command continuation grammar	9	0	0	9	0	0
+Builtin namespace and object dispatch	3	3	1	0	0	0
+Object builtin lookup and property enumeration	2	2	1	0	0	1
+Option consumers, hay and assignment contexts	1	1	1	0	0	0
+Parser and evaluator option consumers	19	19	18	0	0	10
+Place lifetime and method surface	2	2	0	0	0	1
+Retained array and reference-value display	6	6	6	0	0	5
+Frame evaluation and procedure reflection	2	2	0	0	0	0
+Procedure binding, return and command namespace	3	3	3	0	0	1
+Interactive startup and prompt evaluation	9	9	9	0	4	0
+Pure evaluation, effects and hay contexts	18	18	8	0	0	3
+Locale environment and regex byte/Unicode rules	1	1	0	0	0	0
+Dynamic scopes, temporary variables and shell assignment builtins	7	6	6	1	0	2
+Range iteration arity and method surface	2	2	1	0	0	0
+Interactive startup and special variables	1	1	1	0	0	0
+Standard-library argument parser dependencies	1	1	0	0	0	0
+Standard-library dependencies and type objects	1	1	1	0	0	0
+Deprecated syntax, namespaces and version registers	3	3	2	0	0	2
+Tuple grammar, value shape and conversion	2	2	1	0	0	1
+Unicode scalar decoding and diagnostics	2	2	1	0	0	0
+CLI flags, source names and diagnostic locations	15	15	14	0	0	3
+Error locations, parameter expansions and declaration checks	5	5	2	0	0	0
+Braced parameter operations and escaping	4	4	0	0	0	1
+Retained declaration and shell-option context	1	1	1	0	0	0
+Tracing, PS4 and trace formatting	20	3	3	17	0	1
+TOTAL	261	226	158	35	4	59
