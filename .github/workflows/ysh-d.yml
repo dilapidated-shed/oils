@@ -299,6 +299,7 @@ jobs:
             --fixture spec/ysh-builtins.test.sh
 
       - name: Preserve tested partial translation
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ysh-d-partial-${{ github.event.pull_request.head.sha || github.sha }}
