@@ -31,11 +31,16 @@ string readRawLine(File input, out bool endOfInput, bool withEol = false) {
 
 /// ReadAll / _ReadN use the same descriptor boundary and retry EINTR.
 string readInputBytes(File input, long count = -1) {
+    return readInputFd(input.fileno(), count);
+}
+
+/// The caller owns fd; never make an intermediate stdio stream that can close it.
+string readInputFd(int fd, long count = -1) {
     string result;
     char[4096] buffer;
     while (count != 0) {
         auto size = count < 0 || count > buffer.length ? buffer.length : cast(size_t)count;
-        auto received = read(input.fileno(), buffer.ptr, size);
+        auto received = read(fd, buffer.ptr, size);
         if (received < 0) {
             if (errno == EINTR) continue;
             throw new StreamReadError(errno);
@@ -53,13 +58,19 @@ string readInputBytes(File input, long count = -1) {
 /// readRawLine's EOF convention for YSH's --raw-line.
 string readDelimited(File input, ubyte delimiter, out bool eof,
         bool allowEscape = false, long maxCharacters = -1) {
+    return readDelimitedFd(input.fileno(), delimiter, eof, allowEscape, maxCharacters);
+}
+
+/// Direct OSH descriptor reads preserve -u ownership and delimiter boundaries.
+string readDelimitedFd(int fd, ubyte delimiter, out bool eof,
+        bool allowEscape = false, long maxCharacters = -1) {
     eof = false;
     string result;
     bool escaped;
     long charactersRead;
     char character;
     while (maxCharacters < 0 || charactersRead < maxCharacters) {
-        auto count = read(input.fileno(), &character, 1);
+        auto count = read(fd, &character, 1);
         if (count < 0) {
             if (errno == EINTR) continue;
             throw new StreamReadError(errno);
