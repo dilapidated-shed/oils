@@ -4,6 +4,53 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Native D read continuation and inherited parity, 2026-10-31
+
+This is a **partial** translation checkpoint; neither complete YSH/OSH parity
+nor Grease package admission has been established.
+
+The unchanged 1,119 inherited YSH/Grease assertions were executed on the
+native D executable and actual Oils Python reference in
+[owner workflow 41209602128](https://github.com/dilapidated-shed/oils/actions/runs/41209602128)
+at tested source `f40d66a610bef241bb9b30136547c47eea6828d4`.
+D matched **893/1,119**, with **226 failures**; the reference matched
+**1,046/1,119**, with **73 failures**. There were **zero lost D matches**
+relative to the October 27 858/261 checkpoint; four reference cases
+changed from failure to match and none previously matched reference cases
+were lost. The original fixtures, timeouts, declared failure allowances and
+the Python-2 test harness were not modified. The specific inherited
+`spec/ysh-builtins.test.sh` selection is D **32/39** and Oils **36/39**.
+
+The implementation continues in `ysh/d/source/yshd/read_builtin.d` using
+`io_stream.d` and existing memory/IFS types, not a new interpreter:
+
+- YSH input paths `--raw-line`, `--with-eol`, `--all`,
+  `--line`, `--num-bytes`, and the local D-only
+  `--all-lines` continuation;
+- retained OSH splitting and delimiters with `-r`, `-d`, `-0`;
+- newly translated `-n` (delimiter-limited count), `-N` (exact byte
+  count ignoring delimiters), `-a` (BashArray assignment), and `-u`
+  (alternate caller-owned input descriptor).
+
+New native D tests cover short reads, exact-byte and delimiter boundaries,
+array values, NUL records, EOF status, validation and descriptor reuse.
+The Icky DMD build and D suites passed in the linked owner workflow.
+The native readers do not close or stdio-buffer alternate input descriptors.
+
+The **unchanged shared OSH** `spec/builtin-read.test.sh` is now separately
+measured by `qualification/run-shared-read.py` (D versus original Oils)
+in the owner workflow. Its results live in the published workflow artifact,
+not in the 1,119-case YSH count. Pending the new run, no shared-suite
+pass count is asserted. Some adjacent flag contracts (`-t`, `-s`,
+`-p`), terminal state, trap dispatch on interrupted input, and full
+IFS/diagnostic parity remain untranslated or unqualified.
+The original reference does not advertise `--all-lines` in
+`frontend/flag_def.py`; D support for it must not be described as
+reference-compatible. No fixtures are weakened to hide that difference.
+
+The full native D YSH translation, independent C++-free acceptance,
+interactive execution, target packaging, merge and release remain open.
+
 ## Definition of done
 
 The D executable must be able to run YSH without importing, embedding, spawning, or falling back to the Python implementation or the mycpp-generated C++ implementation.
