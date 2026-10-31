@@ -14,7 +14,8 @@ import yshd.value : Value, ValueKind, UsageError, YshError, YshTypeError;
 private Value readLines(string bytes, bool withEol) {
     Value[] lines;
     size_t begin;
-    foreach (index, character; bytes) {
+    for (size_t index = 0; index < bytes.length; ++index) {
+        auto character = bytes[index];
         if (character != '\n') continue;
         lines ~= Value.str(bytes[begin .. index + (withEol ? 1 : 0)]);
         begin = index + 1;
@@ -51,7 +52,7 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
         if (!optionsDone && word.length > 1 && word[0] == '-') {
             if (word.startsWith("--")) throw new UsageError("read: unexpected flag");
             for (size_t offset = 1; offset < word.length; ++offset) {
-                final switch (word[offset]) {
+                switch (word[offset]) {
                 case 'r': raw = true; break;
                 case '0': nulDelimited = true; raw = true; break;
                 case 'd':
