@@ -119,6 +119,23 @@ version (unittest) {
     }
 
     unittest {
+        // -u reads a different descriptor without consuming stdin or closing
+        // the selected descriptor before a second read.
+        auto mem = inputMemory("original\\n");
+        auto alternate = File.tmpfile();
+        alternate.write("alternate\\nsecond\\n");
+        alternate.flush();
+        alternate.rewind();
+        auto descriptor = to!string(alternate.fileno());
+        runReadBuiltin(["-u", descriptor, "one"], null, false, mem);
+        assert(mem.lastStatus == 0 && mem.get("one").stringValue == "alternate");
+        runReadBuiltin(["-r", "source"], null, false, mem);
+        assert(mem.lastStatus == 0 && mem.get("source").stringValue == "original");
+        runReadBuiltin(["-u", descriptor, "two"], null, false, mem);
+        assert(mem.lastStatus == 0 && mem.get("two").stringValue == "second");
+    }
+
+    unittest {
         // The alternate fd must stay owned by Memory for the next read.
         auto mem = inputMemory("left\nright\n");
         runReadBuiltin(["-u", to!string(mem.inputFile.fileno()), "first"], null, false, mem);
