@@ -47,6 +47,44 @@ string readInputBytes(File input, long count = -1) {
     return result;
 }
 
+
+/// Read the OSH read builtin's delimiter without buffering past the byte.
+/// An EOF is reported even when a partial value was obtained, unlike
+/// readRawLine's EOF convention for YSH's --raw-line.
+string readDelimited(File input, ubyte delimiter, out bool eof,
+        bool allowEscape = false, long maxCharacters = -1) {
+    eof = false;
+    string result;
+    bool escaped;
+    long charactersRead;
+    char character;
+    while (maxCharacters < 0 || charactersRead < maxCharacters) {
+        auto count = read(input.fileno(), &character, 1);
+        if (count < 0) {
+            if (errno == EINTR) continue;
+            throw new StreamReadError(errno);
+        }
+        if (!count) { eof = true; break; }
+        if (escaped) {
+            escaped = false;
+            // OSH read without -r discards a backslash-newline pair.
+            if (character == '\n') continue;
+            result ~= '\\';
+            result ~= character;
+        } else if (allowEscape && character == '\\') {
+            escaped = true;
+        } else if (cast(ubyte)character == delimiter) {
+            break;
+        } else if (character != '\0') {
+            // The original _ReadPortion ignores NUL except as a delimiter.
+            result ~= character;
+        }
+        ++charactersRead;
+    }
+    return result;
+}
+
+
 unittest {
     auto input = File.tmpfile();
     input.write("first\r\nlast\0byte");

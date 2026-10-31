@@ -3837,74 +3837,8 @@ class ProgramParser {
     }
 
     private void runRead(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
-        bool all;
-        bool line;
-        bool rawLine;
-        bool withEol;
-        long byteCount = -1;
-
-        for (size_t index; index < words.length; ++index) {
-            auto word = words[index];
-            if (word == "--all") {
-                all = true;
-                continue;
-            }
-            if (word == "--line") {
-                line = true;
-                continue;
-            }
-            if (word == "--raw-line") { rawLine = true; continue; }
-            if (word == "--with-eol") { withEol = true; continue; }
-            if (word == "--num-bytes") {
-                if (++index == words.length) throw new UsageError("read --num-bytes expects an integer");
-                try { byteCount = to!long(words[index]); }
-                catch (Exception error) { throw new UsageError("read --num-bytes expects an integer"); }
-                continue;
-            }
-            throw new UsageError("read: unexpected flag");
-        }
-
-        if (all && line) {
-            throw new YshError("read accepts only one of --all and --line");
-        }
-
-        import yshd.state : FramePlace;
-        Value place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
-        if (hasBlock) throw new UsageError("read does not accept a block");
-        if (parsed !is null) {
-            auto values = parsed.eval(mem);
-            if (values.positional.length != 1 || values.named.length || values.hasBlock ||
-                    values.positional[0].kind != ValueKind.placeValue)
-                throw new YshTypeError("read expects one Place argument");
-            place = values.positional[0];
-        }
-
-        string result;
-        bool endOfInput;
-        if (all || rawLine || byteCount != -1) {
-            import yshd.io_stream : readRawLine, readInputBytes, StreamReadError;
-            try {
-                if (byteCount != -1) result = readInputBytes(mem.inputFile, byteCount < 0 ? 0 : byteCount);
-                else if (rawLine) result = readRawLine(mem.inputFile, endOfInput, withEol);
-                else result = readInputBytes(mem.inputFile);
-            } catch (StreamReadError error) {
-                mem.errorFile.writeln("read: ", error.msg);
-                mem.lastStatus = 1;
-                return;
-            }
-        } else {
-            result = mem.inputFile.readln();
-            endOfInput = !result.length;
-            if (result.length != 0 && result[$ - 1] == '\n') {
-                result = result[0 .. $ - 1];
-                if (result.length != 0 && result[$ - 1] == '\r') {
-                    result = result[0 .. $ - 1];
-                }
-            }
-        }
-
-        place.placeValue.assign(Value.str(result));
-        mem.lastStatus = endOfInput && !all ? 1 : 0;
+        import yshd.read_builtin : runReadBuiltin;
+        runReadBuiltin(words, parsed, hasBlock, mem);
     }
 
     private void parseTry(Memory mem) {
