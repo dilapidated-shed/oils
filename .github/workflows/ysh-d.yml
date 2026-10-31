@@ -271,6 +271,33 @@ jobs:
           expected=$(printf 'all=alpha\nbeta\n\nline=alpha\n')
           test "$actual" = "$expected"
 
+      # The inherited reference and the unchanged test/sh_spec.py require
+      # Python 2.  Python never enters the native D implementation.
+      - name: Build test-only Python 2.7.13 with UCS4
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location \
+            https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz \
+            -o Python-2.7.13.tgz
+          tar -xzf Python-2.7.13.tgz
+          cd Python-2.7.13
+          ./configure --prefix="$RUNNER_TEMP/python2" --enable-unicode=ucs4 \
+            --with-ensurepip=no
+          make -j"$(nproc)"
+          make install
+          "$RUNNER_TEMP/python2/bin/python2.7" -c \
+            'import sys; assert sys.maxunicode == 1114111'
+          echo "$RUNNER_TEMP/python2/bin" >> "$GITHUB_PATH"
+
+      - name: Compare unchanged inherited read fixture with Oils reference
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ysh/d/qualification/run-inherited-spec.py \
+            --fixture spec/ysh-builtins.test.sh
+
       - name: Preserve tested partial translation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -279,5 +306,6 @@ jobs:
             ysh/d/.build/ysh-d
             ysh/d/.build/native-needed.txt
             ysh/d/.build/native-resolved.txt
+            ysh/d/.build/inherited-spec/
           if-no-files-found: error
           retention-days: 90
