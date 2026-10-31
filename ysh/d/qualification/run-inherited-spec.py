@@ -149,6 +149,15 @@ def main():
     print("REFERENCE_BASELINE_DIVERGENCES " + str(len(reference_divergences)), flush=True)
     for entry in failures:
         print("REGRESSION {}:{} {} -> {}".format(*entry), flush=True)
+    if reference_divergences:
+        # The reference should be runnable before any parity count is trusted.
+        # Surface the first diagnostic while retaining the full unmodified
+        # harness transcript as an artifact.
+        first = reference_divergences[0][0]
+        log = RESULTS / (Path(first).name.removesuffix(".test.sh") + ".log")
+        if log.is_file():
+            print("FIRST DIVERGENT REFERENCE LOG (start):", flush=True)
+            print(log.read_text(encoding="utf-8", errors="replace")[:16000], flush=True)
     # The harness's nonzero exit is expected while translation is incomplete.
     # Losing a previously matched case or changing reference expectations is
     # not expected, so those invalidate the qualification.
