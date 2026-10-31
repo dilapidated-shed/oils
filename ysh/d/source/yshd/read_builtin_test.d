@@ -103,6 +103,18 @@ version (unittest) {
     }
 
     unittest {
+        // -n counts interpreted characters, not escape introducers.
+        auto escaped = inputMemory("a\\b\\c\\d\\e\n");
+        runReadBuiltin(["-n", "5"], null, false, escaped);
+        assert(escaped.lastStatus == 0 && escaped.get("REPLY").stringValue == "abcde");
+
+        // Backslash-newline consumes neither a character nor the delimiter.
+        auto continued = inputMemory("abc\\\ndef\n");
+        runReadBuiltin(["-n4"], null, false, continued);
+        assert(continued.lastStatus == 0 && continued.get("REPLY").stringValue == "abcd");
+    }
+
+    unittest {
         // -a uses an actual BashArray, and -r preserves literal backslashes.
         auto mem = inputMemory("a b c\\ d\n");
         runReadBuiltin(["-a", "array", "ignored"], null, false, mem);
