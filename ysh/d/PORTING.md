@@ -48,6 +48,16 @@ The original reference does not advertise `--all-lines` in
 `frontend/flag_def.py`; D support for it must not be described as
 reference-compatible. No fixtures are weakened to hide that difference.
 
+The [October 31 failure-family receipt](qualification/remaining-families-native-2026-10-31.tsv)
+reconciles all 261 old failures with the actual October 31 paired case verdicts.
+It records 35 recovered assertions across five families:
+tracing **20 to 3** failures, multiline grammar **9 to 0**, and
+read/write/test/meta contracts **14 to 7**, with one each in shared-command
+grammar and dynamic-scope families. Counts are per inherited assertion,
+not proof that every behavior in a family is implemented. Its remaining
+diagnostic classification is carried from October 27; fresh per-case
+stdout/stderr/status evidence remains in the exact workflow artifact.
+
 The full native D YSH translation, independent C++-free acceptance,
 interactive execution, target packaging, merge and release remain open.
 
