@@ -104,14 +104,14 @@ version (unittest) {
 
     unittest {
         // -a uses an actual BashArray, and -r preserves literal backslashes.
-        auto mem = inputMemory("a b c\\\\ d\n");
+        auto mem = inputMemory("a b c\\ d\n");
         runReadBuiltin(["-a", "array", "ignored"], null, false, mem);
         assert(mem.lastStatus == 0);
         assert(mem.get("array").kind == ValueKind.bashArrayValue);
         assert(shellArrayValues(mem.get("array")) == ["a", "b", "c d"]);
-        auto raw = inputMemory("a b c\\\\ d\n");
+        auto raw = inputMemory("a b c\\ d\n");
         runReadBuiltin(["-ra", "array2"], null, false, raw);
-        assert(shellArrayValues(raw.get("array2")) == ["a", "b", "c\\\\", "d"]);
+        assert(shellArrayValues(raw.get("array2")) == ["a", "b", "c\\", "d"]);
 
         auto empty = inputMemory("");
         runReadBuiltin(["-a", "array"], null, false, empty);
