@@ -121,9 +121,9 @@ version (unittest) {
     unittest {
         // -u reads a different descriptor without consuming stdin or closing
         // the selected descriptor before a second read.
-        auto mem = inputMemory("original\\n");
+        auto mem = inputMemory("original\n");
         auto alternate = File.tmpfile();
-        alternate.write("alternate\\nsecond\\n");
+        alternate.write("alternate\nsecond\n");
         alternate.flush();
         alternate.rewind();
         auto descriptor = to!string(alternate.fileno());
