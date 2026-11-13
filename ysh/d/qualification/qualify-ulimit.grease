@@ -1,0 +1,41 @@
+#!/usr/bin/env grease
+# Original fixtures and Python-2 reference are test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-ulimit.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+
+env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range 10-24 --timeout=3 \
+  --tmp-env "$output/tmp/shared-ulimit" \
+  --path-env "$root/spec/bin:$[ENV.PATH]" \
+  --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+  --tsv-output "$output/shared-ulimit.tsv" \
+  "$root/spec/builtin-process.test.sh" "$output/native-osh" "$root/bin/osh"
+var records = $(wc -l < "$output/shared-ulimit.tsv")
+test "$records" -eq 31
+var nativeMatches = $(grep -Ec '	native-osh	pass$' "$output/shared-ulimit.tsv")
+test "$nativeMatches" -eq 15
+var referenceMatches = $(grep -Ec '	osh	(pass|ok)$' "$output/shared-ulimit.tsv")
+test "$referenceMatches" -eq 15
+
+# Case 25 documents an Oils FD-save bug: its minimum saved fd is 100, so
+# redirecting under ulimit -n 64 fails there. Require the unchanged expected
+# result in D without granting a new allowance to either interpreter.
+env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range 25 --timeout=3 \
+  --tmp-env "$output/tmp/shared-ulimit-nofile" \
+  --path-env "$root/spec/bin:$[ENV.PATH]" \
+  --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+  --tsv-output "$output/shared-ulimit-nofile.tsv" \
+  "$root/spec/builtin-process.test.sh" "$output/native-osh"
+var nofileRecords = $(wc -l < "$output/shared-ulimit-nofile.tsv")
+test "$nofileRecords" -eq 2
+grep -Eq '^25	native-osh	pass$' "$output/shared-ulimit-nofile.tsv"
+
+"$root/ysh/d/.build/ysh-d" -c 'ulimit -a' > "$output/ulimit-native-table.txt"
+"$root/bin/osh" -c 'ulimit -a' > "$output/ulimit-reference-table.txt"
+cmp "$output/ulimit-native-table.txt" "$output/ulimit-reference-table.txt"
+echo 'PASS 16 unchanged native ulimit cases, 15 paired reference cases and exact resource table'

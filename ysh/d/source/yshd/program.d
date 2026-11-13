@@ -1828,7 +1828,7 @@ class ProgramParser {
         if (!associative && !indexed) {
             bool any;
             while (!isEndStatement(current_.kind)) {
-                foreach (word; readCommandWord(mem)) {
+                foreach (word; readCommandWord(mem, true)) {
                     string name, value;
                     if (!splitTempBinding(word, name, value)) throw new UsageError("Untranslated declaration without initializer or flags");
                     if (!syntaxOnly_) mem.declareLocal(name, Value.str(value));
@@ -2325,11 +2325,19 @@ class ProgramParser {
             }
             commandName = argv[0];
             auto selectedBuiltin = builtinKind(commandName);
+            // core/vm.py:_RunBuiltinProc flushes stdout after each builtin.
+            // This must happen before a later command can terminate by signal.
+            scope (exit) if (selectedBuiltin != BuiltinKind.none) flushBuiltinOutput(mem);
             if (selectedBuiltin != BuiltinKind.none && (selectedBuiltin != BuiltinKind.privateBuiltin || builtinOnly))
                 mem.trace.builtin(argv, mem);
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "ulimit":
+                    if (typedArguments !is null || hasBlock) throw new UsageError("ulimit does not accept typed arguments");
+                    import yshd.ulimit : runUlimit;
+                    mem.lastStatus = runUlimit(words, mem);
+                    return;
                 case "exec":
                     if (typedArguments !is null || hasBlock) throw new UsageError("exec does not accept typed arguments");
                     size_t start;
@@ -2428,6 +2436,10 @@ class ProgramParser {
                 mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 2; return;
             } catch (ClosedDescriptorError error) {
                 mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 1; return;
+            } catch (ErrnoException error) {
+                mem.diagnostic("ysh-d: " ~ commandName ~ " builtin I/O error: " ~ error.msg);
+                mem.lastStatus = 1;
+                return;
             }
             if (commandName == "fork" || commandName == "forkwait" || commandName == "wait" ||
                     commandName == "jobs" || commandName == "fg" || commandName == "bg") {
@@ -2636,6 +2648,16 @@ class ProgramParser {
 
         pipeline ~= argv;
         mem.lastStatus = runPipeline(pipeline, mem);
+    }
+
+    private void flushBuiltinOutput(Memory mem) {
+        auto output = mem.descriptorFile(1);
+        if (!output.isOpen) return;
+        try { output.flush(); }
+        catch (ErrnoException error) {
+            mem.diagnostic("ysh-d: builtin I/O error: " ~ error.msg);
+            mem.lastStatus = 1;
+        }
     }
 
     private void parseShopt(Memory mem) {

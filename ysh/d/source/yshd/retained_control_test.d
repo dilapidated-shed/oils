@@ -13,6 +13,18 @@ version (unittest) {
     unittest {
         auto output = File.tmpfile();
         auto mem = new Memory(output, File.tmpfile());
+        executeProgram(`
+            show() { local message=$1 pattern=$2; echo "$message" "$pattern"; }
+            show 'no flag' '*'
+        `, mem);
+        output.rewind();
+        assert(output.readln() == "no flag *\n");
+        assert(mem.getCell("message") is null && mem.getCell("pattern") is null);
+    }
+
+    unittest {
+        auto output = File.tmpfile();
+        auto mem = new Memory(output, File.tmpfile());
         mem.initializeArguments("script", ["outer argument"]);
         executeProgram(`
             var value = 'global'
