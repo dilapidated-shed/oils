@@ -2,21 +2,33 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The October 27 host run records **858
-assertion matches and 261 failures** across all 1,119 cases in the 80 inherited
-YSH fixtures and focused Grease alias fixture. This preserves every previous
-match and adds 54 to the last published 804-match checkpoint. The fresh actual
-reference records 1,042 matches and 77 failures under the same UTF-8 environment.
+The translation remains incomplete. The November 13 host run records **895
+assertion matches and 224 failures** across all 1,119 cases in the 80 inherited
+YSH fixtures and focused Grease alias fixture. This preserves every match from
+the October 31 893-match checkpoint. The fresh actual reference records 1,046
+matches and 73 failures under the same UTF-8 environment. The separate unchanged
+64-case shared read fixture improves from 53 to 62 matches; two failures remain.
 The unchanged harness, fixture hashes, remaining operations and exact source/build
 identities are recorded in [PORTING.md](PORTING.md) and
-[the host receipt](qualification/inherited-host-native-2026-10-27.tsv).
+[the host receipt](qualification/il0-cfree-2026-11-13/receipt.tsv).
 
-Native command/builtin dispatch, exported cells, frame reflection and legacy
-word arrays now advance the existing evaluator. All 39 CLI/module suites,
-38 library suites, the original owner smoke, real Icky Lua producer and all
-13 negative/runtime controls pass. A clean same-host rebuild produces identical
-bytes. Interactive operation, full shared-shell parity, independent ai-ci
-acceptance and Cat Food delivery remain incomplete; the binary stays `ysh-d`.
+Scoped extra descriptors now reach native builtins and external processes with
+ordered duplication, nested restoration and closed-fd handling. Terminal read
+supports silent input, prompts and unbuffered delimiter/count input; PTY tests
+check restoration after normal input and a trapped exit. `read -t 0` follows the
+reference readiness probe. Positive timeouts remain unimplemented in both D and
+the retained reference. Native mapfile/readarray and unset shell-array expansion
+complete this input slice. All 44 CLI/module suites pass, and three deliberate
+descriptor/terminal defects are rejected. Persistent `exec` redirections remain
+untranslated; these results do not qualify a complete shell or managed package.
+
+The October 27 checkpoint's 39 CLI/module suites, 38 library suites, original
+owner smoke, real Icky Lua producer and 13 runtime controls remain historical
+evidence. The November 13 producer semantic run is NOT_RUN because its pinned
+compiler closure is unavailable. A clean same-host rebuild reproduces the new
+executable bytes. Interactive operation, full shared-shell parity, independent
+ai-ci acceptance and Cat Food delivery remain incomplete; the binary stays
+`ysh-d`.
 
 ## Source map
 

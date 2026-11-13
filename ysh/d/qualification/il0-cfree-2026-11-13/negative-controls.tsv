@@ -1,0 +1,5 @@
+control	mutation	compile	execution_status	observed_rejection	verdict
+raw-descriptor	remove Memory.physicalDescriptor resolution from OSH read input	PASS	1	read_builtin_test.d26;redirection_fd_test;3/43 library modules fail	PASS rejected intended defect
+dropped-child-fd	restore closefrom(3) in external-child descriptor cleanup	PASS	1	redirection_fd_test.d82;missing input bytes from cat /dev/fd/3;1/43 library modules fail	PASS rejected intended defect
+unrestored-terminal	remove scope-exit terminal attribute restoration	PASS	1	terminal_read_test.d58;1/43 library modules fail	PASS rejected intended defect
+producer-missing-dependency	invoke unchanged retained producer with nonexistent exact compiler path	NOT_APPLICABLE	1	actual receipt statusBLOCKED blocker missing_ick_driver	PASS rejected missing dependency;Lua production NOT_RUN

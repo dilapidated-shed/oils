@@ -4,6 +4,94 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Scoped descriptors and terminal input, 2026-11-13
+
+SUN IL0-CFREE-01 continues the retained `d/ysh-first-slice` branch from
+`85d6b306d4c9b49e955d755f92a22147bb38ff3e`. The published implementation is
+`0a9e1f3c5bdd14480caaf4d9ee8aa9eccdc9db85`. Host validation used local commit
+`3e83d4b441ab85a20c1baf6135debaa1720b8de3`; both commits have the identical full
+repository tree `c16ac0a799790e1689d95100d9d51e6531af35b7`. The compiler inputs
+and executable bytes are unchanged by the publication metadata. The binary
+remains named `ysh-d`.
+
+The existing redirect evaluator now binds descriptors above 2 in Memory's scoped
+descriptor namespace. Files remain owned by the redirect evaluator. Ordered
+duplication, nested rebinding, explicit closure of extra descriptors, range/error
+handling and exception unwinding preserve that ownership. External execution
+snapshots all sources above destination numbers before `dup2`, passes explicit
+descriptors through exec and closes unrelated implementation descriptors. This
+does not implement persistent descriptor changes through `exec`.
+
+Native input now resolves `read -u` through that namespace, handles `-s` and `-p`
+at the actual input terminal, disables canonical input for the reference's
+delimiter/count modes, and restores terminal attributes on return or thrown
+control flow. Interrupted reads dispatch pending traps. Linux PTY tests verify
+noncanonical input without a newline, absence of secret echo, prompt bytes and
+restoration after a trapped exit. `read -t 0` preserves the reference's stdin
+readiness probe without consuming input or assigning variables. Positive
+timeouts retain the reference's fatal unimplemented result. Mapfile/readarray
+use the existing raw descriptor reader and actual shell arrays. Undefined
+quoted shell arrays now expand empty when nounset is off and remain errors when
+it is on, following `osh/word_eval.py:_ProcessUndef`.
+
+At the exact tested implementation:
+
+- all **44 CLI/module suites** pass with pinned Icky DMD;
+- the unchanged 1,119-case inherited selection is **895 matches / 224 FAIL**,
+  versus **1,046 / 73** for the actual reference;
+- direct comparison with the October 31 owner's exact-head artifact preserves
+  all **893** prior D matches and all prior reference verdicts; the two added
+  D matches are user-feedback case 3 and xtrace case 15;
+- the unchanged shared read fixture is **62 matches / 2 FAIL / 0 TIMEOUT**,
+  up from the owner's **53 / 11**; the actual reference is **63 / 1**;
+- bypassing descriptor resolution, dropping extra descriptors at exec and
+  removing terminal restoration each compile but fail the relevant native
+  tests, with nonzero test status;
+- a separate clean worktree builds byte-identical executable bytes on this
+  host with the same pinned compiler/runtime stack;
+- both retained IL-0 programs pass nonexecuting parse-only validation. Running
+  the unchanged producer with a missing compiler fails closed at
+  `missing_ick_driver`. Actual Lua production and its thirteen controls were
+  **not rerun**: the exact Icky C closure and host GCC-13 support are unavailable.
+
+The shared read failures remain visible. Positive timeout case 34 also fails
+against the reference. Case 63 emits the same bytes as the reference's `OK-4`
+variant, which is labeled only for `osh`; native D retains its `FAIL` verdict.
+Neither the fixture nor its labels/allowances were changed.
+
+The inherited harness and reference remain test-only Python-2/C dependencies.
+On Debian 13 the reference bootstrap needed a local-only rename of CPython
+2.7.13's static `sinpi` helper to avoid the new libc declaration; no arithmetic
+or shell behavior was replaced. The prompt fixture assumes a temporary working
+directory under `/home` when it sets ENV.HOME to `/home`. The final run uses a
+real `/home/agent/il0-cfree-20261113` temporary directory through a workspace
+symlink, restoring that historical condition without changing the fixture.
+The earlier `/workspace` run's single reference prompt failure is diagnostic
+environment evidence, not a D regression or a waived assertion.
+
+The [receipt](qualification/il0-cfree-2026-11-13/receipt.tsv),
+[paired cases](qualification/il0-cfree-2026-11-13/paired-cases.tsv),
+[shared read verdicts](qualification/il0-cfree-2026-11-13/shared-read.tsv),
+[negative controls](qualification/il0-cfree-2026-11-13/negative-controls.tsv) and
+[execution archive](qualification/il0-cfree-2026-11-13/execution-logs.zip)
+retain the actual evidence. The unchanged runner's `oct31-*` column headings
+identify its old/current comparison fields; in the new paired-cases file the
+current fields contain this November 13 run, not an October execution.
+
+**Still BLOCKED for compatible Grease/package admission.** A concrete next
+boundary is `exec 3<<< one; read -u 3 value; echo $value`: the actual reference
+prints `one`, while D exits 3 with `Untranslated builtin: exec`. Continue in the
+same evaluator by implementing persistent no-command exec redirections and real
+exec replacement, including descriptor ownership across statement scope, then
+qualify against unchanged reference fixtures. Keeping raw numbers pointing at
+Files already closed by a redirect scope is not a valid persistence mechanism.
+The 224 inherited failures, complete reachable shared-shell behavior and
+interactive operation also remain incomplete. Direct/resolved dynamic and
+symbol/link-map checks show no C++ runtime markers, but independent ai-ci
+static/transitive closure acceptance is **NOT_RUN**. No managed package,
+Cat Food activation, consumer admission, target-device evidence, release or
+merge follows from this checkpoint.
+
 ## Native D read continuation and inherited parity, 2026-10-31
 
 This is a **partial** translation checkpoint; neither complete YSH/OSH parity

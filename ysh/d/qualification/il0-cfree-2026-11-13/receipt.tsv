@@ -1,0 +1,59 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED; partial native D continuation, no complete Grease/package admission
+owner_repository	dilapidated-shed/oils; owning task dilapidated-shed/grease issue 58
+observed_date	2026-11-13 UTC
+branch	d/ysh-first-slice
+starting_head	85d6b306d4c9b49e955d755f92a22147bb38ff3e
+result_head	0a9e1f3c5bdd14480caaf4d9ee8aa9eccdc9db85
+local_validation_head	3e83d4b441ab85a20c1baf6135debaa1720b8de3;identical complete Git tree c16ac0a799790e1689d95100d9d51e6531af35b7 to published implementation;only commit metadata differs
+source_tree	0fe0791f60adbf1c92ca6a517edc090386446989; HEAD:ysh/d/source
+dirty_state	clean at tested implementation commit; later receipt/documentation commit changes no implementation input
+reference_base	dd39aa720c386f9ad007fb96f6475c6afbce297c; Grease source pin remains unchanged
+contract_version	retained Oils/Grease semantics; original test/sh_spec.py and unmodified fixtures/timeouts/allowances
+host	Debian GNU/Linux 13 trixie; Linux x86_64; disposable container df6121ee2066
+icky_dmd_source	ccf61ab82659b9eadee2d05b489fb195956cef88
+icky_dmd_version	DMD64 D Compiler v2.113.0
+icky_dmd_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime_source	74917954b53f7f35b13e61b4438c7253834929ed
+phobos_source	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	c929901155fb12f49b65780c9c8399f76fcba9d4fa193ad0f4db6f2dc396514e
+bootstrap	LDC 1.36.0; isolated compiler bootstrap only, not translated-shell acceptance compiler or managed-target artifact
+bootstrap_archive_sha256	2d418462d1c3909f5889298d97de061d023850a371ea9d418fc3fd2d4b7e8b19
+binary_name	ysh-d; no greased claim
+binary_bytes	3144016
+binary_sha256	7a2fe4b08ae35d1a19acb813fdb8b92b7a4b4d775e8baf3f5e9c3fe7ed512272
+build_command	/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/generated/linux/release/64/dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/druntime/import -I/workspace/scratch/8c9ca6473330/toolchain/phobos /workspace/scratch/8c9ca6473330/toolchain/phobos/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl -L-Map=ysh/d/.build/native-link.map ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+source_review	PASS bounded native descriptor/read slice; no claim of whole reachable YSH translation
+typecheck	PASS pinned Icky DMD compilation; no Idriç typecheck claim
+cli_module_tests	PASS all 44 modules; exact source; unittests.log in execution archive
+fixture_checks	PASS acquisition and baseline preservation; compatibility still FAIL for 224 inherited and 2 shared read assertions
+inherited	895 matches;224 FAIL;zero TIMEOUT;1119 cases;81 unchanged fixtures
+inherited_reference	1046 matches;73 FAIL;zero TIMEOUT;same fixtures and final temporary-directory condition
+latest_owner_baseline	PASS all893 D matches retained;two gains;reference verdicts identical to latest owner artifact
+baseline_artifact	13046004213; run41211147313; source85d6b306d4c9b49e955d755f92a22147bb38ff3e; expires2027-01-29
+baseline_archive_sha256	6359e5e5cfa99f49615fc32c958fe1b1959a085f1adfcfb8682e924fa52cede1
+baseline_hosted_executable_sha256	660e9042812523a8a3d313fec8b7c774c6a681f8aa27966da739c8d78812c757; distinct hosted bytes, not a local reproducibility comparison
+shared_read	62 matches;2 FAIL;zero TIMEOUT;64 unchanged cases;prior owner53 matches11FAIL
+shared_read_reference	63 matches;1 FAIL;zero TIMEOUT
+shared_read_remaining	case34 positive timeout is unimplemented in both D and reference;case63 D bytes equal osh OK-4 bytes but native-osh label has no allowance;FAIL preserved
+negative_controls	PASS three compiled mutants rejected with test exit1;see negative-controls.tsv and execution archive
+model_execution	PASS native D interpreter exercised by original harness and native PTY/process tests; Python only drives tests and separate reference
+parse_only	PASS --ast-format none -n FILE for retained qualifier and negative-controls programs
+producer_source	Flexible Pipes68c53d0daa64ec998701060abaaf225752ea1e93; qualifier95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+producer_missing_dependency_control	PASS unchanged producer exits1 and records BLOCKED missing_ick_driver;not a successful Lua production result
+producer_semantic_rerun	NOT_RUN;exact Icky C closure unavailable and /usr/lib/gcc/x86_64-linux-gnu/13/include absent;no GCC substitute
+producer_thirteen_controls	NOT_RUN in this continuation;prior successful receipts remain historical
+clean_rebuild	PASS separate clean worktree at result_head produces identical binary SHA256 on same host with same pinned compiler/runtime
+independent_rebuild	NOT_RUN second-host binary reproducibility
+direct_and_resolved_dependencies	libgcc_s.so.1;libc.so.6;ld-linux-x86-64.so.2;LD_PRELOAD removed only from dependency inspection
+static_symbol_check	PASS bounded nm/link-map search has no libstdc++/libc++/GLIBCXX_/CXXABI_/__gxx_personality/_ZNSt/_ZN3std markers;not independent static provenance acceptance
+independent_ai_ci	NOT_RUN whole-language or static/transitive package closure acceptance
+physical_acceptance	NOT_RUN;Linux pseudo-terminal evidence is not physical phone/tablet evidence
+android_or_netbsd	NOT_RUN;no device builds, deployment, installation or activation
+cat_food_and_fp	BLOCKED;no package submission, prerequisite bypass, managed receipt or consumer admission
+first_blocker	persistent exec descriptor ownership and exec replacement untranslated;reference exec3-here-string prints one;D exits3 Untranslated builtin exec
+remaining_work	complete other224 inherited assertions and reachable shared-shell/interactive semantics;independent closure verifier;actual producer/control rerun;conditional packaging acceptance
+next_consumer	Grease issue58;conditional Cat Food131 and FP IL-0;no admission granted
+output_paths	paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;negative-controls.tsv;execution-logs.zip;artifacts.tsv
+evidence_labels	Current fields in unchanged runner's oct31-* headings mean this November13 execution;harness exits1 for failed assertions remain recorded
