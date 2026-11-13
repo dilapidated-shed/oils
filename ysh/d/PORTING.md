@@ -4,6 +4,84 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Native resource limits and builtin output, 2026-11-13
+
+This continues SUN IL0-CFREE-01 from published checkpoint
+`3b0a1489f817adad94663148d1c1c30df0ae73d1`. The published implementation is
+`a7541405a70b3002fd430c54b21ea8d5757a6737`; local validation commit
+`2f0eae27fdf4f081709f679408d4fff12186ecff` has the identical complete Git tree
+`621d7a28ba6a5a93e2d7317ca5f5f01b2c8a9e12`.
+
+The retained `Ulimit` builtin now uses the target's POSIX `getrlimit` and
+`setrlimit` bindings for core dumps, data, file size, descriptors, stack, CPU and
+address space. The implementation preserves resource order, the exact all-limit
+table, 512-byte file/core blocks, 1024-byte memory units, default file-size
+selection, soft/hard flags and both-limit setters. It accepts the reference's
+integer spelling and literal `unlimited`, checks signed input and scaled bounds
+before narrowing, and distinguishes usage status 2 from kernel rejection status
+1. Kernel diagnostic wording can differ from the test-only Python binding;
+global stderr parity is not claimed.
+
+Two evaluator defects surfaced in the unchanged fixture. Retained declaration
+assignment words now use the existing assignment expansion mode, so
+`local message=$1` preserves spaces and wildcard bytes. The command builtin
+boundary now flushes stdout following `core/vm.py:_RunBuiltinProc`, preserving
+completed output before a subsequent fatal signal and reporting handled write
+or flush errors as status 1. No signal dispositions were changed to obtain the
+expected fixture verdicts.
+
+All **47 CLI/module suites** pass. Native child-process tests inspect actual
+kernel limits, distinguish soft/hard changes, verify rejected changes leave
+state intact, exercise values beyond 32-bit and exact floating-point range,
+and verify that 512 bytes are written before the next write kills the child
+with SIGXFSZ. The latter also checks that a preceding no-newline builtin's
+output survives. Limit-changing tests leave the parent runner unchanged.
+A separate clean worktree produces byte-identical production output.
+
+The unchanged original `spec/builtin-process.test.sh` ulimit cases 10–25 now
+pass **16/16 in native D**. Actual Oils records 14 PASS, one existing allowed
+OK result and one FAIL. Case 25 explicitly documents the reference's descriptor
+save defect: its minimum saved descriptor is 100, so redirecting under
+`ulimit -n 64` fails. This remains a visible reference failure in the full
+paired receipt. The new [`qualify-ulimit.grease`](qualification/qualify-ulimit.grease)
+runs cases 10–24 in both interpreters and case 25 in D alone, using the original
+harness and unchanged expectations. It also compares the complete read-only
+resource tables byte for byte. The gate runs through native D from an arbitrary
+directory and is wired into the owner workflow. No native label is changed to
+inherit an Oils-only allowance, and no fixture or failure allowance was changed.
+
+All **896/1,119 inherited matches** are retained, with **223 FAIL**; the actual
+reference remains **1,046/1,119**, with **73 FAIL**. The paired case and fixture
+total tables are identical to the preceding exec checkpoint. Shared read remains
+**62/64**, including its two documented failures. All six shared exec cases
+still pass in both implementations. Four compiled negative controls are rejected:
+a fake setter, 1024-byte file blocks, a missing signed multiplication bound and
+deferred builtin flushing. The latter fails the completed-output assertion even
+though the kernel still kills the child correctly.
+
+The [receipt](qualification/il0-ulimit-2026-11-13/receipt.tsv),
+[paired cases](qualification/il0-ulimit-2026-11-13/paired-cases.tsv),
+[shared ulimit verdicts](qualification/il0-ulimit-2026-11-13/shared-ulimit.tsv),
+[negative controls](qualification/il0-ulimit-2026-11-13/negative-controls.tsv) and
+[execution archive](qualification/il0-ulimit-2026-11-13/execution-logs.zip)
+preserve exact inputs and results. Existing `oct31-*` current-result column
+names remain unchanged in the copied runner tables.
+
+**Still BLOCKED for complete Grease/package admission.** The resource-limit
+blocker is resolved for the qualified native batch boundary. The next measured
+shared-process gap is `time { true; }`: actual Oils returns 0 with a timing report,
+while D returns 2 because it treats `time` as an external command with a block.
+Continue the reference timing keyword, including original process case 9.
+The remaining 223 inherited assertions, complete reachable shared-shell and
+interactive semantics and independent ai-ci static/transitive C++ exclusion
+remain incomplete. Bounded ELF, symbol and link inspections find no C++ runtime
+marker; they are not independent closure acceptance. Actual IL-0 Lua production
+and its thirteen controls are NOT_RUN here because the pinned Icky C closure and
+required host GCC-13 support are unavailable. Both retained programs pass parse-only,
+and the unchanged producer rejects a missing compiler with its BLOCKED receipt.
+The binary remains `ysh-d`. No managed package activation, FP admission,
+deployment, device acceptance, release or merge is claimed.
+
 ## Persistent exec descriptors and native replacement, 2026-11-13
 
 This continues SUN IL0-CFREE-01 from published checkpoint

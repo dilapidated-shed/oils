@@ -1,0 +1,12 @@
+path	sha256	purpose
+execution-logs.zip	860283ae9992d979d28a0086f3b3d117fc8df94073b5c6e0733f789bd766b615	original inherited and shared harness transcripts/TSVs;native unittests;four mutant logs/diffs;producer negative and BLOCKED receipt;remaining timing gap;ELF/symbol/link inspection
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	all1119 inherited verdicts;identical to preceding exec checkpoint
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 original fixture totals and source identities;identical to preceding exec checkpoint
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	original64 read cases in D and actual reference;known failures retained
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	original6 exec cases in D and actual reference;all12 paired records pass
+shared-ulimit.tsv	3d6961c4a1824d26c4af64ab622d6178eb8a9d3f606517dffbee72cdd321dd83	all16 original ulimit cases in D and actual reference;reference case25 FAIL remains visible
+shared-ulimit-nofile.tsv	b50d619cb96d2f7b73ae9eadb62830de0277ca027c937660d25142662e94474b	original case25 native-only qualification without altering reference expectations
+../../.build/ysh-d	0c0b7dfab00579ad63386782615c83721d7cd57b8e5d81f44ee3d2e8bb7a8531	local tested partial native executable;not committed;separate clean worktree output byte-identical
+../qualify-ulimit.grease	70f380e5ba2cb50ff47b4f6e0697ba56a1951242cb3d3e25de0c48b171a9e705	native D qualification invoking original Python2 harness and actual reference
+../../../../spec/builtin-process.test.sh	cbc37934d84d70873d136738544e98e47ee8aa3c561a6ac0b5e553ef90cc82ac	unchanged original exec/ulimit fixture
+../../../../test/sh_spec.py	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a	unchanged original verdict oracle

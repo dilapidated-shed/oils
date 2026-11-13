@@ -1,0 +1,58 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease and package admission;native ulimit continuation implemented and qualified
+owner_repository	dilapidated-shed/oils;owning task dilapidated-shed/grease issue58
+observed_date	2026-11-13 UTC
+branch	d/ysh-first-slice
+starting_head	3b0a1489f817adad94663148d1c1c30df0ae73d1
+result_head	a7541405a70b3002fd430c54b21ea8d5757a6737
+local_validation_head	2f0eae27fdf4f081709f679408d4fff12186ecff
+identical_repository_tree	621d7a28ba6a5a93e2d7317ca5f5f01b2c8a9e12;published and local validation commits differ only in commit metadata
+implementation_source_tree	584d487ddafea5abdfd4ebebc974facc7a011e4e;HEAD:ysh/d/source
+dirty_state	clean at local validation implementation commit;receipt/documentation changes are separate
+contract_version	retained Oils reference semantics;original fixtures and Python2 harness unchanged
+reference_base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+host	Debian GNU/Linux13 trixie;Linux x86_64;disposable container df6121ee2066
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	c929901155fb12f49b65780c9c8399f76fcba9d4fa193ad0f4db6f2dc396514e
+bootstrap	isolated LDC1.36.0 only to build pinned Icky DMD;not translated-runtime acceptance compiler or target package
+binary_name	ysh-d;partial implementation;no complete Grease claim
+binary_bytes	3221880
+binary_sha256	0c0b7dfab00579ad63386782615c83721d7cd57b8e5d81f44ee3d2e8bb7a8531
+build_command	/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/generated/linux/release/64/dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/druntime/import -I/workspace/scratch/8c9ca6473330/toolchain/phobos /workspace/scratch/8c9ca6473330/toolchain/phobos/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl -L-Map=ysh/d/.build/native-link.map ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+source_review	PASS bounded ulimit/retained assignment/builtin output path;not a complete reachable-language inventory
+typecheck	PASS pinned Icky DMD compilation;explicit D port;no Idriç typecheck claim
+cli_module_tests	PASS47 modules;includes fork-isolated native limits and actual SIGXFSZ enforcement
+inherited	896 matches;223 FAIL;zero TIMEOUT;1119 cases;81 unchanged fixtures
+inherited_reference	1046 matches;73 FAIL;zero TIMEOUT
+previous_checkpoint_preservation	PASS exact identical paired-cases.tsv and fixture-totals.tsv;all896 candidate matches retained;reference verdicts identical
+shared_ulimit	PASS16/16 native D;actual Oils14pass1ok1FAIL;unchanged spec/builtin-process.test.sh cases10-25;zero timeout
+reference_ulimit_failure	case25 documented FD-save defect;core/process.py saves above100 while fixture sets NOFILE64;original FAIL retained
+ulimit_gate	original harness pairs cases10-24;requires15native pass and15reference pass-or-original-ok;case25 runs natively with original expectations;full resource tables byte-identical
+ulimit_gate_sha256	70f380e5ba2cb50ff47b4f6e0697ba56a1951242cb3d3e25de0c48b171a9e705
+workflow_sha256	ba9d01c497d33cca9f7ecc526c247e37d98eabacbd2e9fa1f60f2ec135d6aee9
+shared_exec	PASS6/6 native D and6/6 actual Oils;unchanged original cases0-5;zero timeout
+shared_read	62 matches;2FAIL;zero TIMEOUT;reference63matches1FAIL;table identical to previous checkpoint
+fixture_checks	PASS existing acquisition/baseline checks and focused native ulimit/exec gates;remaining inherited and shared-read FAILs retained
+native_kernel_controls	PASS seven-resource getters;actual FSIZE/NOFILE/CPU setters;soft/hard and denied-state checks;large integer bounds;512byte-write followed bySIGXFSZ;parent limits preserved
+negative_controls	PASS4 compiled mutants rejected with test exit1;see negative-controls.tsv;production source and executable were never replaced by mutants
+model_execution	PASS native D;separate original Oils Python reference and inherited Python2 test harness only;no source-text interpreter fallback
+clean_rebuild	PASS separate clean worktree at local_validation_head;byte-identical production executable;cmp exit0
+independent_rebuild	NOT_RUN second-host binary reproducibility
+parse_only	PASS both original retained FP IL-0 programs;--ast-format none -n
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;qualifier95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+producer_missing_dependency_control	PASS original producer exits1 with BLOCKED missing_ick_driver;not successful Lua production
+producer_semantic_execution	NOT_RUN exact pinned Icky C closure and /usr/lib/gcc/x86_64-linux-gnu/13/include unavailable;no compiler substitution
+producer_thirteen_controls	NOT_RUN here;historical results not promoted
+dynamic_dependencies	libgcc_s.so.1;libc.so.6;ld-linux-x86-64.so.2;inspection alone suppresses LD_PRELOAD
+symbol_and_link_inspection	PASS bounded no libstdc++/libc++/GLIBCXX_/CXXABI_/__gxx_personality/_ZNSt/_ZN3std marker;not independent static/transitive exclusion
+independent_ai_ci	NOT_RUN complete language or static/transitive closure acceptance
+physical_acceptance	NOT_RUN;native Linux kernel evidence is not physical-device evidence
+other_targets	NOT_RUN Android or NetBSD;no device compilation or installation
+first_blocker	time { true; } returns2 External commands do not accept typed arguments;actual reference returns0 and reports real/user/sys timing
+remaining_work	translate native reference timing keyword and original process case9;remaining223 inherited assertions;whole reachable shared-shell and interactive semantics;independent closure proof;actual Lua producer/control rerun;conditional package acceptance
+next_consumer	Grease issue58;Cat Food131 and FP IL-0 remain conditional;no managed admission
+output_paths	paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;shared-exec.tsv;shared-ulimit.tsv;shared-ulimit-nofile.tsv;negative-controls.tsv;execution-logs.zip;artifacts.tsv

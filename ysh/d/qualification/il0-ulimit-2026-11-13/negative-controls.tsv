@@ -1,0 +1,5 @@
+control	implementation	build	observed_status	result	evidence
+pretend-setter	remove setrlimit syscall; report success	pinned Icky DMD;46-module library unittest binary	1	REJECTED	ulimit_test.d kernel query differs from requested 512-byte blocks;ulimit-mutant-no-set.log and .diff
+wrong-file-unit	change RLIMIT_FSIZE factor from512 to1024	pinned Icky DMD;46-module library unittest binary	1	REJECTED	ulimit_test.d actual kernel limits disagree;ulimit-mutant-wrong-factor.log and .diff
+unchecked-signed-scale	remove signed64 scaled bound;retain unsigned rlim_t bound	pinned Icky DMD;46-module library unittest binary	1	REJECTED	parseLimit accepts18014398509481984 and rejected update mutates kernel state;ulimit-mutant-overflow.log and .diff
+deferred-builtin-output	remove per-builtin stdout flush	pinned Icky DMD;46-module library unittest binary	1	REJECTED	kernel SIGXFSZ is correct but completed builtin output is lost;ulimit-mutant-no-flush.log and .diff
