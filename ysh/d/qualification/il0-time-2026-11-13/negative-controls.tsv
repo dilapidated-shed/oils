@@ -1,0 +1,5 @@
+control	implementation	compile_status	run_status	result	evidence
+zero-clock	replace snapshotTimes with zero-valued native snapshot;keep formatter	0	1	REJECTED	timing_test.d complete-pipeline wall duration assertion;1/48 library modules fail;timing-mutant-zero-clock.diff/.log/.compile.log
+children-cpu	sample RUSAGE_CHILDREN in place of RUSAGE_SELF	0	1	REJECTED	timing_test.d waited-child CPU violates retained self accounting;1/48 library modules fail;timing-mutant-children.diff/.log/.compile.log
+report-on-unwind	move reporting into scope(exit) around child execution	0	1	REJECTED	timing_test.d explicit-exit control detects report during unwind;1/48 library modules fail;timing-mutant-unwind.diff/.log/.compile.log
+preceding-runtime	actual preceding checkpoint rebuilt on fresh host;original process case9	0	1	REJECTED	pre-time.tsv records native osh-d FAIL and actual reference osh PASS;pre-time.log;no production executable substitution

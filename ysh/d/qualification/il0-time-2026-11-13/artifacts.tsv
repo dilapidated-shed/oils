@@ -1,0 +1,15 @@
+path	sha256	purpose
+execution-logs.zip	550a287d079e6c08ccb9db58485149e9ef15d216da91651d028faab28a65fd26	original inherited/shared transcripts and TSVs;49-module native tests;three compiled mutant diagnostics/diffs;preceding executable negative;native link/symbol/dependencies;new host toolchain build logs;private test-reference host patch;remaining times gap;producer negative and BLOCKED receipt
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	all1119 inherited verdicts;identical to preceding ulimit checkpoint
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 original fixture totals;identical to preceding ulimit checkpoint
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	64 original read cases in native D and actual reference;known failures retained
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	6 unchanged exec cases;all12 paired records pass
+shared-time.tsv	455a2d00f2b0254acdd2a794b465d15d2ff4698e87572fb667734b137f3bdbfb	original builtin-process case9;native/reference both pass
+shared-time-pipeline.tsv	1076438fe56358a4051c396154a792b859c61a1128fb1b1792377dfad895a9d2	original builtin-misc case3;native/reference both pass
+shared-time-errexit.tsv	92a8cb13a923ac98d8e4acebc3063ae992b14e50d047c50c281f0c6986535303	original errexit case12;native/reference both pass
+../../.build/ysh-d	a14244015e88571aea427d0c973429c6125f098b34c68a891d3bbd61caeffc7a	local tested partial native executable;not committed;clean worktree byte-identical
+../qualify-time.grease	8a36871ffb18e423fce27b28765637f4ebdb4907b561f89efa218457467d40eb	native D qualifier invoking unchanged original harness/reference
+../../../../spec/builtin-process.test.sh	cbc37934d84d70873d136738544e98e47ee8aa3c561a6ac0b5e553ef90cc82ac	unchanged process fixture
+../../../../spec/builtin-misc.test.sh	cc36392bef7f3311fe9b5d3ce15632f856e514ece3f3b8f048ec6cc3dbc3e6c2	unchanged pipeline fixture
+../../../../spec/errexit.test.sh	80c4092adbcd3b3393547b6bb2b8b941dfbe58b7bb17f3489cb4441ea8ed297b	unchanged errexit fixture
+../../../../test/sh_spec.py	c388ba496eab2296c744de2e6ddfbfb8fe7a5429490048ef13708866de64794a	unchanged original verdict oracle

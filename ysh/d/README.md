@@ -2,15 +2,15 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The November 13 ulimit continuation records **896
+The translation remains incomplete. The November 13 timing continuation records **896
 assertion matches and 223 failures** across all 1,119 cases in the 80 inherited
 YSH fixtures and focused Grease alias fixture. This preserves every match from
-the preceding November 13 exec checkpoint. The fresh actual reference records 1,046
+the preceding November 13 ulimit checkpoint. The fresh actual reference records 1,046
 matches and 73 failures under the same UTF-8 environment. The separate unchanged
 64-case shared read fixture retains 62 matches; two failures remain.
 The unchanged harness, fixture hashes, remaining operations and exact source/build
 identities are recorded in [PORTING.md](PORTING.md) and
-[the host receipt](qualification/il0-ulimit-2026-11-13/receipt.tsv).
+[the host receipt](qualification/il0-time-2026-11-13/receipt.tsv).
 
 Scoped extra descriptors now reach native builtins and external processes with
 ordered duplication, nested restoration and closed-fd handling. Terminal read
@@ -20,7 +20,7 @@ reference readiness probe. Positive timeouts remain unimplemented in both D and
 the retained reference. Native mapfile/readarray and unset shell-array expansion
 complete the preceding input slice. Persistent `exec` redirections now own their
 Files beyond the command scope. Actual native exec replacement preserves PID,
-supports `--` and `-a`, and retains ignored signal dispositions. All 47 CLI/module
+supports `--` and `-a`, and retains ignored signal dispositions. All 49 CLI/module
 suites pass, and the six unchanged shared exec cases pass in both D and Oils.
 The native PID test rejects a fork-and-wait imitation. Native `ulimit` now queries
 and sets all seven retained resources, with reference units, soft/hard selection,
@@ -28,8 +28,13 @@ infinity and checked integer conversion. All 16 unchanged shared ulimit cases
 pass in D. Kernel tests verify actual limits and SIGXFSZ enforcement in child
 processes. Builtin output is flushed before the next command, and retained local
 assignment operands preserve spaces and literal patterns. These results do not
-qualify a complete shell or managed package; the shared `time` brace-group
-keyword remains untranslated.
+qualify a complete shell or managed package. Native `time` now measures the
+whole following pipeline in the current frame, prints the reference's fixed
+real/user/sys report, and counts shell CPU without adding child CPU. Three
+unchanged shared timing cases pass in both D and Oils. Native tests cover
+status/control flow, keyword boundaries, redirection ownership, nonrecursive
+lookahead and same-header here-document body selection. The `times` builtin
+remains untranslated.
 
 The October 27 checkpoint's 39 CLI/module suites, 38 library suites, original
 owner smoke, real Icky Lua producer and 13 runtime controls remain historical

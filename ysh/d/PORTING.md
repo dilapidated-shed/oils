@@ -4,6 +4,98 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Native timing keyword and source boundaries, 2026-11-13
+
+This continues SUN IL0-CFREE-01 from published checkpoint
+`5a5a65e6217068655021a676826629026f04d6b5`. The published implementation is
+`343c79c0b6c398dbc55cc221a0991d3756e8810d`; local validation commit
+`0a0b0e238ae90be2cfc03eacd2e3c63b3e4dd270` has the identical complete Git tree
+`b95058bc1df5fc465545c2ef429dfbc7e97d8469`.
+
+The reserved `time` command prefix now follows `osh/cmd_parse.py:ParseTime`
+and `osh/cmd_eval.py:_DoTimeBlock`. It owns the whole following pipeline, inside
+the surrounding and/or or background list. The child runs in the current frame;
+ordinary external commands must return for accounting rather than tail-exec.
+Explicit `exec` still replaces the process. Redirects attached to the child
+restore before the timing report; an outer brace-group redirect captures both.
+The child owns its status, errexit and ERR decisions. Exit, return, break,
+continue and failed errexit propagate without a report on unwind, matching the
+retained evaluator's lack of a finally block.
+
+Native snapshots use `gettimeofday` and `getrusage(RUSAGE_SELF)`. Accounting
+stays in integer microseconds; conversion to floating point is confined to the
+reference's fixed three-decimal display. The report is exactly three tab-separated
+stderr lines, real/user/sys, without an initial blank line. `TIMEFORMAT` remains
+ignored and waited-child CPU remains excluded, as in the reference. Report I/O
+errors do not replace the timed status, following the retained C printer.
+
+Keyword recognition keeps quoted, escaped, concatenated and dynamically expanded
+names as ordinary commands. An alias cannot replace the reserved keyword;
+expanding another alias to `time` reparses it. Leading bindings and redirects
+preserve simple-command classification. `-p` remains a child command name rather
+than a timing flag. The reference's spelling distinction is retained: a line
+continuation after literal `time` preserves the keyword, while one inside its
+letters does not. Attached literal braces in a command name do not create a block.
+
+Operator discovery marks timing prefixes without recursively validating every
+timed subtree. A twelve-prefix parse runs in a child with a three-second alarm
+control; the former recursive lookahead exceeded that bound at nine prefixes.
+The new timed here-document tests also exposed an older shared parser defect:
+two commands on one header could assign the first document's bytes to the second.
+Independent scanners now preserve the end of preceding document bodies, including
+through lexer lookahead. Both timed and untimed paired-document tests select
+the correct bodies.
+
+All **49 CLI/module suites** pass. The unchanged original timing selections are
+`spec/builtin-process.test.sh` case 9, `spec/builtin-misc.test.sh` case 3 and
+`spec/errexit.test.sh` case 12. All three pass in D and actual Oils: six paired
+assertions. [`qualify-time.grease`](qualification/qualify-time.grease) runs the
+original Python2 harness through the native D entrypoint, requires each exact
+pair to PASS, and runs from an arbitrary directory. The owner workflow includes
+the gate, its immediate reference inputs and actual gawk, which the original
+fractional-seconds fixture requires. No fixture, native label, baseline,
+failure allowance or timeout was changed.
+
+The entire inherited comparison remains **896/1,119 matches, 223 FAIL**, versus
+**1,046/1,119, 73 FAIL** in the actual reference. Its paired case and fixture total
+tables are byte-identical to the preceding ulimit checkpoint. Shared read is
+still **62/64**, with the same two failures. All six shared exec cases and the
+existing sixteen-case native ulimit gate pass. Three compiled mutants are
+rejected: a zero clock fails the delayed-pipeline wall test, children-only
+sampling fails the native CPU contrast, and reporting on unwind fails the exit
+control. The actual preceding executable fails original process case 9 while
+the reference still passes. A clean same-host rebuild reproduces the tested
+production executable byte for byte.
+
+This host is a fresh disposable Debian13 x86_64 container. Compiler source pins
+remain unchanged; its newly built Icky DMD and Phobos hashes are recorded in the
+new receipt rather than copied from the previous host. The test-only original
+Python2 reference and actual gawk were restored separately. The old ulimit
+checkpoint rebuilt on this host also matches its previously recorded executable
+hash; that is not a second-host rebuild of the new timing executable.
+
+The [receipt](qualification/il0-time-2026-11-13/receipt.tsv),
+[paired cases](qualification/il0-time-2026-11-13/paired-cases.tsv),
+[shared timing verdicts](qualification/il0-time-2026-11-13/shared-time.tsv),
+[negative controls](qualification/il0-time-2026-11-13/negative-controls.tsv) and
+[execution archive](qualification/il0-time-2026-11-13/execution-logs.zip)
+preserve inputs and results. Copied `oct31-*` current-result column names remain
+unchanged. The other two timing fixtures have separate verbatim TSV files.
+
+**Still BLOCKED for complete Grease/package admission.** The next measured
+shared-process gap is `times`: D exits 3 with `Untranslated builtin: times`,
+while actual Oils exits 0 and prints self/children user/system CPU totals.
+Continue `builtin/process_osh.py:Times`, `core/pyos.py:PrintTimes` and the original
+`spec/builtin-times.test.sh`. Remaining inherited failures, complete reachable
+shared-shell and interactive semantics, and independent ai-ci static/transitive
+C++ exclusion remain open. Bounded ELF/symbol/link inspection still finds no C++
+runtime marker; it is not independent closure acceptance. Actual Lua production
+and its thirteen controls are NOT_RUN here: the exact pinned Icky C closure and
+required host GCC13 support are absent. Both unchanged producer programs pass
+parse-only; the original producer still rejects a missing compiler with a BLOCKED
+receipt. The binary stays `ysh-d`; no package activation, consumer admission,
+deployment, device acceptance, release or merge is claimed.
+
 ## Native resource limits and builtin output, 2026-11-13
 
 This continues SUN IL0-CFREE-01 from published checkpoint
