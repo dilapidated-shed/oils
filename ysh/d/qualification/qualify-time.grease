@@ -1,0 +1,29 @@
+#!/usr/bin/env grease
+# Original fixtures and Python-2 reference are test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-time.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+command -v gawk > /dev/null
+
+proc compare (fixture, number, name) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range "$number" --timeout=3 \
+    --tmp-env "$output/tmp/$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/$name.tsv" \
+    "$root/$fixture" "$output/native-osh" "$root/bin/osh"
+  var records = $(wc -l < "$output/$name.tsv")
+  test "$records" -eq 3
+  var matches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/$name.tsv")
+  test "$matches" -eq 2
+}
+
+compare spec/builtin-process.test.sh 9 shared-time
+compare spec/builtin-misc.test.sh 3 shared-time-pipeline
+compare spec/errexit.test.sh 12 shared-time-errexit
+echo 'PASS three unchanged time cases in native D and actual Oils'

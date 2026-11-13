@@ -104,6 +104,8 @@ struct Token {
     // their spelling for the word evaluator without inventing a nesting
     // boundary in command/operator discovery.
     bool wordBracket;
+    // CommandScanner marks the reserved prefix without hiding its pipeline.
+    bool timingPrefix;
 }
 
 struct HereDocument {
@@ -163,10 +165,11 @@ class Lexer {
     private Boundary[] boundaries_;
     private Token previousToken_;
     private HereDocument[] pendingDocuments_;
+    private size_t priorDocumentEnd_;
     HereDocument[size_t] hereDocuments;
 
     this(string input, bool emitNewlines = false, size_t startOffset = 0, bool recognizeHereDocuments = true,
-            ShellOptions options = null, HereDocument[] inheritedDocuments = []) {
+            ShellOptions options = null, HereDocument[] inheritedDocuments = [], size_t priorDocumentEnd = 0) {
         input_ = input;
         emitNewlines_ = emitNewlines;
         recognizeHereDocuments_ = recognizeHereDocuments;
@@ -175,6 +178,7 @@ class Lexer {
         assert(startOffset <= input.length);
         position_ = startOffset;
         pendingDocuments_ = inheritedDocuments.dup;
+        priorDocumentEnd_ = priorDocumentEnd;
         foreach (document; inheritedDocuments) hereDocuments[document.operatorOffset] = document;
     }
 
@@ -198,6 +202,7 @@ class Lexer {
         auto savedBoundaries = boundaries_.dup;
         auto savedPrevious = previousToken_;
         auto savedPending = pendingDocuments_.dup;
+        auto savedPriorDocumentEnd = priorDocumentEnd_;
         auto savedDocuments = hereDocuments.dup;
         auto savedNewlineState = newlineState_;
         scope (exit) {
@@ -209,6 +214,7 @@ class Lexer {
             boundaries_ = savedBoundaries;
             previousToken_ = savedPrevious;
             pendingDocuments_ = savedPending;
+            priorDocumentEnd_ = savedPriorDocumentEnd;
             hereDocuments = savedDocuments;
             newlineState_ = savedNewlineState;
         }
@@ -279,7 +285,8 @@ class Lexer {
             if (pendingDocuments_.length) {
                 position_ = pendingDocuments_[$ - 1].endOffset;
                 pendingDocuments_.length = 0;
-            }
+            } else if (priorDocumentEnd_ > position_) position_ = priorDocumentEnd_;
+            priorDocumentEnd_ = 0;
             if (!multilineActive() && !expressionDepth_) { commandStart_ = true; expressionCommand_ = false; }
         } else if (!expressionDepth_ && (token.kind == TokenKind.semicolon || token.kind == TokenKind.amp ||
                 (!expressionCommand_ && (token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)))) {
@@ -321,6 +328,7 @@ class Lexer {
         auto headerEnd = cursor;
         while (headerEnd < input_.length && input_[headerEnd] != '\n') ++headerEnd;
         cursor = pendingDocuments_.length ? pendingDocuments_[$ - 1].endOffset : headerEnd + (headerEnd < input_.length);
+        if (priorDocumentEnd_ > cursor) cursor = priorDocumentEnd_;
         document.bodyStart = cursor;
         while (cursor < input_.length) {
             auto begin = cursor;

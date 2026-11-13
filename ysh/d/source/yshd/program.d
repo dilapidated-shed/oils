@@ -83,6 +83,15 @@ private bool completeCommandWord(string source, Token token) {
     return end == source.length || " \t\r\n;|&()<>{}".indexOf(source[end]) >= 0;
 }
 
+private size_t timeKeywordEnd(string source, Token token) {
+    if (token.kind != TokenKind.name || token.text != "time") return 0;
+    auto end = token.offset + token.text.length;
+    while (end + 1 < source.length && source[end .. end + 2] == "\\\n") end += 2;
+    // Braces are ordinary bytes inside a shell word; only a separate brace
+    // starts a compound command. Backslash-newline does not quote a keyword.
+    return end == source.length || " \t\r\n;|&()<>".indexOf(source[end]) >= 0 ? end : 0;
+}
+
 class YshCommand {
     string source;
     Frame captured;
@@ -220,12 +229,15 @@ private class CommandScanner {
     private bool continuation;
     private ShellOptions options;
     private bool multiline;
-    this(string source, ReturnMode returnMode, ShellOptions options = null, bool multiline = false) {
+    private bool suppressInitialTimeKeyword;
+    this(string source, ReturnMode returnMode, ShellOptions options = null, bool multiline = false,
+            bool suppressInitialTimeKeyword = false, size_t priorDocumentEnd = 0) {
         this.source = source;
         this.returnMode = returnMode;
         this.options = options;
         this.multiline = multiline;
-        lexer = new Lexer(source, true, 0, true, options);
+        this.suppressInitialTimeKeyword = suppressInitialTimeKeyword;
+        lexer = new Lexer(source, true, 0, true, options, [], priorDocumentEnd);
         lexer.multiline = multiline;
     }
     HereDocument[size_t] documents() { return lexer.hereDocuments; }
@@ -233,6 +245,8 @@ private class CommandScanner {
         Token token;
         do { token = lexer.next(); }
         while (continuation && token.kind == TokenKind.newline);
+        auto suppressTime = suppressInitialTimeKeyword;
+        suppressInitialTimeKeyword = false;
         continuation = token.kind == TokenKind.pipe || token.kind == TokenKind.andIf || token.kind == TokenKind.orIf;
         if (commandStart) bracketCommand = token.kind == TokenKind.name && token.text == "test" ||
             token.kind == TokenKind.leftBracket && !(token.offset + 1 < source.length && source[token.offset + 1] == '[');
@@ -265,6 +279,15 @@ private class CommandScanner {
             commandStart = false;
             return Token(TokenKind.name, source[token.offset .. end], token.offset);
         }
+        auto timingEnd = commandStart && !suppressTime ? timeKeywordEnd(source, token) : 0;
+        if (timingEnd) {
+            // A marker keeps timed pipeline ownership visible to splitters
+            // without recursively validating the same timed subtree.
+            while (lexer.peek().offset < timingEnd) lexer.next();
+            token.timingPrefix = true;
+            commandStart = true;
+            return token;
+        }
         if (commandStart && token.kind == TokenKind.name) {
             auto parser = new ProgramParser(source[token.offset .. $], true, returnMode, false, options, null, false, multiline);
             ShellFunctionDefinition definition;
@@ -275,6 +298,20 @@ private class CommandScanner {
                 lexer.multiline = multiline;
                 commandStart = false;
                 return Token(TokenKind.name, source[token.offset .. end], token.offset);
+            }
+            // A literal brace attached to a command-name token belongs to
+            // that word. Do not probe parameter or expression substitutions
+            // as fragments: they keep their own structural boundaries.
+            auto tokenEnd = token.offset + token.text.length;
+            bool literalCommandStart = token.offset == 0 ||
+                " \t\r\n;|&".indexOf(source[token.offset - 1]) >= 0;
+            if (literalCommandStart && tokenEnd < source.length && (source[tokenEnd] == '{' || source[tokenEnd] == '}')) {
+                auto wordParser = new ProgramParser(source[token.offset .. $], true, returnMode, true, options, null, false, multiline);
+                wordParser.readScalarWord(null, false, false, true);
+                auto wordEnd = token.offset + wordParser.current_.offset;
+                while (lexer.peek().offset < wordEnd) lexer.next();
+                commandStart = false;
+                return Token(TokenKind.name, source[token.offset .. wordEnd], token.offset);
             }
         }
         if (commandStart && (token.kind == TokenKind.forKeyword || token.kind == TokenKind.whileKeyword ||
@@ -385,6 +422,7 @@ class ProgramParser {
     private ReturnMode returnMode_;
     private bool executedCommand_;
     private DescriptorScope redirectionOwner_;
+    private bool suppressInitialTimeKeyword_;
     private ShellOptions parserOptions_;
     private bool lastWordTriple_;
     private bool lastWordStatic_;
@@ -419,7 +457,7 @@ class ProgramParser {
             ++parsedCommands_;
             parsedSimple_ = false;
             simpleOffset_ = current_.offset;
-            if (tryMultiline(null) || tryExecuteAsync(null) || tryExecuteAndOr(null) || tryExecuteTopLevelPipeline(null)) {
+            if (tryMultiline(null) || tryExecuteAsync(null) || tryExecuteAndOr(null) || tryTime(null) || tryExecuteTopLevelPipeline(null)) {
                 skipEndStatements();
                 continue;
             }
@@ -518,7 +556,7 @@ class ProgramParser {
                 break;
             } else {
                 if (hasTyped) throw new ParseError("Unexpected words after typed arguments");
-                auto parts = readCommandWord(null);
+                auto parts = readCommandWord(null, firstWord);
                 if (firstWord) {
                     attributeBlock = lastWordStatic_ && parts.length == 1 && attributeCommandName(parts[0]);
                     firstWord = false;
@@ -587,6 +625,11 @@ class ProgramParser {
             if (tryExecuteAndOr(mem)) {
                 // Each eligible command owns its errexit decision. A failed
                 // nonfinal operand and a negated final operand stay exempt.
+                skipEndStatements();
+                continue;
+            }
+            if (tryTime(mem)) {
+                // The timed pipeline's eligible leaves own errexit/ERR.
                 skipEndStatements();
                 continue;
             }
@@ -847,7 +890,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(statementStart);
         size_t statementEnd = source_.length;
         int depth;
         while (true) {
@@ -914,7 +957,7 @@ class ProgramParser {
         if (!pipelineStatementStart(current_.kind) && current_.kind != TokenKind.bang &&
                 current_.kind != TokenKind.ifKeyword) return false;
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(start);
         Token[] operators;
         int depth;
         size_t end;
@@ -965,9 +1008,10 @@ class ProgramParser {
     private bool tryExecuteAsync(Memory mem) {
         if (!pipelineStatementStart(current_.kind) && current_.kind != TokenKind.bang) return false;
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(start);
         int depth;
         size_t[] separators;
+        bool timedStage;
         bool compoundList = current_.kind == TokenKind.bang;
         while (true) {
             auto token = scanner.next();
@@ -996,7 +1040,8 @@ class ProgramParser {
                 moveTo(start + token.offset + 1);
                 return true;
             }
-            if (depth == 0 && token.kind == TokenKind.pipe) separators ~= token.offset;
+            if (depth == 0 && token.timingPrefix) timedStage = true;
+            if (depth == 0 && token.kind == TokenKind.pipe && !timedStage) separators ~= token.offset;
             if (depth == 0 && (token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)) compoundList = true;
             adjustDepth(depth, token);
         }
@@ -1041,6 +1086,57 @@ class ProgramParser {
             kind == TokenKind.forKeyword;
     }
 
+    private CommandScanner commandScannerAt(size_t start) {
+        // Several commands can introduce here-documents on one header. A
+        // scanner for a later command must start its body after earlier ones.
+        size_t priorEnd;
+        foreach (document; lexer_.hereDocuments.values)
+            if (document.operatorOffset < start && document.bodyStart > start && document.endOffset > priorEnd)
+                priorEnd = document.endOffset;
+        return new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_,
+            suppressInitialTimeKeyword_, priorEnd > start ? priorEnd - start : 0);
+    }
+
+    private bool tryTime(Memory mem) {
+        auto keywordEnd = suppressInitialTimeKeyword_ ? 0 : timeKeywordEnd(source_, current_);
+        if (!keywordEnd) return false;
+        // The reference consumes neither flags nor a following newline.
+        while (current_.kind != TokenKind.eof && current_.offset < keywordEnd) advance();
+        auto start = current_.offset;
+        auto scanner = commandScannerAt(start);
+        int depth;
+        size_t end;
+        while (true) {
+            auto token = scanner.next();
+            bool boundary = isEndStatement(token.kind) || token.kind == TokenKind.andIf ||
+                token.kind == TokenKind.orIf || token.kind == TokenKind.rightParen || token.kind == TokenKind.rightBrace;
+            if (token.kind == TokenKind.amp && !(token.offset &&
+                    (source_[start + token.offset - 1] == '<' || source_[start + token.offset - 1] == '>')))
+                boundary = true;
+            if (token.kind == TokenKind.eof || (!depth && boundary)) {
+                end = token.offset;
+                break;
+            }
+            adjustDepth(depth, token);
+        }
+        auto pipeline = commandFragment(start, 0, end, scanner);
+        if (!pipeline.length) throw new ParseError("time requires a pipeline");
+        parseProgram(pipeline);
+        if (!syntaxOnly_) {
+            import yshd.timing : snapshotTimes, reportTiming;
+            auto before = snapshotTimes();
+            mem.registerDerivedSource(pipeline, source_, start);
+            // Re-enter in the current frame without tail exec permission:
+            // accounting and reporting must run after an ordinary external.
+            executeProgram(pipeline, mem);
+            auto after = snapshotTimes();
+            reportTiming(before, after, mem.descriptorFile(2));
+        }
+        if (!scanner.documents().length) moveTo(start + end);
+        else while (current_.kind != TokenKind.eof && current_.offset < start + end) advance();
+        return true;
+    }
+
     private string commandFragment(size_t sourceStart, size_t begin, size_t end, CommandScanner scanner) {
         auto fragment = strip(source_[sourceStart + begin .. sourceStart + end]);
         auto offsets = scanner.documents().keys;
@@ -1061,9 +1157,10 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(statementStart);
         int depth;
         size_t[] separators;
+        bool timedStage;
         size_t statementEnd = source_.length - statementStart;
 
         while (true) {
@@ -1078,8 +1175,9 @@ class ProgramParser {
                 statementEnd = token.offset;
                 break;
             }
+            if (depth == 0 && token.timingPrefix) timedStage = true;
             if (depth == 0 && token.kind == TokenKind.pipe) {
-                separators ~= token.offset;
+                if (!timedStage) separators ~= token.offset;
                 continue;
             }
             adjustDepth(depth, token);
@@ -1152,7 +1250,7 @@ class ProgramParser {
         }
 
         auto statementStart = current_.offset;
-        auto scanner = new CommandScanner(source_[statementStart .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(statementStart);
         int depth;
         size_t statementEnd = source_.length - statementStart;
         Token[] tokens;
@@ -1188,6 +1286,7 @@ class ProgramParser {
             bool omitHereStringNewline;
         }
         Redirection[] redirects;
+        bool leadingRedirect;
         string commandSource;
         size_t copiedThrough;
         foreach (index, token; tokens) {
@@ -1202,6 +1301,7 @@ class ProgramParser {
                 begin = tokens[index - 1].offset;
                 descriptor = to!int(tokens[index - 1].text);
             }
+            if (begin == 0) leadingRedirect = true;
             if (kind == TokenKind.shiftLeft) {
                 auto document = token.offset in scanner.documents();
                 if (document is null) throw new ParseError("expected here document");
@@ -1228,7 +1328,8 @@ class ProgramParser {
         commandSource ~= source_[statementStart + copiedThrough .. statementStart + statementEnd];
 
         if (syntaxOnly_) {
-            if (strip(commandSource).length) parseProgram(commandSource);
+            if (strip(commandSource).length)
+                .parseProgram(commandSource, returnMode_, parserOptions_, variableChecker_, attributeScope_, multiline_, leadingRedirect);
             consumeStatement();
             return true;
         }
@@ -1319,7 +1420,7 @@ class ProgramParser {
         }
         if (strip(commandSource).length) {
             mem.registerDerivedSource(commandSource, source_, statementStart);
-            .executeProgram(commandSource, mem, attributeScope_, multiline_, frame);
+            .executeProgram(commandSource, mem, attributeScope_, multiline_, frame, leadingRedirect);
             redirectStatusChecked_ = true;
         }
         else mem.lastStatus = 0;
@@ -1334,7 +1435,7 @@ class ProgramParser {
 
     private void consumeStatement() {
         auto start = current_.offset;
-        auto scanner = new CommandScanner(source_[start .. $], returnMode_, parserOptions_, multiline_);
+        auto scanner = commandScannerAt(start);
         int depth;
         size_t end;
         while (true) {
@@ -4284,13 +4385,13 @@ class ProgramParser {
             while (end < source_.length && asciiIdentifierContinue(source_[end])) ++end;
             assignment = end < source_.length && source_[end] == '=';
         }
-        auto word = readScalarWord(mem);
+        auto word = readScalarWord(mem, false, false, assignmentPosition);
         if (syntaxOnly_ || assignment) return [word.text()];
         import yshd.pattern : expandShellWord;
         return expandShellWord(word, mem, lastWordStatic_);
     }
 
-    private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false) {
+    private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false, bool literalBraces = false) {
         auto end = current_.offset;
         ScalarWord result;
         bool consumed;
@@ -4304,7 +4405,10 @@ class ProgramParser {
                 current_.kind == TokenKind.rightBracket || current_.kind == TokenKind.caret ||
                 current_.kind == TokenKind.bang || current_.kind == TokenKind.percent ||
                 current_.kind == TokenKind.tilde);
+            bool attachedBrace = literalBraces && consumed &&
+                (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.rightBrace);
             if (current_.offset != end || !(isCommandWordToken(current_.kind) || patternToken ||
+                    attachedBrace ||
                     (regex && !isEndStatement(current_.kind)))) break;
             ++parts;
             if ((current_.kind == TokenKind.stringValue || current_.kind == TokenKind.doubleQuoted) &&
@@ -5240,10 +5344,11 @@ string evaluateCommandSubstitution(string command, Memory mem) {
 }
 
 void executeProgram(string source, Memory mem, bool attributeScope = false, bool multiline = false,
-        DescriptorScope redirectionOwner = null) {
+        DescriptorScope redirectionOwner = null, bool suppressInitialTimeKeyword = false) {
     mem.registerSource(source);
     auto parser = new ProgramParser(source, false, mem.returnMode, false, mem.options, null, attributeScope, multiline);
     parser.redirectionOwner_ = redirectionOwner;
+    parser.suppressInitialTimeKeyword_ = suppressInitialTimeKeyword;
     parser.execute(mem);
     // Batch and command-list evaluation return zero for an empty program.
     // Do this afterward so a first command's $? still sees its caller's status.
@@ -5257,9 +5362,12 @@ void executeProcedureBody(string source, Memory mem, bool attributeScope = false
 
 /// Parse with no interpreter state. No command or expression is evaluated.
 void parseProgram(string source, ReturnMode returnMode = ReturnMode.shell, ShellOptions options = null,
-        VariableChecker variableChecker = null, bool attributeScope = false, bool multiline = false) {
+        VariableChecker variableChecker = null, bool attributeScope = false, bool multiline = false,
+        bool suppressInitialTimeKeyword = false) {
     try {
-        (new ProgramParser(source, true, returnMode, false, options, variableChecker, attributeScope, multiline)).parse();
+        auto parser = new ProgramParser(source, true, returnMode, false, options, variableChecker, attributeScope, multiline);
+        parser.suppressInitialTimeKeyword_ = suppressInitialTimeKeyword;
+        parser.parse();
     } catch (ParseError error) {
         throw error;
     } catch (YshError error) {
