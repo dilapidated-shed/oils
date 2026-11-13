@@ -4,12 +4,16 @@ module yshd.read_builtin;
 // by Memory: these reads must not close it or consume a following command's
 // bytes through stdio lookahead.
 import std.conv : to;
-import std.string : startsWith;
+import std.string : startsWith, strip;
+import core.stdc.errno : errno, EINTR, EBADF;
+import core.sys.posix.unistd : isatty;
+import core.sys.posix.termios : termios, tcflag_t, tcgetattr, tcsetattr, ICANON, ECHO, TCSANOW;
+import core.sys.posix.poll : poll, pollfd, POLLIN, POLLHUP, POLLERR, POLLNVAL;
 import yshd.expr : ParsedArguments;
 import yshd.io_stream : readRawLine, readInputBytes, readInputFd, readDelimitedFd, StreamReadError;
 import yshd.split : IfsSplitter;
 import yshd.state : Memory, FramePlace;
-import yshd.value : Value, ValueKind, YshDict, UsageError, YshError, YshTypeError;
+import yshd.value : Value, ValueKind, YshDict, UsageError, YshError, YshTypeError, FatalRuntimeError;
 
 private Value readLines(string bytes, bool withEol) {
     Value[] lines;
@@ -27,10 +31,13 @@ private Value readLines(string bytes, bool withEol) {
 void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
     bool all, line, rawLine, allLines, withEol;
     bool raw, nulDelimited, hasDelimiter, optionsDone;
+    bool silent, hasTimeout;
+    double timeout;
+    string prompt;
     string delimiter;
     string arrayName;
     long byteCount = -1, maxCharacters = -1, exactCount = -1;
-    int inputFd = mem.inputFile.fileno();
+    int inputFd;
     string[] names;
 
     for (size_t index; index < words.length; ++index) {
@@ -57,6 +64,27 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
                 switch (word[offset]) {
                 case 'r': raw = true; break;
                 case '0': nulDelimited = true; raw = true; break;
+                case 's': silent = true; break;
+                case 'p':
+                case 't':
+                    char option = word[offset];
+                    string argument;
+                    if (offset + 1 < word.length) argument = word[offset + 1 .. $];
+                    else {
+                        if (++index == words.length) throw new UsageError("read -" ~ option ~ " expects an argument");
+                        argument = words[index];
+                    }
+                    if (option == 'p') prompt = argument;
+                    else {
+                        // SetToFloat preserves negative zero and NaN; only
+                        // values comparing below zero are usage errors.
+                        try { timeout = to!double(strip(argument)); }
+                        catch (Exception error) { throw new UsageError("read -t expects a non-negative float"); }
+                        if (timeout < 0) throw new UsageError("read -t expects a non-negative float");
+                        hasTimeout = true;
+                    }
+                    offset = word.length;
+                    break;
                 case 'n':
                 case 'N':
                 case 'u':
@@ -134,8 +162,10 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
         string result;
         bool endOfInput;
         try {
-            if (byteCount != -1) result = readInputBytes(mem.inputFile, byteCount < 0 ? 0 : byteCount);
-            else if (rawLine) result = readRawLine(mem.inputFile, endOfInput, withEol);
+            if (byteCount != -1) result = readInputBytes(mem.inputFile, byteCount < 0 ? 0 : byteCount,
+                () { mem.traps.runPending(mem); });
+            else if (rawLine) result = readRawLine(mem.inputFile, endOfInput, withEol,
+                () { mem.traps.runPending(mem); });
             else if (all || allLines) result = readInputBytes(mem.inputFile);
             else {
                 // Preserve the retained --line implementation while the full
@@ -160,12 +190,55 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
 
     // OSH read rejects a typed Place without a YSH input mode.
     if (parsed !is null) throw new UsageError("read needs --all, --raw-line, or --num-bytes for typed args");
+    inputFd = mem.physicalDescriptor(inputFd);
+
+    if (hasTimeout && timeout >= 0) {
+        // The retained reference only implements t=0. It polls stdin, even
+        // with -u, and neither consumes input nor assigns a destination.
+        if (timeout != 0) throw new FatalRuntimeError("read -t isn't implemented (except t=0)");
+        pollfd descriptor;
+        descriptor.fd = mem.inputFile.fileno();
+        descriptor.events = POLLIN;
+        int ready;
+        do { ready = poll(&descriptor, 1, 0); }
+        while (ready < 0 && errno == EINTR);
+        if (ready < 0 || descriptor.revents & POLLNVAL) {
+            mem.errorFile.writeln("read: ", (new StreamReadError(ready < 0 ? errno : EBADF)).msg);
+            mem.lastStatus = 1;
+        } else mem.lastStatus = ready && descriptor.revents & (POLLIN | POLLHUP | POLLERR) ? 0 : 1;
+        return;
+    }
+
+    termios original;
+    bool changedTerminal;
+    scope (exit) if (changedTerminal) tcsetattr(inputFd, TCSANOW, &original);
+    if (isatty(inputFd)) {
+        tcflag_t disabled;
+        if (hasDelimiter || maxCharacters >= 0) disabled |= ICANON;
+        if (silent) disabled |= ECHO;
+        if (prompt.length) { mem.errorFile.write(prompt); mem.errorFile.flush(); }
+        if (disabled) {
+            if (tcgetattr(inputFd, &original) < 0) {
+                mem.errorFile.writeln("read: ", (new StreamReadError(errno)).msg);
+                mem.lastStatus = 1;
+                return;
+            }
+            auto adjusted = original;
+            adjusted.c_lflag &= ~disabled;
+            if (tcsetattr(inputFd, TCSANOW, &adjusted) < 0) {
+                mem.errorFile.writeln("read: ", (new StreamReadError(errno)).msg);
+                mem.lastStatus = 1;
+                return;
+            }
+            changedTerminal = true;
+        }
+    }
 
     // builtin/read_osh.py:_Read: -N consumes exact raw bytes regardless of
     // -d and -n, writes the first name, and clears additional destinations.
     if (exactCount >= 0) {
         string contents;
-        try { contents = readInputFd(inputFd, exactCount); }
+        try { contents = readInputFd(inputFd, exactCount, () { mem.traps.runPending(mem); }); }
         catch (StreamReadError error) {
             mem.errorFile.writeln("read: ", error.msg);
             mem.lastStatus = 1;
@@ -183,7 +256,8 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
     bool eof;
     string contents;
     try {
-        contents = readDelimitedFd(inputFd, endByte, eof, !raw, maxCharacters);
+        contents = readDelimitedFd(inputFd, endByte, eof, !raw, maxCharacters,
+            () { mem.traps.runPending(mem); });
     } catch (StreamReadError error) {
         mem.errorFile.writeln("read: ", error.msg);
         mem.lastStatus = 1;
@@ -206,4 +280,38 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
         mem.setShellVar(name, Value.str(index < parts.length ? parts[index] : ""));
     }
     mem.lastStatus = eof ? 1 : 0;
+}
+
+void runMapfileBuiltin(string[] words, Memory mem) {
+    bool stripEol, optionsDone;
+    string name = "MAPFILE";
+    bool hasName;
+    foreach (word; words) {
+        if (!optionsDone && word == "--") { optionsDone = true; continue; }
+        if (!optionsDone && word.length > 1 && word[0] == '-') {
+            foreach (flag; word[1 .. $]) {
+                if (flag != 't') throw new UsageError("mapfile: unexpected flag");
+                stripEol = true;
+            }
+            continue;
+        }
+        optionsDone = true;
+        if (!hasName) { name = word; hasName = true; }
+    }
+    auto array = new YshDict();
+    try {
+        for (size_t index;; ++index) {
+            bool eof;
+            auto line = readRawLine(mem.inputFile, eof, !stripEol,
+                () { mem.traps.runPending(mem); });
+            if (eof) break;
+            array.set(to!string(index), Value.str(line));
+        }
+    } catch (StreamReadError error) {
+        mem.errorFile.writeln("mapfile: read() error: ", error.msg);
+        mem.lastStatus = 1;
+        return;
+    }
+    mem.setShellVar(name, Value.shellArray(array));
+    mem.lastStatus = 0;
 }

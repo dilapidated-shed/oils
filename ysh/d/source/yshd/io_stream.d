@@ -13,13 +13,14 @@ class StreamReadError : Exception {
 /// builtin/read_osh.py:ReadLineSlowly must leave following bytes on the
 /// descriptor for a subsequent external command. Stdio read-ahead cannot do
 /// that. Preserve arbitrary bytes and remove only the newline delimiter.
-string readRawLine(File input, out bool endOfInput, bool withEol = false) {
+string readRawLine(File input, out bool endOfInput, bool withEol = false,
+        void delegate() onInterrupt = null) {
     string result;
     char character;
     while (true) {
         auto count = read(input.fileno(), &character, 1);
         if (count < 0) {
-            if (errno == EINTR) continue; // pending trap execution is separate
+            if (errno == EINTR) { if (onInterrupt !is null) onInterrupt(); continue; }
             throw new StreamReadError(errno);
         }
         if (!count) { endOfInput = result.length == 0; break; }
@@ -30,19 +31,19 @@ string readRawLine(File input, out bool endOfInput, bool withEol = false) {
 }
 
 /// ReadAll / _ReadN use the same descriptor boundary and retry EINTR.
-string readInputBytes(File input, long count = -1) {
-    return readInputFd(input.fileno(), count);
+string readInputBytes(File input, long count = -1, void delegate() onInterrupt = null) {
+    return readInputFd(input.fileno(), count, onInterrupt);
 }
 
 /// The caller owns fd; never make an intermediate stdio stream that can close it.
-string readInputFd(int fd, long count = -1) {
+string readInputFd(int fd, long count = -1, void delegate() onInterrupt = null) {
     string result;
     char[4096] buffer;
     while (count != 0) {
         auto size = count < 0 || count > buffer.length ? buffer.length : cast(size_t)count;
         auto received = read(fd, buffer.ptr, size);
         if (received < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) { if (onInterrupt !is null) onInterrupt(); continue; }
             throw new StreamReadError(errno);
         }
         if (!received) break;
@@ -63,7 +64,8 @@ string readDelimited(File input, ubyte delimiter, out bool eof,
 
 /// Direct OSH descriptor reads preserve -u ownership and delimiter boundaries.
 string readDelimitedFd(int fd, ubyte delimiter, out bool eof,
-        bool allowEscape = false, long maxCharacters = -1) {
+        bool allowEscape = false, long maxCharacters = -1,
+        void delegate() onInterrupt = null) {
     eof = false;
     string result;
     bool escaped;
@@ -72,7 +74,7 @@ string readDelimitedFd(int fd, ubyte delimiter, out bool eof,
     while (maxCharacters < 0 || charactersRead < maxCharacters) {
         auto count = read(fd, &character, 1);
         if (count < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) { if (onInterrupt !is null) onInterrupt(); continue; }
             throw new StreamReadError(errno);
         }
         if (!count) { eof = true; break; }

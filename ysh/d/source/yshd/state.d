@@ -271,6 +271,21 @@ class Memory {
     File inputFile;
     File outputFile;
     File errorFile;
+    // Extra shell descriptors are scoped by the redirect evaluator.  Their
+    // backing Files remain owned by that evaluator, not by the descriptor
+    // numbers chosen by source code.  -1 records an explicitly closed fd.
+    int[int] extraDescriptors;
+
+    int physicalDescriptor(int descriptor) {
+        switch (descriptor) {
+        case 0: return inputFile.fileno();
+        case 1: return outputFile.fileno();
+        case 2: return errorFile.fileno();
+        default:
+            auto binding = descriptor in extraDescriptors;
+            return binding is null ? descriptor : *binding;
+        }
+    }
 
     this() {
         this(stdin, stdout, stderr);

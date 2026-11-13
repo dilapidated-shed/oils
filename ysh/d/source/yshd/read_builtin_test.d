@@ -3,9 +3,9 @@ module yshd.read_builtin_test;
 version (unittest) {
     import std.stdio : File;
     import std.conv : to;
-    import yshd.read_builtin : runReadBuiltin;
+    import yshd.read_builtin : runReadBuiltin, runMapfileBuiltin;
     import yshd.state : Memory;
-    import yshd.value : Value, ValueKind, UsageError, shellArrayValues;
+    import yshd.value : Value, ValueKind, UsageError, FatalRuntimeError, shellArrayValues;
 
     private Memory inputMemory(string input) {
         auto file = File.tmpfile();
@@ -13,6 +13,55 @@ version (unittest) {
         file.flush();
         file.rewind();
         return new Memory(file, File.tmpfile(), File.tmpfile());
+    }
+
+    unittest {
+        auto mem = inputMemory("ready\nnext\n");
+        mem.setShellVar("unchanged", Value.str("before"));
+        foreach (zero; ["0", "0.0", "-0.0", "+0", ".0"]) {
+            runReadBuiltin(["-t", zero, "unchanged"], null, false, mem);
+            assert(mem.lastStatus == 0 && mem.get("unchanged").stringValue == "before");
+        }
+        runReadBuiltin(["-s", "-pPROMPT", "line"], null, false, mem);
+        assert(mem.lastStatus == 0 && mem.get("line").stringValue == "ready");
+        mem.errorFile.rewind();
+        assert(mem.errorFile.readln() == ""); // no prompt on nonterminal input
+        runReadBuiltin(["-t", "nan", "line"], null, false, mem);
+        assert(mem.lastStatus == 0 && mem.get("line").stringValue == "next");
+        bool unsupported;
+        try { runReadBuiltin(["-t", "0.5"], null, false, mem); }
+        catch (FatalRuntimeError error) { unsupported = true; }
+        assert(unsupported); // same unimplemented positive timeout as reference
+        foreach (bad; ["-1", "garbage", ""]) {
+            bool rejected;
+            try { runReadBuiltin(["-t", bad], null, false, mem); }
+            catch (UsageError error) { rejected = true; }
+            assert(rejected);
+        }
+    }
+
+    unittest {
+        import core.sys.posix.unistd : pipe, close;
+        int[2] descriptors;
+        assert(pipe(descriptors) == 0);
+        auto input = File();
+        input.fdopen(descriptors[0], "r");
+        scope (exit) close(descriptors[1]);
+        auto mem = new Memory(input, File.tmpfile(), File.tmpfile());
+        runReadBuiltin(["-t0"], null, false, mem);
+        assert(mem.lastStatus == 1 && mem.getCell("REPLY") is null);
+    }
+
+    unittest {
+        auto mem = inputMemory("one\ntwo\0bytes\nlast");
+        runMapfileBuiltin([], mem);
+        assert(mem.lastStatus == 0);
+        assert(shellArrayValues(mem.get("MAPFILE")) == ["one\n", "two\0bytes\n", "last"]);
+        auto stripped = inputMemory("one\n\nlast");
+        runMapfileBuiltin(["-t", "lines"], stripped);
+        assert(shellArrayValues(stripped.get("lines")) == ["one", "", "last"]);
+        runMapfileBuiltin(["-t", "lines"], stripped);
+        assert(stripped.lastStatus == 0 && shellArrayValues(stripped.get("lines")).length == 0);
     }
 
     unittest {

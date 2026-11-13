@@ -1,5 +1,22 @@
 module yshd.word_array_test;
 
+unittest {
+    import std.stdio : File;
+    import yshd.program : executeProgram;
+    import yshd.state : Memory;
+    import yshd.value : FatalRuntimeError;
+
+    auto output = File.tmpfile();
+    auto mem = new Memory(output, File.tmpfile());
+    executeProgram(`set +u; echo before "${unset_array[@]}" after`, mem);
+    output.rewind();
+    assert(output.readln() == "before after\n");
+    bool rejected;
+    try { executeProgram(`set -u; echo "${unset_array[@]}"`, mem); }
+    catch (FatalRuntimeError error) { rejected = true; }
+    assert(rejected);
+}
+
 version (unittest) {
     import std.stdio : File;
     import std.exception : assertThrown;

@@ -1201,8 +1201,6 @@ class ProgramParser {
                 begin = tokens[index - 1].offset;
                 descriptor = to!int(tokens[index - 1].text);
             }
-            if (!syntaxOnly_ && (descriptor < 0 || descriptor > 2))
-                throw new YshError("only descriptors 0, 1 and 2 are translated");
             if (kind == TokenKind.shiftLeft) {
                 auto document = token.offset in scanner.documents();
                 if (document is null) throw new ParseError("expected here document");
@@ -1238,13 +1236,25 @@ class ProgramParser {
         auto previousInput = mem.inputFile;
         auto previousOutput = mem.outputFile;
         auto previousError = mem.errorFile;
+        auto previousDescriptors = mem.extraDescriptors.dup;
         scope (exit) {
             mem.inputFile = previousInput;
             mem.outputFile = previousOutput;
             mem.errorFile = previousError;
+            mem.extraDescriptors = previousDescriptors;
             foreach (ref file; opened) file.close();
         }
         foreach (redirect; redirects) {
+            import core.sys.posix.sys.resource : rlimit, getrlimit, RLIMIT_NOFILE;
+            rlimit limit;
+            if (!(redirect.duplicate && redirect.operand == "-") &&
+                    (getrlimit(RLIMIT_NOFILE, &limit) < 0 ||
+                     cast(ulong)redirect.descriptor >= limit.rlim_cur)) {
+                mem.errorFile.writeln("ysh-d: file descriptor out of range: ", redirect.descriptor);
+                mem.lastStatus = 1;
+                consumeStatement();
+                return true;
+            }
             File selected;
             if (redirect.duplicate) {
                 // Snapshot the selected stream now, preserving left-to-right
@@ -1253,7 +1263,37 @@ class ProgramParser {
                 case "0": selected = mem.inputFile; break;
                 case "1": selected = mem.outputFile; break;
                 case "2": selected = mem.errorFile; break;
-                default: throw new YshError("untranslated descriptor duplication");
+                default:
+                    if (redirect.operand == "-" && redirect.descriptor > 2) {
+                        mem.extraDescriptors[redirect.descriptor] = -1;
+                        continue;
+                    }
+                    int sourceFd;
+                    try { sourceFd = to!int(redirect.operand); }
+                    catch (Exception error) { throw new UsageError("invalid descriptor duplication"); }
+                    import core.sys.posix.fcntl : fcntl, F_GETFL, O_ACCMODE, O_RDONLY, O_WRONLY;
+                    import core.sys.posix.unistd : dup, close;
+                    auto physicalFd = mem.physicalDescriptor(sourceFd);
+                    auto flags = fcntl(physicalFd, F_GETFL);
+                    auto copy = flags < 0 ? -1 : dup(physicalFd);
+                    if (copy < 0) {
+                        mem.errorFile.writeln("ysh-d: bad file descriptor: ", redirect.operand);
+                        mem.lastStatus = 1;
+                        consumeStatement();
+                        return true;
+                    }
+                    try {
+                        selected.fdopen(copy, (flags & O_ACCMODE) == O_RDONLY ? "r" :
+                            (flags & O_ACCMODE) == O_WRONLY ? "w" : "r+");
+                    } catch (ErrnoException error) {
+                        close(copy);
+                        mem.errorFile.writeln("ysh-d: ", error.msg);
+                        mem.lastStatus = 1;
+                        consumeStatement();
+                        return true;
+                    }
+                    opened ~= selected;
+                    break;
                 }
             } else {
                 if (redirect.kind == TokenKind.tripleLess || redirect.hereDocument) {
@@ -1279,7 +1319,7 @@ class ProgramParser {
             case 0: mem.inputFile = selected; break;
             case 1: mem.outputFile = selected; break;
             case 2: mem.errorFile = selected; break;
-            default: assert(0);
+            default: mem.extraDescriptors[redirect.descriptor] = selected.fileno(); break;
             }
         }
         if (strip(commandSource).length) {
@@ -2294,6 +2334,11 @@ class ProgramParser {
                 auto words = argv[1 .. $];
                 switch (commandName) {
                 case "read": runRead(words, typedArguments, hasBlock, mem); return;
+                case "mapfile": case "readarray":
+                    if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
+                    import yshd.read_builtin : runMapfileBuiltin;
+                    runMapfileBuiltin(words, mem);
+                    return;
                 case "export": case "readonly": case "unset":
                     if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
                     import yshd.assignment_builtins : runAssignmentBuiltin;
@@ -4163,6 +4208,10 @@ class ProgramParser {
             auto name = current_.text[2 .. $ - 4];
             advance();
             if (syntaxOnly_) return [];
+            // _ProcessUndef yields an empty shell array when nounset is off.
+            // This includes ignored extra names after read -a. PIPESTATUS is
+            // a synthesized register rather than an ordinary frame cell.
+            if (name != "PIPESTATUS" && mem.getCell(name) is null && !mem.nounset) return [];
             auto value = mem.get(name);
             if (value.kind != ValueKind.bashArrayValue && value.kind != ValueKind.bashAssocValue)
                 throw new YshTypeError("Shell array expansion expects BashArray or BashAssoc");

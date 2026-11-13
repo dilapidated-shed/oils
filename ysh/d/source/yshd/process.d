@@ -340,7 +340,8 @@ string captureSourceOutput(string source, Memory mem,
 }
 
 private int launchExternal(string[] argv, File input, File output,
-        File errors, string[string] childEnvironment, bool replaceProcess = false, bool useDefaultPath = false) {
+        File errors, string[string] childEnvironment, bool replaceProcess = false,
+        bool useDefaultPath = false, int[int] extraDescriptors = null) {
     if (argv.length == 0 || argv[0].length == 0) {
         throw new YshError("external command needs a program name");
     }
@@ -374,21 +375,36 @@ private int launchExternal(string[] argv, File input, File output,
             if (child != 0) return child;
         }
         signal(SIGPIPE, SIG_DFL);
-        // Snapshot all three sources before dup2, preserving 2>&1 >file and
-        // descriptor cycles even when their source is an original stdio fd.
-        int[3] sources = [input.fileno(), output.fileno(), errors.fileno()];
-        int[3] copies;
-        foreach (index, source; sources) {
-            copies[index] = fcntl(source, F_DUPFD, 3);
-            if (copies[index] < 0) _exit(126);
+        // Snapshot every source above all destination numbers before dup2.
+        // Shell fd 3 can otherwise overwrite a File backing stdout or another
+        // redirection. Only explicit shell descriptors survive exec.
+        int[] targets = [0, 1, 2];
+        int[] sources = [input.fileno(), output.fileno(), errors.fileno()];
+        int highest = 2;
+        foreach (target, source; extraDescriptors) {
+            if (source < 0) continue;
+            if (target > highest) highest = target;
+            targets ~= target;
+            sources ~= source;
         }
-        foreach (index, copy; copies) if (dup2(copy, cast(int)index) < 0) _exit(126);
+        if (highest == int.max) _exit(126);
+        int[] copies;
+        foreach (index, source; sources) {
+            auto copy = fcntl(source, F_DUPFD, highest + 1);
+            if (copy < 0) _exit(126);
+            copies ~= copy;
+        }
+        foreach (index, copy; copies) if (dup2(copy, targets[index]) < 0) _exit(126);
+        for (int descriptor = 3; descriptor <= highest; ++descriptor) {
+            auto binding = descriptor in extraDescriptors;
+            if (binding is null || *binding < 0) close(descriptor);
+        }
         version (linux) {
             import core.sys.linux.unistd : closefrom;
-            closefrom(3);
+            closefrom(highest + 1);
         } else {
             auto limit = sysconf(_SC_OPEN_MAX);
-            for (int descriptor = 3; descriptor < limit; ++descriptor) close(descriptor);
+            for (int descriptor = highest + 1; descriptor < limit; ++descriptor) close(descriptor);
         }
         int lastError = ENOENT;
         bool denied;
@@ -428,7 +444,7 @@ int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
     auto replacing = mem.canReplaceProcess && !mem.traps.hasActions();
     if (replacing) mem.trace.exec(argv, mem);
     auto child = launchExternal(argv, mem.inputFile, mem.outputFile,
-        mem.errorFile, environment, replacing, useDefaultPath);
+        mem.errorFile, environment, replacing, useDefaultPath, mem.extraDescriptors);
     mem.trace.processStart(child, TraceProcessKind.external, argv, mem);
     return waitSourceChild(child, mem);
 }
@@ -460,7 +476,7 @@ int runPipeline(string[][] commands, Memory mem) {
                 ? mem.outputFile
                 : links[index].writeEnd;
             children ~= launchExternal(command, input, output, mem.errorFile,
-                mem.childEnvironment());
+                mem.childEnvironment(), false, false, mem.extraDescriptors);
         }
     } catch (Exception error) {
         foreach (ref link; links) {
