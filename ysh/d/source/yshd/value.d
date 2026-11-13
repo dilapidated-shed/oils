@@ -230,6 +230,10 @@ class UsageError : YshError {
     this(string message) { super(message, 2); }
 }
 
+class ClosedDescriptorError : YshError {
+    this(int descriptor) { super(format("Bad file descriptor: %s", descriptor), 1); }
+}
+
 class FatalRuntimeError : YshError {
     this(string message) { super(message, 1); }
 }

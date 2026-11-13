@@ -117,12 +117,42 @@ private Cell lookupFrame(Frame frame, string name, bool declaration, ref Frame f
     return null;
 }
 
-/// The beginning of core/state.py:Mem in D.
-///
-/// It already preserves the distinction needed by YSH between a global frame,
-/// the current local frame, and a recursively enclosed lexical frame. More of
-/// Mem's registers/environment/process state will move here as those execution
-/// paths are translated.
+/// core/process.py:FdState restores only a command's changed descriptors.
+/// Bare exec forgets that command's restoration frame, not an enclosing one.
+class DescriptorScope {
+    private struct Saved {
+        int descriptor;
+        bool present;
+        File file;
+    }
+    private Memory memory;
+    private Saved[] saved;
+    private bool permanent;
+
+    this(Memory memory) { this.memory = memory; }
+
+    void save(int descriptor) {
+        foreach (ref item; saved) if (item.descriptor == descriptor) return;
+        saved ~= Saved(descriptor, descriptor < 3 || memory.hasExtraDescriptor(descriptor),
+            memory.descriptorFile(descriptor));
+    }
+
+    void makePermanent() { permanent = true; }
+
+    void finish() {
+        foreach_reverse (ref item; saved) {
+            if (!permanent) {
+                if (item.present) memory.bindDescriptor(item.descriptor, item.file);
+                else memory.forgetExtraDescriptor(item.descriptor);
+            }
+            // Detach this reference rather than closing all aliases of a File.
+            item.file = File.init;
+        }
+        saved = null;
+    }
+}
+
+/// The translated lexical frames and shell registers of core/state.py:Mem.
 class Memory {
     TrapState traps;
     JobTable jobs;
@@ -268,22 +298,85 @@ class Memory {
     // Suppress recursive re-expansion while reparsing an alias's source.
     // This permits the ordinary `alias echo='echo prefix'` pattern.
     string[] aliasExpansionStack;
-    File inputFile;
-    File outputFile;
-    File errorFile;
-    // Extra shell descriptors are scoped by the redirect evaluator.  Their
-    // backing Files remain owned by that evaluator, not by the descriptor
-    // numbers chosen by source code.  -1 records an explicitly closed fd.
-    int[int] extraDescriptors;
+    private File inputStream, outputStream, errorStream;
+
+    @property File inputFile() {
+        import yshd.value : ClosedDescriptorError;
+        if (!inputStream.isOpen) throw new ClosedDescriptorError(0);
+        return inputStream;
+    }
+    @property void inputFile(File file) { inputStream = file; }
+    @property File outputFile() {
+        import yshd.value : ClosedDescriptorError;
+        if (!outputStream.isOpen) throw new ClosedDescriptorError(1);
+        return outputStream;
+    }
+    @property void outputFile(File file) { outputStream = file; }
+    @property File errorFile() {
+        import yshd.value : ClosedDescriptorError;
+        if (!errorStream.isOpen) throw new ClosedDescriptorError(2);
+        return errorStream;
+    }
+    @property void errorFile(File file) { errorStream = file; }
+
+    void diagnostic(string message) {
+        import std.exception : ErrnoException;
+        if (!errorStream.isOpen) return;
+        try { errorStream.writeln(message); }
+        catch (ErrnoException error) {} // The command's failure status is retained.
+    }
+    // File values own references to the open-file description.  A permanent
+    // exec redirection must retain that reference beyond its redirect scope.
+    // File.init represents an explicitly closed extra descriptor.
+    private File[int] extraDescriptorFiles;
+
+    @property int[int] extraDescriptors() {
+        int[int] result;
+        foreach (descriptor, ref file; extraDescriptorFiles)
+            result[descriptor] = file.isOpen ? file.fileno() : -1;
+        return result;
+    }
+
+    bool hasExtraDescriptor(int descriptor) {
+        return (descriptor in extraDescriptorFiles) !is null;
+    }
+
+    File descriptorFile(int descriptor) {
+        switch (descriptor) {
+        case 0: return inputStream;
+        case 1: return outputStream;
+        case 2: return errorStream;
+        default:
+            auto file = descriptor in extraDescriptorFiles;
+            return file is null ? File.init : *file;
+        }
+    }
+
+    void bindDescriptor(int descriptor, File file) {
+        switch (descriptor) {
+        case 0: inputFile = file; break;
+        case 1: outputFile = file; break;
+        case 2: errorFile = file; break;
+        default: extraDescriptorFiles[descriptor] = file; break;
+        }
+    }
+
+    void forgetExtraDescriptor(int descriptor) {
+        if (auto file = descriptor in extraDescriptorFiles) {
+            // AA removal alone does not deterministically destroy its value.
+            *file = File.init;
+            extraDescriptorFiles.remove(descriptor);
+        }
+    }
 
     int physicalDescriptor(int descriptor) {
         switch (descriptor) {
-        case 0: return inputFile.fileno();
-        case 1: return outputFile.fileno();
-        case 2: return errorFile.fileno();
+        case 0: return inputStream.isOpen ? inputStream.fileno() : -1;
+        case 1: return outputStream.isOpen ? outputStream.fileno() : -1;
+        case 2: return errorStream.isOpen ? errorStream.fileno() : -1;
         default:
-            auto binding = descriptor in extraDescriptors;
-            return binding is null ? descriptor : *binding;
+            auto binding = descriptor in extraDescriptorFiles;
+            return binding is null ? descriptor : binding.isOpen ? binding.fileno() : -1;
         }
     }
 
@@ -402,10 +495,15 @@ class Memory {
         return previous;
     }
 
-    string getEnv(string name, string fallback = "") {
+    string getEnv(string name, string fallback = "", bool* defined = null) {
+        if (defined !is null) *defined = false;
         if (!options.get("env_obj")) {
             auto cell = getCell(name);
-            if (cell !is null) return cell.value.kind == ValueKind.stringValue ? cell.value.stringValue : fallback;
+            if (cell !is null) {
+                if (cell.value.kind != ValueKind.stringValue) return fallback;
+                if (defined !is null) *defined = true;
+                return cell.value.stringValue;
+            }
             if (shellEnvironmentInitialized) return fallback;
         }
         auto env = get("ENV");
@@ -419,6 +517,7 @@ class Memory {
         if (found.kind != ValueKind.stringValue) {
             throw new YshError(format("ENV.%s must be a Str", name));
         }
+        if (defined !is null) *defined = true;
         return found.stringValue;
     }
 

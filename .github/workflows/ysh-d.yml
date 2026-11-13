@@ -8,6 +8,14 @@ on:
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
       - 'stdlib/**'
+      - 'spec/builtin-process.test.sh'
+      - 'spec/bin/builtins-exec-here-doc-helper.sh'
+      - 'test/sh_spec.py'
+      - 'test/spec_lib.py'
+      - 'builtin/process_osh.py'
+      - 'core/process.py'
+      - 'core/executor.py'
+      - 'frontend/flag_def.py'
       - '.github/workflows/ysh-d.yml'
   pull_request:
     paths:
@@ -15,6 +23,14 @@ on:
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
       - 'stdlib/**'
+      - 'spec/builtin-process.test.sh'
+      - 'spec/bin/builtins-exec-here-doc-helper.sh'
+      - 'test/sh_spec.py'
+      - 'test/spec_lib.py'
+      - 'builtin/process_osh.py'
+      - 'core/process.py'
+      - 'core/executor.py'
+      - 'frontend/flag_def.py'
       - '.github/workflows/ysh-d.yml'
 
 permissions:
@@ -320,6 +336,9 @@ jobs:
         run: |
           set -euxo pipefail
           python3 ysh/d/qualification/run-shared-read.py
+
+      - name: Qualify unchanged exec cases through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-exec.grease
 
       - name: Preserve tested partial translation
         if: always()

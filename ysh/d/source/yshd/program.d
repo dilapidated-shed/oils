@@ -20,8 +20,8 @@ import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
     renderWrite, spliceArray, DataEncodeError, dataOptions;
 import yshd.pretty : prettyValue, prettyCell, asdlValue, terminalWidth;
 import yshd.lexer : Lexer, Token, TokenKind, HereDocument;
-import yshd.process : runExternal, runPipeline, runSourcePipeline, runSourceJob, captureSourceOutput;
-import yshd.state : Memory, ReturnMode, Frame;
+import yshd.process : runExternal, execExternal, runPipeline, runSourcePipeline, runSourceJob, captureSourceOutput;
+import yshd.state : Memory, ReturnMode, Frame, DescriptorScope;
 import yshd.options : ShellOptions;
 import yshd.trace : TraceScope;
 import yshd.var_check : VariableChecker, DefinitionKind;
@@ -30,7 +30,7 @@ import yshd.dirs : setDirectory, popDirectory, physicalDirectory, runDirectoryBu
 import yshd.pattern : ScalarWord, matchesShellPattern;
 import yshd.eggex : Eggex, parseEggex, EreError;
 import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
-    StructuredError, YshError, YshTypeError, kindName, stringify, toBool, exactlyEqual;
+    StructuredError, YshError, YshTypeError, ClosedDescriptorError, kindName, stringify, toBool, exactlyEqual;
 
 private class IfCommand {
     bool legacySyntax;
@@ -384,6 +384,7 @@ class ProgramParser {
     private bool syntaxOnly_;
     private ReturnMode returnMode_;
     private bool executedCommand_;
+    private DescriptorScope redirectionOwner_;
     private ShellOptions parserOptions_;
     private bool lastWordTriple_;
     private bool lastWordStatic_;
@@ -872,7 +873,7 @@ class ProgramParser {
             mem.aliasExpansionStack.length =
                 mem.aliasExpansionStack.length - 1;
         }
-        executeProgram(expandedSource, mem);
+        .executeProgram(expandedSource, mem, attributeScope_, multiline_, redirectionOwner_);
 
         while (current_.kind != TokenKind.eof &&
                 current_.offset < statementEnd) {
@@ -1232,19 +1233,10 @@ class ProgramParser {
             return true;
         }
 
-        File[] opened;
-        auto previousInput = mem.inputFile;
-        auto previousOutput = mem.outputFile;
-        auto previousError = mem.errorFile;
-        auto previousDescriptors = mem.extraDescriptors.dup;
-        scope (exit) {
-            mem.inputFile = previousInput;
-            mem.outputFile = previousOutput;
-            mem.errorFile = previousError;
-            mem.extraDescriptors = previousDescriptors;
-            foreach (ref file; opened) file.close();
-        }
+        auto frame = new DescriptorScope(mem);
+        scope (exit) frame.finish();
         foreach (redirect; redirects) {
+            frame.save(redirect.descriptor);
             import core.sys.posix.sys.resource : rlimit, getrlimit, RLIMIT_NOFILE;
             rlimit limit;
             if (!(redirect.duplicate && redirect.operand == "-") &&
@@ -1260,12 +1252,12 @@ class ProgramParser {
                 // Snapshot the selected stream now, preserving left-to-right
                 // behavior of >file 2>&1 versus 2>&1 >file.
                 switch (redirect.operand) {
-                case "0": selected = mem.inputFile; break;
-                case "1": selected = mem.outputFile; break;
-                case "2": selected = mem.errorFile; break;
+                case "0": selected = mem.descriptorFile(0); break;
+                case "1": selected = mem.descriptorFile(1); break;
+                case "2": selected = mem.descriptorFile(2); break;
                 default:
-                    if (redirect.operand == "-" && redirect.descriptor > 2) {
-                        mem.extraDescriptors[redirect.descriptor] = -1;
+                    if (redirect.operand == "-") {
+                        mem.bindDescriptor(redirect.descriptor, File.init);
                         continue;
                     }
                     int sourceFd;
@@ -1273,6 +1265,10 @@ class ProgramParser {
                     catch (Exception error) { throw new UsageError("invalid descriptor duplication"); }
                     import core.sys.posix.fcntl : fcntl, F_GETFL, O_ACCMODE, O_RDONLY, O_WRONLY;
                     import core.sys.posix.unistd : dup, close;
+                    if (sourceFd > 2 && mem.hasExtraDescriptor(sourceFd)) {
+                        selected = mem.descriptorFile(sourceFd);
+                        if (selected.isOpen) break;
+                    }
                     auto physicalFd = mem.physicalDescriptor(sourceFd);
                     auto flags = fcntl(physicalFd, F_GETFL);
                     auto copy = flags < 0 ? -1 : dup(physicalFd);
@@ -1292,8 +1288,13 @@ class ProgramParser {
                         consumeStatement();
                         return true;
                     }
-                    opened ~= selected;
                     break;
+                }
+                if (!selected.isOpen) {
+                    mem.diagnostic("ysh-d: bad file descriptor: " ~ redirect.operand);
+                    mem.lastStatus = 1;
+                    consumeStatement();
+                    return true;
                 }
             } else {
                 if (redirect.kind == TokenKind.tripleLess || redirect.hereDocument) {
@@ -1313,23 +1314,19 @@ class ProgramParser {
                         return true;
                     }
                 }
-                opened ~= selected;
             }
-            switch (redirect.descriptor) {
-            case 0: mem.inputFile = selected; break;
-            case 1: mem.outputFile = selected; break;
-            case 2: mem.errorFile = selected; break;
-            default: mem.extraDescriptors[redirect.descriptor] = selected.fileno(); break;
-            }
+            mem.bindDescriptor(redirect.descriptor, selected);
         }
         if (strip(commandSource).length) {
             mem.registerDerivedSource(commandSource, source_, statementStart);
-            executeProgram(commandSource, mem);
+            .executeProgram(commandSource, mem, attributeScope_, multiline_, frame);
             redirectStatusChecked_ = true;
         }
         else mem.lastStatus = 0;
-        mem.outputFile.flush();
-        mem.errorFile.flush();
+        auto output = mem.descriptorFile(1);
+        auto errors = mem.descriptorFile(2);
+        if (output.isOpen) output.flush();
+        if (errors.isOpen) errors.flush();
 
         consumeStatement();
         return true;
@@ -2333,6 +2330,31 @@ class ProgramParser {
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "exec":
+                    if (typedArguments !is null || hasBlock) throw new UsageError("exec does not accept typed arguments");
+                    size_t start;
+                    bool hasArgumentZero;
+                    string argumentZero;
+                    while (start < words.length) {
+                        auto word = words[start];
+                        if (word == "--") { ++start; break; }
+                        if (word.length < 2 || word[0] != '-') break;
+                        if (word == "-a") {
+                            if (++start == words.length) throw new UsageError("exec -a requires an argument");
+                            argumentZero = words[start++];
+                        } else if (word.startsWith("-a")) {
+                            argumentZero = word[2 .. $];
+                            ++start;
+                        } else throw new UsageError("exec: invalid flag " ~ word);
+                        hasArgumentZero = true;
+                    }
+                    if (start == words.length) {
+                        if (redirectionOwner_ !is null) redirectionOwner_.makePermanent();
+                        mem.lastStatus = 0;
+                        return;
+                    }
+                    execExternal(words[start .. $], mem, hasArgumentZero, argumentZero);
+                    assert(0);
                 case "read": runRead(words, typedArguments, hasBlock, mem); return;
                 case "mapfile": case "readarray":
                     if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
@@ -2403,7 +2425,9 @@ class ProgramParser {
                 default: break;
                 }
             } catch (UsageError error) {
-                mem.errorFile.writeln("ysh-d: ", error.msg); mem.lastStatus = 2; return;
+                mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 2; return;
+            } catch (ClosedDescriptorError error) {
+                mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 1; return;
             }
             if (commandName == "fork" || commandName == "forkwait" || commandName == "wait" ||
                     commandName == "jobs" || commandName == "fg" || commandName == "bg") {
@@ -5193,9 +5217,11 @@ string evaluateCommandSubstitution(string command, Memory mem) {
     return output;
 }
 
-void executeProgram(string source, Memory mem, bool attributeScope = false, bool multiline = false) {
+void executeProgram(string source, Memory mem, bool attributeScope = false, bool multiline = false,
+        DescriptorScope redirectionOwner = null) {
     mem.registerSource(source);
     auto parser = new ProgramParser(source, false, mem.returnMode, false, mem.options, null, attributeScope, multiline);
+    parser.redirectionOwner_ = redirectionOwner;
     parser.execute(mem);
     // Batch and command-list evaluation return zero for an empty program.
     // Do this afterward so a first command's $? still sees its caller's status.

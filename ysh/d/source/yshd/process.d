@@ -341,7 +341,9 @@ string captureSourceOutput(string source, Memory mem,
 
 private int launchExternal(string[] argv, File input, File output,
         File errors, string[string] childEnvironment, bool replaceProcess = false,
-        bool useDefaultPath = false, int[int] extraDescriptors = null) {
+        bool useDefaultPath = false, int[int] extraDescriptors = null,
+        bool hasArgumentZero = false, string argumentZero = "", bool explicitExec = false,
+        string resolvedPath = "") {
     if (argv.length == 0 || argv[0].length == 0) {
         throw new YshError("external command needs a program name");
     }
@@ -352,14 +354,16 @@ private int launchExternal(string[] argv, File input, File output,
         // merges deleted host variables back into the child unless newEnv is
         // selected. Keep both responsibilities at this POSIX boundary.
         const(char)*[] arguments;
-        foreach (word; argv) arguments ~= toStringz(word);
+        foreach (index, word; argv)
+            arguments ~= toStringz(index == 0 && hasArgumentZero ? argumentZero : word);
         arguments ~= null;
         const(char)*[] environment;
         foreach (name, value; childEnvironment)
             environment ~= toStringz(name ~ "=" ~ value);
         environment ~= null;
         string[] paths;
-        if (argv[0].indexOf('/') >= 0) paths = [argv[0]];
+        if (explicitExec) paths = [resolvedPath];
+        else if (argv[0].indexOf('/') >= 0) paths = [argv[0]];
         else {
             auto path = "PATH" in childEnvironment;
             auto searchPath = useDefaultPath ? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" :
@@ -367,19 +371,22 @@ private int launchExternal(string[] argv, File input, File output,
             foreach (directory; searchPath.split(":"))
                 paths ~= directory.length ? directory ~ "/" ~ argv[0] : argv[0];
         }
-        output.flush();
-        errors.flush();
+        if (output.isOpen) output.flush();
+        if (errors.isOpen) errors.flush();
         if (!replaceProcess) {
             auto child = fork();
             if (child < 0) throw new YshError("fork failed for external command");
             if (child != 0) return child;
         }
-        signal(SIGPIPE, SIG_DFL);
+        // Explicit exec inherits ignored signal dispositions. The kernel
+        // resets caught handlers when execve succeeds; no shell trap runs.
+        if (!explicitExec) signal(SIGPIPE, SIG_DFL);
         // Snapshot every source above all destination numbers before dup2.
         // Shell fd 3 can otherwise overwrite a File backing stdout or another
         // redirection. Only explicit shell descriptors survive exec.
         int[] targets = [0, 1, 2];
-        int[] sources = [input.fileno(), output.fileno(), errors.fileno()];
+        int[] sources = [input.isOpen ? input.fileno() : -1,
+            output.isOpen ? output.fileno() : -1, errors.isOpen ? errors.fileno() : -1];
         int highest = 2;
         foreach (target, source; extraDescriptors) {
             if (source < 0) continue;
@@ -390,11 +397,15 @@ private int launchExternal(string[] argv, File input, File output,
         if (highest == int.max) _exit(126);
         int[] copies;
         foreach (index, source; sources) {
+            if (source < 0) { copies ~= -1; continue; }
             auto copy = fcntl(source, F_DUPFD, highest + 1);
             if (copy < 0) _exit(126);
             copies ~= copy;
         }
-        foreach (index, copy; copies) if (dup2(copy, targets[index]) < 0) _exit(126);
+        foreach (index, copy; copies) {
+            if (copy < 0) close(targets[index]);
+            else if (dup2(copy, targets[index]) < 0) _exit(126);
+        }
         for (int descriptor = 3; descriptor <= highest; ++descriptor) {
             auto binding = descriptor in extraDescriptors;
             if (binding is null || *binding < 0) close(descriptor);
@@ -443,10 +454,32 @@ int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
     auto environment = mem.childEnvironment();
     auto replacing = mem.canReplaceProcess && !mem.traps.hasActions();
     if (replacing) mem.trace.exec(argv, mem);
-    auto child = launchExternal(argv, mem.inputFile, mem.outputFile,
-        mem.errorFile, environment, replacing, useDefaultPath, mem.extraDescriptors);
+    auto child = launchExternal(argv, mem.descriptorFile(0), mem.descriptorFile(1),
+        mem.descriptorFile(2), environment, replacing, useDefaultPath, mem.extraDescriptors);
     mem.trace.processStart(child, TraceProcessKind.external, argv, mem);
     return waitSourceChild(child, mem);
+}
+
+/// builtin/process_osh.py:Exec bypasses command/proc/builtin lookup and replaces
+/// this process. Keep the executable path distinct from an overridden argv[0].
+void execExternal(string[] argv, Memory mem, bool hasArgumentZero = false, string argumentZero = "") {
+    import yshd.command_lookup : executablePaths;
+    import std.file : exists;
+    if (!argv.length) throw new YshError("exec requires a program");
+    bool hasPath;
+    auto path = mem.getEnv("PATH", "", &hasPath);
+    auto paths = argv[0].indexOf('/') >= 0
+        ? (exists(argv[0]) ? [argv[0]] : [])
+        : hasPath ? executablePaths(argv[0], path, false) : [];
+    if (!paths.length)
+        throw new YshError("exec: '" ~ argv[0] ~ "' not found", 127);
+    auto tracedArguments = argv.dup;
+    if (hasArgumentZero) tracedArguments[0] = argumentZero;
+    mem.trace.exec(tracedArguments, mem);
+    launchExternal(argv, mem.descriptorFile(0), mem.descriptorFile(1), mem.descriptorFile(2),
+        mem.childEnvironment(), true, false, mem.extraDescriptors,
+        hasArgumentZero, argumentZero, true, paths[0]);
+    assert(0);
 }
 
 /// Execute a pipeline of already-expanded argv vectors.

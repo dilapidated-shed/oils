@@ -33,7 +33,7 @@ private int runBatchSource(string source, Memory mem) {
     catch (ShellExit control) { status = control.status; }
     catch (ProcReturn control) { status = control.status; }
     catch (LexError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 2; }
-    catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = error.status; }
+    catch (YshError error) { mem.diagnostic("ysh-d: " ~ error.msg); status = error.status; }
     catch (FileException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
     catch (ErrnoException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
     return mem.traps.finish(mem, status);

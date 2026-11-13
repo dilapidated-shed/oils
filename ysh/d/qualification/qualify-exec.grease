@@ -1,0 +1,22 @@
+#!/usr/bin/env grease
+# The original Python-2 harness and Oils interpreter are test-only boundaries.
+# Source under test is always executed by the native D implementation.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-exec.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range 0-5 --timeout=3 \
+  --tmp-env "$output/tmp/shared-exec" \
+  --path-env "$root/spec/bin:$[ENV.PATH]" \
+  --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+  --tsv-output "$output/shared-exec.tsv" \
+  "$root/spec/builtin-process.test.sh" "$output/native-osh" "$root/bin/osh"
+var records = $(wc -l < "$output/shared-exec.tsv")
+test "$records" -eq 13
+var matches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/shared-exec.tsv")
+test "$matches" -eq 12
+echo 'PASS six unchanged exec cases in native D and actual Oils'
