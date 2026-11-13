@@ -1,0 +1,6 @@
+path	sha256	meaning
+execution-logs.zip	041b96f19d06fe06ac357d7b44bcffd8847102a931ac4b22e6403fbc5f140751	original harness transcripts;native unittest and mutant diagnostics;mutant source diffs;producer negative;remaining ulimit gap;ELF/symbol/link inspection
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 inherited fixture totals;harness statuses retained
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	1119 paired original assertions;candidate896matches223FAIL
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	64 unchanged read cases;candidate62matches2FAIL
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	6 unchanged exec cases;12 native/reference pass records

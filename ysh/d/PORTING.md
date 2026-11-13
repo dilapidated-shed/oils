@@ -4,6 +4,84 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Persistent exec descriptors and native replacement, 2026-11-13
+
+This continues SUN IL0-CFREE-01 from published checkpoint
+`6ec1791afd506086317db1662ce909a9679f95d5`. The new published implementation is
+`2fa16914267d007c86b417bdb1d388830acd3471`; local validation commit
+`4fcd03e15bb5eedb66ee8282c4dc1107e10c2fcc` has the identical complete Git tree
+`91a6b5e90c118f22568a1f5b2cbf6ca4c2f02f8b`.
+
+The reference's `Exec` builtin is now translated in the existing D evaluator.
+Bare `exec`, `exec --`, and no-command `exec -a NAME` preserve their own
+redirections. `exec PROGRAM` performs actual native process replacement, with
+`--` and `-a` argument handling, explicit executable-path lookup, inherited
+environment, retained ignored signal dispositions and the existing ENOEXEC
+external-file boundary. No source text is delegated to another shell. Missing
+lookup returns the reference's fatal 127 boundary; found executables that fail
+at exec retain the existing 126/127 system-error statuses.
+
+Memory now holds File references for persistent extra descriptors. Each redirect
+scope saves only the descriptor targets it changes. A bare exec forgets that
+specific restoration frame. This preserves exec changes to other descriptors
+inside a surrounding redirect while still restoring the surrounding scope's
+own targets. A bare exec in a procedure or compound body cannot accidentally
+promote its caller's redirect frame. Closing a descriptor detaches its File
+reference without invalidating other descriptor aliases. Closed standard
+descriptors are represented explicitly, so a later builtin reports failure
+and an external exec receives the descriptor genuinely closed.
+
+Native tests cover persistent here-doc input, repeated reads, aliases and
+`builtin` dispatch, nested scopes, procedure boundaries, standard input/output
+closure and restoration, validation failure, and 500 permanent rebindings with
+no open-file leak. Native replacement tests inspect actual process identity and
+argv, verify ignored SIGPIPE/USR1, and reject shell resumption or an EXIT trap
+after a successful exec. A clean same-host rebuild at the final validation
+commit reproduces the same executable bytes used by the full inherited run.
+
+The unchanged original `spec/builtin-process.test.sh` cases 0–5 pass in both
+native D and actual Oils: 12 paired assertions. The new
+[`qualify-exec.grease`](qualification/qualify-exec.grease) runs the original
+harness through the diagnostic native D implementation and requires exactly
+12 passing rows plus the header. It runs from an arbitrary directory and is
+wired into the owner workflow. Fixture, helper, harness and immediate reference
+implementation paths are material workflow inputs. No fixture, expected
+transcript, timeout, failure allowance or baseline was weakened.
+
+All **45 CLI/module suites** pass. The original 1,119 inherited assertions now
+record **896 matches / 223 FAIL**, versus **1,046 / 73** for the fresh reference.
+Every previous 895-match verdict is retained; the added match is
+`ysh-env` case 11. Reference verdicts are unchanged. The separate shared read
+selection remains **62/64** with its two previously documented failures.
+
+Both a compiled no-persistence mutant and a compiled fork-and-wait imitation
+fail the native exec suite. The latter preserves output/status but fails the
+actual-PID assertion. The previous published runtime fails all six exec cases
+while the reference still passes. The final runtime is restored and the
+qualification is rerun successfully after that negative control.
+
+The [receipt](qualification/il0-exec-2026-11-13/receipt.tsv),
+[paired cases](qualification/il0-exec-2026-11-13/paired-cases.tsv),
+[shared exec verdicts](qualification/il0-exec-2026-11-13/shared-exec.tsv),
+[negative controls](qualification/il0-exec-2026-11-13/negative-controls.tsv) and
+[execution archive](qualification/il0-exec-2026-11-13/execution-logs.zip)
+preserve exact inputs and results. Existing runner column names `oct31-*` remain
+unchanged; their current-result fields in this new receipt contain this run.
+
+**Still BLOCKED for managed Grease/package admission.** The earlier exec blocker
+is resolved for the qualified batch boundary. The next shared-process gap is
+`ulimit -n`: the reference reports the host limit and exits 0, while D exits 3
+with `Untranslated builtin: ulimit`. Continue that existing native builtin
+dispatch against the reference resource-limit contract. The other 223 inherited
+failures, complete reachable shared-shell and interactive behavior remain
+incomplete. Source/symbol/link and direct/resolved dependency checks still show
+no C++ runtime marker, but independent ai-ci static/transitive closure acceptance
+is NOT_RUN. Actual IL-0 Lua production and its thirteen controls are NOT_RUN in
+this continuation because the pinned Icky C closure and required host GCC-13
+support are unavailable. Their original programs pass parse-only, and the
+unchanged producer still rejects a missing compiler. No Cat Food activation,
+FP admission, deployment, physical-device acceptance, release or merge is claimed.
+
 ## Scoped descriptors and terminal input, 2026-11-13
 
 SUN IL0-CFREE-01 continues the retained `d/ysh-first-slice` branch from

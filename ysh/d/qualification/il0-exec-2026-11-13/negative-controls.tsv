@@ -1,0 +1,5 @@
+control	input_or_mutation	compile	exit	observed_rejection	verdict
+forgotten-persistence	DescriptorScope.makePermanent becomes a no-op	PASS	1	exec_test.d40;1/44 library modules fail	PASS
+forked-imitation	explicit exec forks,waits and exits with child status instead of replacing its process	PASS	1	exec_test.d146 exec forked or resumed shell evaluation;1/44 library modules fail	PASS
+previous-runtime	actual previous ysh-d6ec1791 bytes at the qualified native path	NOT_APPLICABLE	1	all6 native exec cases FAIL while all6 actual reference cases pass	PASS
+missing-producer-dependency	unchanged FP qualifier with missing pinned compiler path	NOT_APPLICABLE	1	actual producer receipt BLOCKED missing_ick_driver;Lua production NOT_RUN	PASS

@@ -1,0 +1,56 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease and package admission;exec batch continuation implemented and qualified
+owner_repository	dilapidated-shed/oils;owning task dilapidated-shed/grease issue58
+observed_date	2026-11-13 UTC
+branch	d/ysh-first-slice
+starting_head	6ec1791afd506086317db1662ce909a9679f95d5
+result_head	2fa16914267d007c86b417bdb1d388830acd3471
+local_validation_head	4fcd03e15bb5eedb66ee8282c4dc1107e10c2fcc
+identical_repository_tree	91a6b5e90c118f22568a1f5b2cbf6ca4c2f02f8b;published and local validation commits differ only in commit metadata
+implementation_source_tree	9e0cfe3c7d04eaf1f99acb4d42880d6a0472e1eb;HEAD:ysh/d/source
+full_suite_initial_source	464360655bd4eb78a92f1d5c0d29975e87a81f97;subsequent validation commit only repairs test-child cleanup;clean final-source production rebuild is byte-identical to tested runtime
+dirty_state	clean at local validation implementation commit;receipt/documentation changes are separate
+contract_version	retained Oils reference semantics;original fixtures and Python2 harness unchanged
+reference_base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+host	Debian GNU/Linux13 trixie;Linux x86_64;disposable container df6121ee2066
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	c929901155fb12f49b65780c9c8399f76fcba9d4fa193ad0f4db6f2dc396514e
+bootstrap	isolated LDC1.36.0 only to build pinned Icky DMD;not translated-runtime acceptance compiler or target package
+binary_name	ysh-d;partial implementation;no greased claim
+binary_bytes	3196632
+binary_sha256	8db1fca307df33cd697abf605e24fe09014521bd9500a83db7115174c4a97f19
+build_command	/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/generated/linux/release/64/dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/druntime/import -I/workspace/scratch/8c9ca6473330/toolchain/phobos /workspace/scratch/8c9ca6473330/toolchain/phobos/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl -L-Map=ysh/d/.build/native-link.map ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+source_review	PASS bounded exec/descriptor ownership path;not a complete reachable-language inventory
+typecheck	PASS pinned Icky DMD compilation;no Idriç typecheck claim
+cli_module_tests	PASS45 modules;includes native PID,argv,signal,closed-stream and FD-leak tests
+inherited	896 matches;223 FAIL;zero TIMEOUT;1119 cases;81 unchanged fixtures
+inherited_reference	1046 matches;73 FAIL;zero TIMEOUT
+previous_checkpoint_preservation	PASS all895 previous candidate matches retained;one gain ysh-env11;reference verdicts identical
+shared_exec	PASS6/6 native D and6/6 actual Oils;unchanged spec/builtin-process.test.sh cases0-5;zero timeout
+exec_gate	qualification/qualify-exec.grease runs original Python2 harness through diagnostic D;six selected cases;requires12 pass records and13 total lines
+exec_gate_sha256	7afe3fd083a46be6b98395f0abd27238901da8eafdaef88d746affd641e65502
+workflow_sha256	ddd7e865964f96cf6bff17e3d91f7b541862b1d3373f65e68d087bf7a9d1d602
+shared_read	62 matches;2 FAIL;zero TIMEOUT;unchanged from preceding checkpoint;reference63 matches1FAIL
+fixture_checks	PASS acquisition/baseline preservation and focused exec gate;remaining223 inherited and2 shared-read assertions still FAIL
+negative_controls	PASS2 compiled mutants rejected with test exit1;preceding actual runtime rejected all6 exec cases;see negative-controls.tsv
+model_execution	PASS native D;separate original Oils Python reference and inherited Python2 test driver only;no source-text interpreter fallback
+clean_rebuild	PASS separate clean worktree at local_validation_head;byte-identical final runtime;comparison repeated after restoring intentional baseline substitution
+independent_rebuild	NOT_RUN second-host binary reproducibility
+parse_only	PASS both original retained FP IL-0 programs;--ast-format none -n
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;qualifier95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3
+producer_missing_dependency_control	PASS original producer exits1 and records BLOCKED missing_ick_driver;not successful Lua production
+producer_semantic_execution	NOT_RUN exact Icky C closure and /usr/lib/gcc/x86_64-linux-gnu/13/include unavailable;no compiler substitution
+producer_thirteen_controls	NOT_RUN in this continuation;historical results not promoted
+dynamic_dependencies	libgcc_s.so.1;libc.so.6;ld-linux-x86-64.so.2;inspection alone suppresses LD_PRELOAD
+symbol_and_link_inspection	PASS bounded no libstdc++/libc++/GLIBCXX_/CXXABI_/__gxx_personality/_ZNSt/_ZN3std marker;not independent static/transitive exclusion
+independent_ai_ci	NOT_RUN whole-language or static/transitive closure acceptance
+physical_acceptance	NOT_RUN;native Linux PID and PTY evidence is not physical-device evidence
+other_targets	NOT_RUN Android or NetBSD;no device compilation or installation
+first_blocker	ulimit -n exits3 Untranslated builtin ulimit;actual reference exits0 and reports16384 on this host
+remaining_work	translate shared-process resource limits;remaining223 inherited assertions;whole reachable shared-shell and interactive semantics;independent closure proof;actual Lua producer/control rerun;conditional package acceptance
+next_consumer	Grease issue58;Cat Food131 and FP IL-0 remain conditional;no managed admission
+output_paths	paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;shared-exec.tsv;negative-controls.tsv;execution-logs.zip;artifacts.tsv
