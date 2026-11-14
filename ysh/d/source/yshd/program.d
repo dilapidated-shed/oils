@@ -2434,6 +2434,14 @@ class ProgramParser {
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "times":
+                    // Times ignores arguments after normal eager/lazy typed
+                    // argument evaluation. A supplied block is never run.
+                    evalArguments();
+                    import yshd.timing : printProcessTimes;
+                    printProcessTimes(mem.outputFile);
+                    mem.lastStatus = 0;
+                    return;
                 case "ulimit":
                     if (typedArguments !is null || hasBlock) throw new UsageError("ulimit does not accept typed arguments");
                     import yshd.ulimit : runUlimit;

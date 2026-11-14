@@ -1,0 +1,21 @@
+#!/usr/bin/env grease
+# Original fixture and Python-2 reference are test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-times.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range 0 --timeout=3 \
+  --tmp-env "$output/tmp/shared-times" \
+  --path-env "$root/spec/bin:$[ENV.PATH]" \
+  --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+  --tsv-output "$output/shared-times.tsv" \
+  "$root/spec/builtin-times.test.sh" "$output/native-osh" "$root/bin/osh"
+var records = $(wc -l < "$output/shared-times.tsv")
+test "$records" -eq 3
+var matches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/shared-times.tsv")
+test "$matches" -eq 2
+echo 'PASS unchanged times case in native D and actual Oils'
