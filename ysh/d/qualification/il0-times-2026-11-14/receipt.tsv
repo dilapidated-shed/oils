@@ -1,0 +1,69 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease and package admission;cumulative native times continuation implemented and qualified
+owner_repository	dilapidated-shed/oils;owning task dilapidated-shed/grease issue58
+observed_date	2026-11-14;America/Detroit client date
+branch	d/ysh-first-slice
+starting_head	df3ecfcb58031e82f5ae98d1301c7ee67fbb21a7
+result_head	667e899b0dc62f154675cfaaf24befcdf5935b88
+local_validation_head	942279ac649fd985452dddca53ecb0ec9089534b
+identical_repository_tree	85c4558492abae522b4649826cc1aa562c74552f;published and local validation commits differ only in commit metadata
+implementation_source_tree	ff70df4976a9999864d0be5567e006454bf19de7;HEAD:ysh/d/source
+dirty_state	clean at local validation implementation commit;receipt/documentation changes are separate
+contract_version	builtin/misc_osh.py:Times;core/pyos.py:PrintTimes;pyext/posixmodule.c:posix_times;original fixture and Python2 harness unchanged
+reference_base	dd39aa720c386f9ad007fb96f6475c6afbce297c
+host	fresh disposable container abeafc7a187c;Debian GNU/Linux13 trixie;Linux6.18.57 x86_64;glibc2.41
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3;fresh host build
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	1ee8a7bd175911f53d814d7c8f786709131c1134c2447bcb2e2385bebde5cf2e;fresh host build
+bootstrap	isolated official LDC1.36.0 only to build pinned Icky DMD;archive2d418462d1c3909f5889298d97de061d023850a371ea9d418fc3fd2d4b7e8b19 matches published sha256sums;not acceptance compiler
+cimport_abi	libc_process.c includes actual target sys/times.h;clock_t and tms from ImportC;no handwritten ABI layout
+target_header_sha256	b217c73f933386ebf70f11d8e4254e65a761e7f07496f491f9a75dbadc3ba06d;/usr/include/x86_64-linux-gnu/sys/times.h
+clock_tick_rate	100 per second;actual sysconf(_SC_CLK_TCK);formatter also checked at128,250,100000
+binary_name	ysh-d;partial implementation;no complete Grease claim
+binary_bytes	3280080
+binary_sha256	5a52877ecefc394c3bbd55800e0e8b354feaf5f39d518e95bc2e3b0eb16a3c45
+build_command	/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/generated/linux/release/64/dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/druntime/import -I/workspace/scratch/8c9ca6473330/toolchain/phobos /workspace/scratch/8c9ca6473330/toolchain/phobos/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl -L-Map=ysh/d/.build/native-link.map ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+source_review	PASS bounded times accounting/argument/descriptor paths;not a complete reachable-language inventory
+typecheck	PASS pinned Icky DMD compilation with target C header ImportC;explicit retained D port;no Idriç typecheck claim
+cli_module_tests	PASS50 modules;native field bounds and cumulative CPU workloads;literal multi-rate formatter cases
+native_times_contract	PASS cumulative self/reaped-child user/system CPU;POSIX ticks;runtime tick-rate conversion;two formatted stdout rows;normal result0
+argument_contract	PASS ordinary words/flags ignored;eager typed arguments evaluated once;deferred bracket arguments unforced;literal/command-valued blocks ignored;eager undefined value fails before output
+descriptor_contract	PASS redirects and command substitution;closed stdout/devfull return1;closed stderr alone returns0;later output restored after redirect
+native_kernel_controls	PASS tick bounds/quantization against actual POSIX times;four-tick user+system CPU work in self and forked child;child counters grow after waitpid;repeated totals persist
+inherited	896 matches;223FAIL;zero TIMEOUT;1119 cases;81 unchanged fixtures
+inherited_reference	1046 matches;73FAIL;zero TIMEOUT
+previous_checkpoint_preservation	PASS identical paired-cases.tsv and fixture-totals.tsv;all896 previous candidate matches and reference verdicts retained
+shared_times	PASS1/1 native and1/1 actual reference;unchanged builtin-times case0;all2 records pass;zero timeout
+times_gate	qualification/qualify-times.grease uses original Python2 harness through native D;arbitrary cwd;requires3lines and2 exact pass records
+times_gate_sha256	31a8af13686de8f5a0c05fcd73448c8f10182d56d6457d5036846086e5e86d79
+workflow_sha256	c1fb1a47b1ac300ae570b37873f77dcd8be768f9da20293bb66980258f7d89c1
+shared_time	PASS3/3 native and3/3 actual reference;existing timing gate unchanged
+shared_exec	PASS6/6 native and6/6 actual reference;existing exec gate unchanged
+shared_ulimit	PASS16 native cases and15 paired reference cases;existing gate unchanged;documented reference case25 defect not granted a new allowance
+shared_read	62matches;2FAIL;zero TIMEOUT;reference63matches1FAIL;table identical to preceding timing checkpoint
+negative_controls	PASS4 compiled mutants rejected with runtime1;compiler0;prior actual runtime also rejected by original times case0;see negative-controls.tsv
+model_execution	PASS native D;separate original Oils Python reference and original harness only;no source-text interpreter fallback
+test_reference	original CPython2.7.13 UCS4;executable16347838b6d5938fe2976d70d84ceeb60a6798e7803efe219f52fe548c636b94;official source35d543986882f78261f97787fd3e06274bfa6df29fac9b4a94f73930ff98f731
+reference_host_patch	private test-only static mathmodule sinpi helper renamed python2_sinpi for glibc prototype compatibility;behavior unchanged;patch archived
+gawk	actual GNU gawk5.2.1;official source673553b91f9e18cc5792ed51075df8d510c9040f550a6f74e09c9add243a7e4f;binary6cac9c18849fda2e0ac7ae21180dd1de75a97492fa41cfa3bdab2ece924621b8;private test PATH;no awk substitution
+final_binary_validation	PASS rebuilt after new test module added D metadata;full inherited/shared gates rerun on final binary
+clean_rebuild	PASS separate clean worktree at local_validation_head;production bytes identical;cmp0
+preceding_checkpoint_rebuild	PASS old timing runtime rebuilt on fresh host matches historicala14244015e88571aea427d0c973429c6125f098b34c68a891d3bbd61caeffc7a;not new executable second-host proof
+independent_rebuild	NOT_RUN second-host byte reproducibility of new times executable
+parse_only	PASS both unchanged retained FP IL-0 programs;--ast-format none -n
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;qualifier95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3;Lua87306483cec50f8c750a22dda1d0742246fad756;clean source checkouts
+producer_missing_dependency_control	PASS actual producer exits1 with BLOCKED missing_ick_driver;not Lua production success
+producer_semantic_execution	NOT_RUN exact pinned Icky C executable closure and /usr/lib/gcc/x86_64-linux-gnu/13/include absent from host;no compiler substitution
+producer_thirteen_controls	NOT_RUN here;historical results not promoted
+dynamic_dependencies	libgcc_s.so.1;libc.so.6;ld-linux-x86-64.so.2;inspection alone suppresses LD_PRELOAD
+symbol_and_link_inspection	PASS bounded no libstdc++/libc++/GLIBCXX_/CXXABI_/__gxx_personality/_ZNSt/_ZN3std marker;not independent static/transitive exclusion
+independent_ai_ci	NOT_RUN whole-language or static/transitive closure acceptance
+physical_acceptance	NOT_RUN;host clock/process evidence is not physical-device evidence
+other_targets	NOT_RUN Android or NetBSD;no device compilation or installation
+first_blocker	umask exits3 Untranslated builtin umask;actual reference exits0 and reports host0022
+remaining_work	translate builtin/umask_osh.py and original builtin-umask fixture;remaining223 inherited failures;complete reachable shared-shell/interactive semantics;independent closure proof;actual Lua producer/control rerun;conditional package acceptance
+next_consumer	Grease issue58;Cat Food131 and FP IL-0 remain conditional;no managed admission
+output_paths	paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;shared-exec.tsv;shared-time.tsv;shared-time-pipeline.tsv;shared-time-errexit.tsv;shared-times.tsv;negative-controls.tsv;execution-logs.zip;artifacts.tsv

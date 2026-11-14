@@ -4,6 +4,86 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Cumulative native CPU totals, 2026-11-14
+
+This continues SUN IL0-CFREE-01 from published checkpoint
+`df3ecfcb58031e82f5ae98d1301c7ee67fbb21a7`. The published implementation is
+`667e899b0dc62f154675cfaaf24befcdf5935b88`; local validation commit
+`942279ac649fd985452dddca53ecb0ec9089534b` has the identical complete Git tree
+`85c4558492abae522b4649826cc1aa562c74552f`.
+
+The `times` special builtin now follows `builtin/misc_osh.py:Times` and
+`core/pyos.py:PrintTimes`. POSIX `times()` supplies cumulative self user/system
+CPU and cumulative reaped-child user/system CPU. `_SC_CLK_TCK` supplies the tick
+rate; the elapsed return value is discarded. A two-line ImportC declaration
+file includes the target's `<sys/times.h>` so the compiler obtains `clock_t`
+and `struct tms` from the actual target ABI rather than a guessed D layout.
+Native tick counters remain integers until the three-decimal output boundary.
+Minutes, seconds, spacing, suffixes and the reference's lack of carry
+normalization are covered by literal formatting cases at several tick rates.
+
+The report goes to current stdout. Normal execution returns zero; write or
+flush failures return one through the existing builtin boundary. Unlike the
+separate `time` keyword's diagnostic report, these output failures are not
+discarded. The reference ignores ordinary arguments, flags and supplied blocks.
+Normal typed argument evaluation still happens: eager side effects occur once,
+eager undefined values fail before output, and lazy bracket arguments remain
+unforced. The implementation preserves those boundaries and special-builtin
+dispatch precedence.
+
+All **50 CLI/module suites** pass. The new native suite compares parsed public
+output against actual kernel tick bounds. CPU workloads independently establish
+user and system increases in the parent and a forked child; after `waitpid`,
+the child row grows and repeated reports retain the cumulative totals. Other
+tests cover redirects, command substitution, ignored arguments/blocks, eager
+and lazy typed arguments, closed stdout/stderr and `/dev/full`. The existing
+unchanged `spec/builtin-times.test.sh` case 0 passes in both native D and actual
+Oils. [`qualify-times.grease`](qualification/qualify-times.grease) requires both
+original oracle records to PASS, runs from an arbitrary directory and is wired
+into the owner workflow with its immediate reference sources. No fixture,
+timeout, label, baseline or failure allowance was changed.
+
+All **896/1,119 inherited matches** remain, with **223 FAIL**, versus
+**1,046/1,119 and 73 FAIL** in the reference. Paired case and fixture total tables
+are byte-identical to the preceding timing checkpoint. Shared read stays
+**62/64**, including its two known failures. The existing timing, exec and ulimit
+gates pass. Four compiled mutants are rejected: zero counters, the wrong tick
+rate, swapped rows and skipped typed argument evaluation. These controls reject
+plausibly formatted output that the original two-row regex alone cannot qualify.
+The actual preceding executable fails the original times case while the
+reference passes.
+
+The final production binary was rebuilt and the full inherited and shared
+gates rerun after adding the new test module, which changes D module metadata.
+Validation therefore refers to the final executable bytes. A clean worktree
+at the final implementation commit reproduces those bytes. This is a fresh
+Debian13 x86_64 host; its compiler/runtime hashes and target C header hash are
+recorded separately from earlier host builds. The earlier timing executable
+also rebuilds to its historical hash on this host; that is not second-host
+reproducibility evidence for the new executable.
+
+The [receipt](qualification/il0-times-2026-11-14/receipt.tsv),
+[paired cases](qualification/il0-times-2026-11-14/paired-cases.tsv),
+[shared times verdicts](qualification/il0-times-2026-11-14/shared-times.tsv),
+[negative controls](qualification/il0-times-2026-11-14/negative-controls.tsv) and
+[execution archive](qualification/il0-times-2026-11-14/execution-logs.zip)
+preserve the results. Copied `oct31-*` current-result column names remain
+unchanged in the inherited runner tables.
+
+**Still BLOCKED for complete Grease/package admission.** The next measured
+resource builtin gap is `umask`: D exits 3 with `Untranslated builtin: umask`,
+while actual Oils exits 0 and reports the host mask. Continue
+`builtin/umask_osh.py` against the unchanged `spec/builtin-umask.test.sh`.
+The remaining inherited failures, complete reachable shared-shell/interactive
+semantics and independent ai-ci static/transitive C++ exclusion remain open.
+Bounded ELF, symbol and link inspection finds no C++ runtime marker; it is not
+independent closure acceptance. Actual Lua production and its thirteen controls
+are NOT_RUN here because the exact pinned Icky C executable closure and required
+host GCC13 support are absent. Both unchanged producer programs pass parse-only;
+the actual producer still records BLOCKED for a missing compiler. The binary
+remains `ysh-d`; no package activation, consumer admission, deployment, device
+acceptance, release or merge is claimed.
+
 ## Native timing keyword and source boundaries, 2026-11-13
 
 This continues SUN IL0-CFREE-01 from published checkpoint
@@ -85,7 +165,7 @@ unchanged. The other two timing fixtures have separate verbatim TSV files.
 **Still BLOCKED for complete Grease/package admission.** The next measured
 shared-process gap is `times`: D exits 3 with `Untranslated builtin: times`,
 while actual Oils exits 0 and prints self/children user/system CPU totals.
-Continue `builtin/process_osh.py:Times`, `core/pyos.py:PrintTimes` and the original
+Continue `builtin/misc_osh.py:Times`, `core/pyos.py:PrintTimes` and the original
 `spec/builtin-times.test.sh`. Remaining inherited failures, complete reachable
 shared-shell and interactive semantics, and independent ai-ci static/transitive
 C++ exclusion remain open. Bounded ELF/symbol/link inspection still finds no C++

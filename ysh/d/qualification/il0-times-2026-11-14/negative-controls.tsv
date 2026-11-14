@@ -1,0 +1,6 @@
+control	implementation	compile_status	run_status	result	evidence
+zero-counters	zero sampled tms counters while preserving two-row formatter	0	1	REJECTED	times_test.d native cumulative counter mismatch;1/49 library modules failed;times-mutant-zero.diff/.log/.compile.log
+wrong-tick-rate	replace sysconf clock rate with1000;actual host rate100	0	1	REJECTED	times_test.d native cumulative counter mismatch;1/49 library modules failed;times-mutant-scale.diff/.log/.compile.log
+swapped-rows	print child totals before self totals	0	1	REJECTED	times_test.d native cumulative counter mismatch;1/49 library modules failed;times-mutant-rows.diff/.log/.compile.log
+skipped-argument-evaluation	remove evalArguments only from times dispatch	0	1	REJECTED	times_test.d eager side-effect count assertion fails;1/49 library modules failed;times-mutant-arguments.diff/.log/.compile.log
+preceding-runtime	actual preceding timing checkpoint rebuilt on fresh host;unchanged times case0	0	1	REJECTED	pre-times.tsv records osh-d FAIL and actual reference osh PASS;production source/binary never substituted

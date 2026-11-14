@@ -1,0 +1,16 @@
+path	sha256	purpose
+execution-logs.zip	2ad3ba615df4f300509c4361d58018ae20bbcd58dc3f93bbfdb5489a22e1ba31	original inherited/shared transcripts and TSVs;50-module native tests;four compiled mutant diagnostics/diffs;prior executable negative;native link/symbol/dependencies;fresh toolchain build logs/hashes;reference compatibility patch;remaining umask gap;producer negative/BLOCKED receipt
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	all1119 inherited verdicts;identical to preceding timing checkpoint
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 original fixture totals;identical to preceding timing checkpoint
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	64 original read cases in D/reference;known failures retained
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	6 original exec cases;12 paired records pass
+shared-time.tsv	455a2d00f2b0254acdd2a794b465d15d2ff4698e87572fb667734b137f3bdbfb	original process case9;native/reference pass
+shared-time-pipeline.tsv	1076438fe56358a4051c396154a792b859c61a1128fb1b1792377dfad895a9d2	original misc case3;native/reference pass
+shared-time-errexit.tsv	92a8cb13a923ac98d8e4acebc3063ae992b14e50d047c50c281f0c6986535303	original errexit case12;native/reference pass
+shared-times.tsv	4d9757474d177c6f7c1f724a98084b9d12af876f6578d4c4332bc975aece2675	original builtin-times case0;native/reference pass
+../../.build/ysh-d	5a52877ecefc394c3bbd55800e0e8b354feaf5f39d518e95bc2e3b0eb16a3c45	final local partial native executable;not committed;clean worktree byte-identical
+../qualify-times.grease	31a8af13686de8f5a0c05fcd73448c8f10182d56d6457d5036846086e5e86d79	native D qualifier invoking unchanged original fixture/harness/reference
+../../../../spec/builtin-times.test.sh	20f57808de62657fe7b03a5436624f71ebfe3f4c793786d3a4a372bdd6ce7a36	unchanged original times fixture
+../../../../builtin/misc_osh.py	49a786e4319628a1446fbecfb51997fb3ff178c27753e080c416af1e8fb2bee4	retained Times builtin contract
+../../../../core/pyos.py	7a1aefc6775393a82e4fea98ec0bc5489dcc0a26a73d8073061b47998786a4ca	retained PrintTimes formatting/accounting contract
+../../../../pyext/posixmodule.c	48ae6bcd1771f33a0a6ef1c1446fe275b72f71326953c761231e47445eebdb60	retained native POSIX clock-tick conversion
