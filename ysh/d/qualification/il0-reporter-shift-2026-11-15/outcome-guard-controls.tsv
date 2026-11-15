@@ -1,0 +1,8 @@
+control	expected_status	actual_status	result	stdout	stderr
+positive	0	0	PASS	positive.stdout	positive.stderr
+TIME-field	1	1	REJECTED	time.stdout	time.stderr
+TIMEOUT-field	1	1	REJECTED	timeout.stdout	timeout.stderr
+grep-read-error	2	2	REJECTED	grep-error.stdout	grep-error.stderr
+empty-table	1	1	REJECTED	empty.stdout	empty.stderr
+missing-table	1	1	REJECTED	missing.stdout	missing.stderr
+unreadable-table	1	1	REJECTED	unreadable.stdout	unreadable.stderr

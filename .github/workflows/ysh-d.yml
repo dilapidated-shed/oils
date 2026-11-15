@@ -377,6 +377,9 @@ jobs:
           set -euxo pipefail
           python3 ysh/d/qualification/run-shared-read.py
 
+      - name: Reject timed-out inherited and shared-read records
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-spec-outcomes.grease
+
       - name: Qualify unchanged exec cases through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-exec.grease
 

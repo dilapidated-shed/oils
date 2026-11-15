@@ -1,0 +1,3 @@
+case	shell	status	result
+wide-index	native	0	pass
+wide-index	reference	0	pass

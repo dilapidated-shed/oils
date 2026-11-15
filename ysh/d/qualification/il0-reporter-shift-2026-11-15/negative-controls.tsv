@@ -1,0 +1,17 @@
+control	implementation	compile_status	run_status	result	evidence
+reporter-best-effort	Replace strict reporting with the previous best-effort diagnostic writer	0	1	REJECTED	diagnostic_io_test.d:66 strict failed sink must escape;reporter-mutant-best-effort.diff/.log/.compile.log
+reporter-register-overwrite	Treat raw reporter failure as a caught semantic error and overwrite the seeded error registers	0	1	REJECTED	diagnostic_io_test.d:98 requires status1 and seeded error17;reporter-mutant-registers.diff/.log/.compile.log
+reporter-silent-flush	Omit normal stdout-flush error reporting and failure status	0	1	REJECTED	diagnostic_io_test.d:98 and existing times/umask output-error oracles;reporter-mutant-flush.diff/.log/.compile.log
+reporter-flush-overrides-earlier-error	Report flush failures while an earlier body error is unwinding	0	1	REJECTED	diagnostic_io_test.d:149 earlier usage status2 must survive;reporter-mutant-unwind.diff/.log/.compile.log
+shift-omitted-cursor-update	Return success without changing or bounds-checking the positional cursor	0	1	REJECTED	shift_test default-shift visible-argument assertion;1/54 library modules failed;shift-mutant-setter.diff/.log/.compile.log
+shift-rejected-negative-count	Reject negative counts instead of retaining the reference's backward cursor semantics	0	1	REJECTED	shift_test reverse-shift assertion;1/54 library modules failed;shift-mutant-negative.diff/.log/.compile.log
+shift-lost-complete-frame	Restore only visible arguments instead of the caller's original backing words and cursor	0	1	REJECTED	shift_test consumed-word restoration assertion after shell function;1/54 library modules failed;shift-mutant-frame.diff/.log/.compile.log
+shift-skipped-typed-evaluation	Skip ordinary eager typed argument evaluation before ignoring the supplied values	0	1	REJECTED	shift_test eager calls===2 assertion;1/54 library modules failed;shift-mutant-arguments.diff/.log/.compile.log
+preceding-wide-runtime	Actual retained preceding76a4 runtime against the unchanged new literal wide-index probe	NOT_RUN retained compiled executable	2	REJECTED	Final/reference exit0 and exact literal match;preceding native stderr Positional index is too large;no fake runtime or modified expectations
+outcome-TIME	Canonical Grease guard sees a synthetic complete TIME field	NOT_APPLICABLE	1	REJECTED	outcome-guard-tests/results.tsv and time.stdout/.stderr;stdout empty
+outcome-TIMEOUT	Canonical Grease guard sees a synthetic complete TIMEOUT field	NOT_APPLICABLE	1	REJECTED	outcome-guard-tests/results.tsv and timeout.stdout/.stderr;stdout empty
+outcome-inspection-error	Actual grep read error during synthetic table inspection	NOT_APPLICABLE	2	REJECTED	outcome-guard-tests/results.tsv and grep-error.stdout/.stderr;stdout empty
+outcome-empty	Synthetic qualification table is empty	NOT_APPLICABLE	1	REJECTED	outcome-guard-tests/results.tsv and empty.stdout/.stderr;stdout empty
+outcome-missing	Synthetic qualification table is missing	NOT_APPLICABLE	1	REJECTED	outcome-guard-tests/results.tsv and missing.stdout/.stderr;stdout empty
+outcome-unreadable	Synthetic qualification table is unreadable	NOT_APPLICABLE	1	REJECTED	outcome-guard-tests/results.tsv and unreadable.stdout/.stderr;stdout empty
+actual-timed-out-matrix	Canonical guard checks an actual raw matrix attempt containing TIME verdicts	NOT_APPLICABLE	1	REJECTED	spec-outcomes-rejected.log;rejected-timeout-matrix raw records;not promoted as passing compatibility evidence

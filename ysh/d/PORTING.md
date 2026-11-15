@@ -4,6 +4,126 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Reporter I/O boundaries and retained positional frames, 2026-11-15
+
+This continues SUN IL0-CFREE-01 from checkpoint
+`751ddf12dd8b2a610d5636e32bc4b7bfd457d113`. Implementation commit
+`00253dcb59037afc77ceabe630061649af0d98bf` and local validation commit
+`9059b12a87224700df7ab53a5d89091ddbd505fd` have the identical complete Git tree
+`225766279d17286d003fc4465452640bfc9c2d31`; the translated source subtree is
+`157e86e8024594b6d8e210282deade6c684d4629`. The final runtime is 3,297,984 bytes
+with SHA-256 `ff451e62c614c85e730799368c56251bc733b56d112861922b08ffac294660b2`.
+A clean separate worktree rebuild reproduces those bytes. This is same-host
+rebuild evidence, not second-host reproducibility.
+
+The previous checkpoint's reporter defect is repaired against
+`core/vm.py:_RunBuiltinProc`, `ctx_FlushStdout` and `builtin/error_ysh.py:Try`.
+Builtin diagnostics now write and flush strictly. If both command output and
+the attempted diagnostic fail, the reporting exception escapes the inner
+builtin. Its descriptor scope restores stderr before the outer `try` reports
+the I/O failure and returns 1. The outer builtin never completed its error-register
+assignments, so seeded `_error` and `_status` remain unchanged. A surrounding
+`try` observes the resulting failure at its own boundary. With working stderr,
+an ordinary inner builtin I/O failure returns 1 and `try` records that status
+while returning 0, following the retained reference.
+
+Stdout is still flushed after the builtin body. A flush failure does not
+override an earlier usage-handler return or escaping exception. Parsed `json`,
+`json8` and `pp` commands now enter a matching guarded boundary after normal
+argument evaluation; their write/read/diagnostic failures no longer masquerade
+as a failure of the surrounding `try` reporter. Raw unhandled I/O reaching the
+batch CLI exits 2, following `bin/oils_for_unix.py:main`. These changes qualify
+the tested dispatch and data-output paths. They do not establish universal I/O
+parity for every manually handled builtin or byte-identical stderr wording.
+The retained malformed-symbolic-umask warning still precedes restoration:
+if that warning cannot be written, the actual kernel mask remains zero in both
+implementations. No all-errors umask atomicity claim is added.
+
+The new [`qualify-reporter-io.grease`](qualification/qualify-reporter-io.grease)
+executes nine fixed CLI cases in native D and actual `bin/ysh`, requiring each
+declared process status, exact literal stdout, nonempty diagnostic output and
+all 18 passing records plus the header. Cases cover seeded error registers,
+nested control flow, one/both failed sinks, parsed JSON output and the raw CLI
+boundary. Native tests also exercise closed descriptors, `printf`, `times`,
+JSON/J8 and pretty printing. Separate final-runtime comparisons of 13 generic
+reporter cases and 39 data cases pass all 104 native/reference executions.
+Earlier runs on a superseded runtime are not promoted into this checkpoint.
+
+The `shift` special builtin now follows `builtin/assign_osh.py:Shift` and
+`core/state.py:_ArgFrame`. It parses the retained signed decimal integer
+grammar without a flag parser, defaults to one, returns silent status 1 when
+the requested cursor would exceed the original argument count and otherwise
+updates that cursor. Negative and arbitrarily large counts are accepted as
+the reference accepts them. The backing words and signed cursor remain intact:
+negative shifts can expose consumed words, `$#` need not equal the length of
+the visible `$@` slice, and excessively negative scalar indexing retains its
+fatal boundary. These are the reference's behaviors rather than substituted
+POSIX expectations. Eager typed arguments run once, deferred arguments remain
+unforced and supplied blocks remain unexecuted.
+
+Shell functions own a temporary positional frame; source owns one only when
+explicit arguments are supplied. Source without arguments shares `shift` and
+`set --` mutations with its caller. Eval with explicit positional bindings
+restores the complete caller frame; eval without them shares mutations.
+Regex capture replacements restore their temporary positional frame, while
+plain string replacements retain shared positional mutations. Saving the
+whole frame preserves both previously consumed words and the cursor through
+normal return or exception unwinding. Typed `ARGV` remains a separate value.
+Braced parameter indices are accumulated as arbitrary-precision decimal
+integers and narrowed only after cursor cancellation and actual backing-array
+bounds checks. Leading-zero indices and default/alternate substitutions follow
+the same path; indices above 2^64 can therefore identify ordinary arguments
+after a large negative shift.
+
+[`qualify-shift.grease`](qualification/qualify-shift.grease) uses the unchanged
+Python2 harness and original expectations for `builtin-misc` cases 4–6 and
+`arg-parse` case 1. All four original cases pass in each interpreter. A separate
+literal wide-index CLI case also passes in both, including leading zeroes,
+defined-empty/default distinctions, the large count and restoring the cursor.
+The current runtime passes **55 CLI/module suites and 54 library suites**.
+All eight final-source reporter and shift mutants compile successfully and are
+rejected at runtime. The actual
+preceding 76a4 runtime is independently rejected by the wide-index fixture:
+it exits 2 at its old positional-index ceiling, while the final runtime and
+reference exit 0 and match the literal result.
+
+The final runtime retains all **896/1,119 inherited matches**, with **223 FAIL**,
+versus **1,046/1,119 and 73 FAIL** in the actual reference. Paired cases and fixture
+totals are byte-identical to the previous checkpoint. Final shared read retains **62/64**,
+versus **63/64** in the reference, and the preceding exec/time/times/ulimit/umask
+gates pass on the final runtime. The original fixture, expected-result,
+timeout, baseline and failure-allowance files are unchanged. Current build and
+test-reference inputs were restored on disposable host `3a56f33f9a99`, Debian 13
+x86_64, Linux 6.18.60, glibc 2.41. Exact compiler, runtime and test-reference
+hashes are bound in the [receipt](qualification/il0-reporter-shift-2026-11-15/receipt.tsv).
+The [mutation ledger](qualification/il0-reporter-shift-2026-11-15/negative-controls.tsv)
+and raw execution archive record separate results rather than treating earlier
+76a4 or invalid-label gate runs as final-runtime acceptance.
+
+Raw verdict inspection exposed a comparison-driver defect: it recognizes
+`TIMEOUT` as a failure, while the original harness emits `TIME`. A run containing
+those records is rejected rather than accepted with inflated match totals.
+The new Grease outcome guard rejects both timeout labels, empty or unreadable
+tables and inspection errors. Synthetic controls and the actual rejected table
+exercise that boundary. The final matrix is rerun after compiler work finishes;
+the original three-second limit and verdict labels remain unchanged. That final
+rerun has no `TIME` or `TIMEOUT` records, passes the new guard, and reproduces all
+three preceding verdict tables byte for byte.
+
+**Still BLOCKED for complete Grease/package admission.** The next measured
+ordinary builtin gap is `getopts`: `set -- -a value; getopts a: selected; echo
+"$selected:$OPTARG"` exits 3 with an untranslated-builtin error in D, while
+actual Oils exits 0 and prints `a:value`. Continue `builtin/pure_osh.py:GetOpts`
+and `GetOptsState` against `spec/builtin-getopts.test.sh`. Complete reachable shared-shell and
+interactive behavior, remaining inherited failures and independent ai-ci
+static/transitive C++ exclusion remain open. Bounded ELF, symbol, link and
+dynamic-dependency inspection finds no C++ runtime marker; it is not the
+independent closure acceptance. The final-runtime actual Icky Lua producer
+passes, and its thirteen-control program exits zero with all 13 rows passing.
+Earlier umask controls remain historical and do not substitute for this run.
+The binary remains `ysh-d`; no package activation, consumer admission,
+deployment, physical-device acceptance, release or merge is claimed.
+
 ## Native file creation masks, 2026-11-14
 
 This continues SUN IL0-CFREE-01 from checkpoint

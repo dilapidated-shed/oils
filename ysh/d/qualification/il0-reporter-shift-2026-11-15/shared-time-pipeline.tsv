@@ -1,0 +1,3 @@
+case	shell	result
+3	native-osh	pass
+3	osh	pass

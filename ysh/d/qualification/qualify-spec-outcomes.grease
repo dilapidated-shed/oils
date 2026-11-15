@@ -1,0 +1,35 @@
+#!/usr/bin/env grease
+# Inspect original verdict labels without changing their interpretation.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-spec-outcomes.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+
+proc check (name) {
+  var table = "$output/$name"
+  if test ! -r "$table" {
+    echo "unreadable qualification table: $table" >&2
+    exit 1
+  }
+  if test ! -s "$table" {
+    echo "empty qualification table: $table" >&2
+    exit 1
+  }
+  var status = 0
+  if grep -nE '(^|	)(TIME|TIMEOUT)(	|$)' "$table" >&2 {
+    echo "timed-out original records in $table" >&2
+    exit 1
+  } else {
+    setvar status = $?
+  }
+  if test "$status" -ne 1 {
+    echo "qualification table inspection failed: grep status $status for $table" >&2
+    exit "$status"
+  }
+}
+
+check paired-cases.tsv
+check shared-builtin-read.tsv
+echo 'PASS no TIME or TIMEOUT records in inherited and shared-read tables'

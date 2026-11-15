@@ -1,0 +1,38 @@
+path	sha256	purpose
+execution-logs.zip	15289203dcbcf1f6627c3df7590eb90ba954f04aaac97de6514cb43c7a9b591c	raw final inherited/shared transcripts;55 CLI and54 library suites;8 compiled mutant controls;104 additional paired executions;real producer and13 controls;toolchain/reference restoration;timeout guard controls and rejected attempts
+receipt.tsv	08d944db1c58b8d5f0d13f7387436de416733e2909a3b0753d7e6d6ee8b473a2	bounded current-source and host qualification receipt
+negative-controls.tsv	16ff40e11404d89277e0242b4d7ba3a42cc86fc4741ec97d96ef2f31d655a04c	8 compiled native controls plus actual preceding runtime and timeout-guard refusals
+outcome-guard-controls.tsv	ddfba117e643291ed0c5dd2742f771c78260598a1449df52c0123213085206fc	synthetic clean/time/error/readability controls;does not substitute for actual matrix validation
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	all1119 original inherited paired verdicts;identical to preceding checkpoint
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 original fixture totals;identical to preceding checkpoint
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	64 original read cases in each interpreter;known failures retained;identical to preceding checkpoint
+shared-shift.tsv	95210d8a3322a18b642235090da48a0ed4193ae93a6eefc4b0295a2901a7f8b0	3 unchanged original builtin-misc cases;all6 records pass
+shared-shift-extra.tsv	89a5a7813b25d8d14228451ad5e114a63a40b2cf508dd3ecb64138fe921889b4	unchanged original arg-parse case1;both records pass
+shared-shift-wide.tsv	09ec0ba5055cf56e2ad4fb3939d228093a10c7735f402534dd90a820c8e5344a	separate wide-index CLI probe;both interpreters status0 and literal stdout match
+reporter-io.tsv	95097351ec7ce3b8f4c40bba4599729fcd2ad702e8b40c0449ec1c7931c2d30c	9 CLI probes in native and actual reference;all18 records pass
+producer-receipt.tsv	dd53f0c82d090b28da144811baff77c80c15ecd769d4b19e4462d51aeaa603b5	actual unchanged Icky Lua producer;final native runtime;interpreter/embedded/source-byte proofs
+producer-controls.tsv	3061aa0ca90293e467f998d8a9a81dfc8c148e387ba65cf49faedf633bdf54a2	all13 original producer/runtime/source-substitution controls pass
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	6 unchanged original cases in each interpreter
+shared-time.tsv	455a2d00f2b0254acdd2a794b465d15d2ff4698e87572fb667734b137f3bdbfb	unchanged original process timing case
+shared-time-pipeline.tsv	1076438fe56358a4051c396154a792b859c61a1128fb1b1792377dfad895a9d2	unchanged original pipeline timing case
+shared-time-errexit.tsv	92a8cb13a923ac98d8e4acebc3063ae992b14e50d047c50c281f0c6986535303	unchanged original errexit timing case
+shared-times.tsv	4d9757474d177c6f7c1f724a98084b9d12af876f6578d4c4332bc975aece2675	unchanged original cumulative times case
+shared-ulimit.tsv	e7bae71dbde6d28c4c0c5f658aed042aaf84794adc2758e1740b7cbd47c00c96	15 paired original resource-limit cases
+shared-ulimit-nofile.tsv	b50d619cb96d2f7b73ae9eadb62830de0277ca027c937660d25142662e94474b	additional native resource-limit case;documented reference failure not waived
+shared-umask-all.tsv	a860e2f51219f6ab35032ce9d60e1cecc9b5bd8b0835c34d102145474c029feb	24 original cases per interpreter;22pass2FAIL in both
+shared-umask-basic.tsv	eacdcd83dff4f515e5443ed244b1433a6a9bc81783e5dcbc1929f9ed2048b90b	8 unchanged original umask cases;all16 records pass
+shared-umask-symbolic.tsv	93c601910ea52b752e9f6394168461d3ee5773cd097c10d4b12a55caf355317f	14 unchanged original umask cases;all28 records pass
+../../.build/ysh-d	ff451e62c614c85e730799368c56251bc733b56d112861922b08ffac294660b2	final local executable;not committed;separate clean-worktree build identical
+../qualify-shift.grease	a866cea99e15dca0d562f074d6e59509df2d34f30a30f43e3cae84e7586955de	four original cases plus literal wide-index pair;absolute-root fixture paths
+../qualify-reporter-io.grease	4932698a2560e3263715f4f28f50a0954783b6201798634d25ec43d874e01593	strict labels/count/status/stdout reporter CLI gate
+../qualify-spec-outcomes.grease	32c6b3cbce7496711fe7d2c57825d83846974586962b3ec7f3a98058ece5253a	fail-closed rejection of TIME/TIMEOUT and unreadable/empty/failed inspection
+../shift-wide.grease	ebb659194cce3fc803976457819e921f5c007e94dc94b9f1ab1fc32b101f4c0a	literal retained huge-cursor/index/default/alternate probe
+../shift-wide.stdout	7ec97906321ffdf8e84f9161526120cae6a3abac42ab5c978d7f0570d9e99e85	independent literal wide-index output oracle
+../../../../builtin/assign_osh.py	09e05e61f9a1bda78ef4baf1b20b63f781240a7d3e627f04fa8d48401b17838f	retained Shift contract
+../../../../core/state.py	49750c8657c804b20ec32679f9356a8d90080a6a1db22a83e467d469e65d4c77	retained raw argv and signed cursor ownership
+../../../../core/vm.py	3ef474e5fffc46e73f4f6228ca154d95fe8f8ba1c6e466a7aa48097dcc43c7b2	retained builtin/report/flush boundary
+../../../../builtin/error_ysh.py	9e3b73797b5bd31a6065a6936b4005c710b991d198cbd03ee4a2f3fe566fb098	retained Try register/control-flow boundary
+../../../../bin/oils_for_unix.py	59251609fb336e2d40150871c006f06fe9b4595016277683362b91109e3140c6	retained raw main I/O status2 boundary
+../../../../spec/builtin-misc.test.sh	cc36392bef7f3311fe9b5d3ce15632f856e514ece3f3b8f048ec6cc3dbc3e6c2	unchanged original shift fixture
+../../../../spec/arg-parse.test.sh	66423d91c2691600e790a86ce6c8f0af644accfd8923a6f9c72545165b4ddc9a	unchanged original extra-argument fixture
+../../../../.github/workflows/ysh-d.yml	1d33f1d5b4103534850a1f1c49b2b2dcfc35353d6f5a9ea215be359a374f4277	owner exact-head workflow with reporter/shift/outcome gates

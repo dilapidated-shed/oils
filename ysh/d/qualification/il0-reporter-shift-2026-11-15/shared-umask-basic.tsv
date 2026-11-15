@@ -1,0 +1,17 @@
+case	shell	result
+0	native-osh	pass
+0	osh	pass
+1	native-osh	pass
+1	osh	pass
+2	native-osh	pass
+2	osh	pass
+3	native-osh	pass
+3	osh	pass
+4	native-osh	pass
+4	osh	pass
+5	native-osh	pass
+5	osh	pass
+6	native-osh	pass
+6	osh	pass
+7	native-osh	pass
+7	osh	pass
