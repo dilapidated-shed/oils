@@ -1,0 +1,6 @@
+control	implementation	compile_status	run_status	result	evidence
+omitted-setter	remove numeric umask syscall while retaining successful return	0	1	REJECTED	umask_test.d actual kernel and file/directory mode assertion;1/51 library modules failed;umask-mutant-setter.diff/.log/.compile.log
+omitted-error-restoration	remove restoration after ordinary symbolic parse failure	0	1	REJECTED	umask_test.d empty-symbolic-mode kernel mask assertion;ordinary error control only;1/51 library modules failed;umask-mutant-restore.diff/.log/.compile.log
+running-mask-snapshot	use evolving symbolic result for X and permission-copy instead of original invocation mask	0	1	REJECTED	umask.d literal and umask_test.d a=,a=u kernel-snapshot assertions;2/51 library modules failed;umask-mutant-snapshot.diff/.log/.compile.log
+skipped-typed-evaluation	remove evalArguments only from umask dispatch before typed-argument rejection	0	1	REJECTED	umask_test.d eager side-effect assertion after typed usage rejection;1/51 library modules failed;umask-mutant-arguments.diff/.log/.compile.log
+preceding-runtime	actual preceding runtime against unchanged original umask case10	0	1	REJECTED	pre-umask.tsv records osh-d FAIL and actual reference osh pass;production source/binary never substituted

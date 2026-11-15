@@ -1,0 +1,35 @@
+key	value
+physical_device	NOT_RUN
+android_build	NOT_RUN
+lua_repository	isomorphisms/lua
+lua_revision	87306483cec50f8c750a22dda1d0742246fad756
+lua_tree	6b2968928611542c8f82448f49c32ea8bc98b559
+lua_release	5.5.1
+ick_revision	515c0f29fe6e2e96e10495fbaf25da93532e7722
+ick_artifact	11468256648
+ick_run	37589849631
+lua_input_checkout	/workspace/scratch/8c9ca6473330/lua
+lua_selected_source	/workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source
+ick_driver	86cdbaf8d405d7d05883f20ddcc0ac21a55a48bae20cc9f11aca78f1710867d3  /workspace/scratch/8c9ca6473330/toolchain/icky-c-closure/compiler/build/gcc/xgcc
+ick_frontend	5aff3188c58cae7cfffb20bdade56ec3e9ab89667ff6feafcfeed066350f9400  /workspace/scratch/8c9ca6473330/toolchain/icky-c-closure/compiler/build/gcc/cc1
+ick_link_driver	62e09cd8f93fba0224f0be1d2cd55da01c99d5d83029263d4714151cbe2ea4f9  /workspace/scratch/8c9ca6473330/toolchain/icky-c-closure/compiler/build/gcc/collect2
+assembler	07dd8551ea0aa065975e4dddb8e1bb7dc308d12d54eca22c3858db79467c7cb9  /usr/bin/as
+linker	d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b  /usr/bin/ld
+source_probe	cb5c129fb2ab4c61fea7c48725b54eb0227c2ce3352734081fe8dbe7f3540b3a  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source/testes/symbolic-assignment.lua
+lua_header	5e00319e803893f4310b1206394c80b82f03f42609b40ceb306d92a6740d828e  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source/lua.h
+lua_lexer	e4181287ead54cc806bb2fed213bde4164c2e01c72d69c7a47ffbc1ab01e77d5  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source/llex.c
+lua_parser	37e4ffabb5b1fcf5c14a2c8a7fa2a1cd6b0d31b4c7929e0293006b4f0464bd99  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source/lparser.c
+lua_entry	71d27fe16e09425f14b5daca83622e0f1396c05e07724b771afb06d62eadd2d4  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source/onelua.c
+selected_source_archive	749719d5b68c5963b6a6a86f80321f8ef8cfdebac00c3d096fddff9d78ec7195  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/lua-source.tar
+qualifier_source	95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3  /workspace/scratch/8c9ca6473330/fp/scripts/qualify-icky-lua.grease
+embedded_bridge_source	f1fb3465b4d6f09ba71c59398e5d5de1b18854cc577c8e841738a71babac71ca  /workspace/scratch/8c9ca6473330/fp/tests/modified-lua/embed-probe.c
+interpreter	ca2cfd2a8f98de2a8bb873ae8286ea9c877dd25ea0708f4016f9d0976984fd23  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/icky-lua
+runtime_object	87a3bf9dc19d418dc5dcea29186fd291f47d34fe69d9ef98cab127ccb0af1764  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/icky-lua.o
+embedded_executable	ed8c2b1cf838ddf3352706cfc2d77986b7fff0ac467d3ce2682ef1095a34f1d4  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/embedded-probe
+embedded_source	cb5c129fb2ab4c61fea7c48725b54eb0227c2ce3352734081fe8dbe7f3540b3a  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/embedded-source.lua
+embedded_link_map	804f7c6d8e9829425131374c87bdcc66b96c3aa2529e4cbf852cd6c9ad4e8129  /workspace/scratch/8c9ca6473330/oils/ysh/d/.build/umask-fp/producer-restored-dev/embedded-link.map
+interpreter_semantics	PASS
+embedded_semantics	PASS
+embedded_source_bytes	PASS
+linked_lua_runtime	static checked icky-lua.o; no dynamic Lua dependency
+status	PASS

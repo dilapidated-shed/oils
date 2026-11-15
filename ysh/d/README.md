@@ -2,7 +2,7 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The November 14 `times` continuation records **896
+The translation remains incomplete. The November 14 `umask` continuation records **896
 assertion matches and 223 failures** across all 1,119 cases in the 80 inherited
 YSH fixtures and focused Grease alias fixture. This preserves every match from
 the preceding November 13 timing checkpoint. The fresh actual reference records 1,046
@@ -10,7 +10,7 @@ matches and 73 failures under the same UTF-8 environment. The separate unchanged
 64-case shared read fixture retains 62 matches; two failures remain.
 The unchanged harness, fixture hashes, remaining operations and exact source/build
 identities are recorded in [PORTING.md](PORTING.md) and
-[the host receipt](qualification/il0-times-2026-11-14/receipt.tsv).
+[the host receipt](qualification/il0-umask-2026-11-14/receipt.tsv).
 
 Scoped extra descriptors now reach native builtins and external processes with
 ordered duplication, nested restoration and closed-fd handling. Terminal read
@@ -20,7 +20,7 @@ reference readiness probe. Positive timeouts remain unimplemented in both D and
 the retained reference. Native mapfile/readarray and unset shell-array expansion
 complete the preceding input slice. Persistent `exec` redirections now own their
 Files beyond the command scope. Actual native exec replacement preserves PID,
-supports `--` and `-a`, and retains ignored signal dispositions. All 50 CLI/module
+supports `--` and `-a`, and retains ignored signal dispositions. All 52 CLI/module
 suites pass, and the six unchanged shared exec cases pass in both D and Oils.
 The native PID test rejects a fork-and-wait imitation. Native `ulimit` now queries
 and sets all seven retained resources, with reference units, soft/hard selection,
@@ -37,15 +37,27 @@ lookahead and same-header here-document body selection. Native `times` now repor
 cumulative self and reaped-child user/system CPU counters using the target's
 POSIX tick rate and exact C header ABI. Its unchanged shared fixture passes in
 both D and Oils. Native tests check real CPU work, cumulative totals, tick
-conversion, argument evaluation and output failures. The `umask` builtin remains
-untranslated.
+conversion, argument evaluation and output failures. Native `umask` now queries
+and sets the actual process mask, including numeric and symbolic modes. Its
+unchanged 24-case fixture has 22 passes and the same two failures as the retained
+reference: `-S` and `-p` are parsed but ignored there. The strict 22-case gate
+passes in both implementations. Kernel tests check created file/directory modes,
+fork/exec inheritance, source/subshell scope and restoration after ordinary parse
+errors. A shared diagnostic-I/O boundary remains open: when a malformed symbolic
+mode's warning goes to `/dev/full`, both implementations leave the kernel mask at
+zero, but native `try` suppresses a reporter failure that the reference returns
+as status 1. Nested control flow and `_error` also differ at that boundary.
+Complete umask I/O parity is not established. The next untranslated ordinary
+builtin is `shift`.
 
 The October 27 checkpoint's 39 CLI/module suites, 38 library suites, original
-owner smoke, real Icky Lua producer and 13 runtime controls remain historical
-evidence. The November 14 producer semantic run is NOT_RUN because its pinned
-compiler closure is unavailable. A clean same-host rebuild reproduces the new
-executable bytes. Interactive operation, full shared-shell parity, independent
-ai-ci acceptance and Cat Food delivery remain incomplete; the binary stays
+owner smoke and producer controls remain historical evidence. This checkpoint
+reruns the unchanged Icky Lua producer and all 13 controls successfully with the
+exact pinned compiler. Its required GCC13 support is restored privately and
+mounted at the original path in a namespace with a read-only root. A clean
+same-host rebuild reproduces the new executable bytes. Interactive
+operation, full shared-shell parity, independent ai-ci acceptance and Cat Food
+delivery remain incomplete; the binary stays
 `ysh-d`.
 
 ## Source map

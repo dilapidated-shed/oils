@@ -4,6 +4,104 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Native file creation masks, 2026-11-14
+
+This continues SUN IL0-CFREE-01 from checkpoint
+`c2cf5898c5dbf83abc509fd3e5bc7fad2490efe7`. The implementation commit is
+`d020423af3f2edbb7ab395f6c3c422dd78bfb30d`; local validation commit
+`3239b775856b00ff847715a5b308fe7f7433fa48` has the identical complete Git tree
+`50c299211bfb982ba8b081282e46b1729266ac1f`. The translated source subtree is
+`404509f46ee0374819517c4b13eef0b7703039b9`.
+
+The `umask` builtin now follows `builtin/umask_osh.py` and
+`frontend/flag_def.py:UMASK_SPEC`, using the actual native process mask. Query
+temporarily reads and restores that mask before printing four octal digits.
+Numeric operands retain the reference's whitespace, sign and octal-prefix
+grammar, signed C-int bridge bounds and kernel permission-bit truncation.
+Symbolic clauses implement the retained operators, default selection, sequential
+actions, ignored `s`/`t` permission symbols and original-snapshot behavior for `X`
+and permission copying. Ordinary parse errors restore the previous mask.
+
+Typed arguments are evaluated before being rejected: eager expressions run
+once, deferred bracket expressions remain unforced and supplied blocks never
+run. The parsed `-S` and `-p` flags remain unused, matching the retained
+implementation. Therefore the unchanged original 24-case fixture records
+**22 PASS and 2 FAIL in both D and Oils**; cases 8 and 9 expect flag output that
+the reference does not produce. The separate
+[`qualify-umask.grease`](qualification/qualify-umask.grease) gate requires every
+record for original cases 0–7 and 10–23 to PASS: **22 cases in each interpreter**.
+It runs the original Python2 harness, works from an arbitrary directory and is
+wired into the owner workflow. No fixture, timeout, baseline or failure allowance
+was changed.
+
+All **52 CLI/module suites and 51 library suites** pass. Isolated native controls
+check syscall state, actual file/directory permissions, native builtin and
+external creation, fork/exec inheritance, source/subshell scope, numeric bounds,
+symbolic snapshot semantics and argument evaluation. Query-output failures with
+a working diagnostic stream return status 1 and retain the kernel mask. Four
+compiled mutants are rejected at runtime after successful compilation: omitting
+the setter, omitting ordinary-error restoration, using the running mask for
+snapshot operations and skipping typed argument evaluation. The actual preceding
+runtime fails original umask case 10 while the reference passes.
+
+All **896/1,119 inherited matches** remain, with **223 FAIL**, versus
+**1,046/1,119 and 73 FAIL** in the reference. The paired case and fixture total
+tables are unchanged. Shared read stays **62/64**, versus **63/64** in the
+reference. The existing time, times, exec and ulimit gates pass unchanged.
+The production binary is 3,285,832 bytes with SHA-256
+`5cc4ec6df46e1b7919bce377245adbdcfc1ae976c3896815f98908c18c53e057`;
+a separate clean worktree rebuild on this host reproduces those bytes. This
+disposable host is `6a1415c1f481`, Debian 13 x86_64 with glibc 2.41. Current
+compiler, runtime and test-reference hashes are recorded in the new receipt;
+earlier host evidence is retained as history.
+
+**First active blocker: shared diagnostic reporting and `try` I/O failure.**
+With `set +o errexit; umask 0124; try { umask 'u+r,q' 2>/dev/full }; echo status=$?; umask`,
+D reports status 0 and the reference reports status 1. Both leave the kernel
+mask at `0000`: the retained parser writes the warning before restoring the
+mask, so failure of that write interrupts restoration. D suppresses the reporter
+failure and updates `_error`; the reference preserves previous `_error`
+contents. A surrounding `try` consequently takes different control flow.
+Failure of both query output and diagnostic sinks exposes another reporter/flush
+difference. These are unresolved shared I/O boundaries, so this checkpoint does
+not establish complete umask I/O parity or atomicity for every error.
+
+The [receipt](qualification/il0-umask-2026-11-14/receipt.tsv),
+[paired cases](qualification/il0-umask-2026-11-14/paired-cases.tsv),
+[full umask verdicts](qualification/il0-umask-2026-11-14/shared-umask-all.tsv),
+[negative controls](qualification/il0-umask-2026-11-14/negative-controls.tsv) and
+[execution archive](qualification/il0-umask-2026-11-14/execution-logs.zip)
+preserve the bounded result and unresolved diagnostic probes. Copied `oct31-*`
+current-result column names remain unchanged in the inherited tables.
+
+**Still BLOCKED for complete Grease/package admission.** After the diagnostic
+boundary, the next measured ordinary builtin gap is `shift`:
+`builtin/assign_osh.py:623` and original `builtin-misc` cases 4–6. D exits 3 for
+the untranslated builtin while the reference exits 0. Remaining inherited
+failures, complete reachable shared-shell/interactive semantics and independent
+ai-ci static/transitive C++ exclusion remain open. Bounded ELF, symbol and link
+inspection finds no C++ runtime marker; independent closure acceptance is
+NOT_RUN.
+
+The unchanged Icky Lua producer and all **13 original controls now PASS** through
+the final native runtime. The exact compiler closure was recovered from artifact
+`11468256648`; its ZIP and driver/frontend/link-driver hashes match the retained
+pins. Verified official Debian `libgcc-13-dev` 13.3.0-16 supplies private host
+support, bound at the producer's original GCC13 path in a namespace with a
+read-only root. Actual interpreter semantics, embedded semantics and embedded
+source bytes pass; the embedded executable links the checked static Lua object.
+The controls reject stock same-version Lua, wrong linked runtime, substituted
+and hidden source, forged receipts and missing/wrong compiler dependencies.
+Explicit producer selection survives a stock Lua earlier in PATH, and approved
+relocation with spaces passes. The original missing-compiler attempt and the
+recovered compiler's missing-host-support attempt remain recorded as rejected
+controls.
+See the [producer receipt](qualification/il0-umask-2026-11-14/producer-receipt.tsv)
+and [producer controls](qualification/il0-umask-2026-11-14/producer-controls.tsv).
+These host results do not discharge independent whole-Grease acceptance. The binary
+remains `ysh-d`; no package activation, consumer admission, deployment, device
+acceptance, release or merge is claimed.
+
 ## Cumulative native CPU totals, 2026-11-14
 
 This continues SUN IL0-CFREE-01 from published checkpoint

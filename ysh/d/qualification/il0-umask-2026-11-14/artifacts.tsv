@@ -1,0 +1,27 @@
+path	sha256	purpose
+negative-controls.tsv	043cc4b456a09ca7634e0254c7d66ccb6e828c45e8eb59e98f403e335e2836f2	four compiled native mutants rejected plus preceding-runtime negative
+producer-receipt.tsv	5c0a1d242c3ccfd4e80af28b41be37d974bd98af6cc3d5d0723375876d6e814f	actual unchanged Icky Lua producer through final native D;interpreter,embedded and source-byte checks pass
+producer-controls.tsv	3061aa0ca90293e467f998d8a9a81dfc8c148e387ba65cf49faedf633bdf54a2	all13 unchanged producer/runtime/source substitution controls pass
+execution-logs.zip	a68cd2753273baafdadb2eb39084087749d1e00d7397ec7b6f66ac25fae19588	original inherited/shared transcripts;52 CLI and51 library module tests;four compiled mutant diffs/diagnostics;preceding-runtime negative;native link/symbol/dependency inspection;fresh toolchain/reference logs;known reporter-I/O gap;actual producer and13 controls PASS with verified private host support
+paired-cases.tsv	afe5a9f6229f44fc351a564c75a97a60cb07c1fb5dcedbee92c626aa48f219ba	all1119 inherited verdicts;identical to preceding times checkpoint
+fixture-totals.tsv	fb3f529064901c0d2e60fece1efc09dbadb2ae0b8aeab75ce4739235e5fad9f0	81 original fixture totals;identical to preceding times checkpoint
+shared-read.tsv	639d7c89a39d3184f04593f98952d72017f1b3a11752ed66f4b3f0ffff3efda5	64 original read cases per shell;known failures retained
+shared-exec.tsv	2803c46ddd0ae6a2b4fd60c69b2aa797c42b7c26237b24980d7fe58d753d0696	6 original exec cases;12 paired records pass
+shared-time.tsv	455a2d00f2b0254acdd2a794b465d15d2ff4698e87572fb667734b137f3bdbfb	original process case9;native/reference pass
+shared-time-pipeline.tsv	1076438fe56358a4051c396154a792b859c61a1128fb1b1792377dfad895a9d2	original misc case3;native/reference pass
+shared-time-errexit.tsv	92a8cb13a923ac98d8e4acebc3063ae992b14e50d047c50c281f0c6986535303	original errexit case12;native/reference pass
+shared-times.tsv	4d9757474d177c6f7c1f724a98084b9d12af876f6578d4c4332bc975aece2675	original builtin-times case0;native/reference pass
+shared-ulimit.tsv	e7bae71dbde6d28c4c0c5f658aed042aaf84794adc2758e1740b7cbd47c00c96	15 paired original ulimit cases
+shared-ulimit-nofile.tsv	b50d619cb96d2f7b73ae9eadb62830de0277ca027c937660d25142662e94474b	additional native-only ulimit case;retained reference defect remains documented
+shared-umask-all.tsv	a860e2f51219f6ab35032ce9d60e1cecc9b5bd8b0835c34d102145474c029feb	all24 original umask cases per shell;22pass and2FAIL in both;cases8/9 remain visible
+shared-umask-basic.tsv	eacdcd83dff4f515e5443ed244b1433a6a9bc81783e5dcbc1929f9ed2048b90b	original umask cases0-7;all16 paired records pass
+shared-umask-symbolic.tsv	93c601910ea52b752e9f6394168461d3ee5773cd097c10d4b12a55caf355317f	original umask cases10-23;all28 paired records pass
+../../.build/ysh-d	5cc4ec6df46e1b7919bce377245adbdcfc1ae976c3896815f98908c18c53e057	final local partial native executable;not committed;clean worktree byte-identical
+../qualify-umask.grease	565ee42e11c00578e6660447ff5716abba9d61907929f87478354b623b6ed368	native D qualifier invoking unchanged original fixture/harness/reference
+../../../../spec/builtin-umask.test.sh	ce54645d4a717591a9ab3f3e284536db4839f99c6d76fcfae56aca490ec1b8d7	unchanged original umask fixture
+../../../../builtin/umask_osh.py	ae4b9d21b6b8273b9acac6a2c40f57abfd72a78e465c9e744646fc1e390077da	retained builtin contract
+../../../../frontend/args.py	1ffde72f7955fe19ef43d179920c75acabf57a3897f1e36405bf1d0895086869	retained flag parsing
+../../../../frontend/flag_def.py	af87eb91c708351a85c4a5ffc51ca045e530adb13b25948d4e66de86e985115f	retained UMASK_SPEC
+../../../../frontend/flag_util.py	54600bd5f20c03ea0c52a8048b6aed8d698a35bf3f2b2df2539bfe996de23af8	retained argument-dispatch boundary
+../../../../pyext/posixmodule.c	48ae6bcd1771f33a0a6ef1c1446fe275b72f71326953c761231e47445eebdb60	retained signed-C-int umask bridge
+../../../../.github/workflows/ysh-d.yml	48794ff8ed21ae67e54325717927746b674b2793e5d54cda7e57347a9d4dec46	owner workflow includes strict original22-case umask gate

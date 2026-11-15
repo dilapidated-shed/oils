@@ -1,0 +1,81 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease and package admission;native umask continuation implemented with explicit shared diagnostic-I/O blocker
+owner_repository	dilapidated-shed/oils;owning task dilapidated-shed/grease issue58
+observed_date	2026-11-14 America/Detroit checkpoint;restoration and validation continue2026-11-15 UTC
+branch	d/ysh-first-slice
+starting_head	c2cf5898c5dbf83abc509fd3e5bc7fad2490efe7
+result_head	d020423af3f2edbb7ab395f6c3c422dd78bfb30d
+local_validation_head	3239b775856b00ff847715a5b308fe7f7433fa48
+identical_repository_tree	50c299211bfb982ba8b081282e46b1729266ac1f;implementation and local validation commits differ only in commit metadata
+implementation_source_tree	404509f46ee0374819517c4b13eef0b7703039b9;HEAD:ysh/d/source
+dirty_state	clean at local validation implementation commit;receipt/documentation changes are separate
+contract_version	builtin/umask_osh.py;frontend/flag_def.py:UMASK_SPEC;original builtin-umask fixture and Python2 harness unchanged
+reference_source	c2cf5898c5dbf83abc509fd3e5bc7fad2490efe7;tracked-clean original Oils reference restoration
+reference_base	dd39aa720c386f9ad007fb96f6475c6afbce297c;retained inherited fixture baseline
+host	disposable container6a1415c1f481;Debian GNU/Linux13 trixie;Linux6.18.57 x86_64;glibc2.41
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3;current host executable
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+druntime_object_import_sha256	2f38da9bd7a6614d4884346980929aedda97b106398a89cfba8c65de720c60e9
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	eb36bda410ed2dc3acbac091ea0dbfe459269426f18b15c30d0c996179dbe389;current host build
+bootstrap	isolated official LDC1.36.0 only to build pinned Icky DMD;archive2d418462d1c3909f5889298d97de061d023850a371ea9d418fc3fd2d4b7e8b19;not acceptance compiler
+binary_name	ysh-d;partial implementation;no complete Grease claim
+binary_bytes	3285832
+binary_sha256	5cc4ec6df46e1b7919bce377245adbdcfc1ae976c3896815f98908c18c53e057
+build_command	/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/generated/linux/release/64/dmd -conf= -fPIC -w -Iysh/d/source -Jstdlib -I/workspace/scratch/8c9ca6473330/toolchain/runtime-dmd/druntime/import -I/workspace/scratch/8c9ca6473330/toolchain/phobos /workspace/scratch/8c9ca6473330/toolchain/phobos/generated/linux/release/64/libphobos2.a -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl -L-Map=ysh/d/.build/native-link.map ysh/d/source/app.d ysh/d/source/yshd/*.d -of=ysh/d/.build/ysh-d
+source_review	PASS bounded umask parser/kernel/argument paths;shared diagnostic reporter/try I/O remains unresolved;not complete reachable-language review
+typecheck	PASS pinned Icky DMD compilation;explicit retained D port;no Idriç typecheck claim
+cli_module_tests	PASS52 modules
+library_module_tests	PASS51 modules
+native_umask_contract	PASS native process-mask query/set;four-digit octal query;numeric/symbolic forms;source/subshell and fork/exec behavior
+numeric_contract	PASS retained whitespace/sign/0o-prefix octal grammar;signed C-int bounds;kernel permission-bit truncation;ordinary errors retain prior mask
+symbolic_contract	PASS retained selection/operators/sequential clauses;X and permission-copy read original invocation snapshot;ordinary parse errors restore original mask
+argument_contract	PASS eager typed arguments evaluated once before rejection;deferred bracket arguments unforced;literal/command-valued blocks not run;usage2 and eager evaluation failure precede mutation
+query_output_errors	PASS closed stdout and /dev/full with working stderr return1 and retain kernel mask;later redirected output restores
+diagnostic_output_errors	BLOCKED shared reporter/try boundary;malformed symbolic warning to /dev/full yields D try status0 versus reference1;both kernel0000;seeded _error and nested try differ
+diagnostic_probe_source	set +o errexit; umask 0124; try { umask 'u+r,q' 2>/dev/full }; echo status=$?; umask
+diagnostic_failure_order	warning precedes mask restoration in retained parser;failed warning write leaves0 in both;no all-errors atomicity claim
+both_output_sinks	BLOCKED shared reporter/flush boundary when query stdout and stderr both target /dev/full
+native_kernel_controls	PASS actual syscall old-mask return;native/external file and directory modes;source/subshell inheritance;isolated controls;no cached mask oracle
+inherited	896 matches;223FAIL;zero TIMEOUT;1119 cases;81 unchanged fixtures
+inherited_reference	1046 matches;73FAIL;zero TIMEOUT
+previous_checkpoint_preservation	PASS identical paired-cases.tsv and fixture-totals.tsv;all896 preceding candidate matches and reference verdicts retained
+shared_umask_all	22PASS2FAIL of24 in each interpreter;unchanged original cases8/9 fail in both because parsed -S/-p output is unimplemented by retained reference;zero TIMEOUT
+shared_umask_all_sha256	a860e2f51219f6ab35032ce9d60e1cecc9b5bd8b0835c34d102145474c029feb
+umask_gate	PASS22 unchanged original cases0-7,10-23 in native D and actual Oils;all44 records pass;original Python2 harness;arbitrary cwd;no new failure allowance
+umask_gate_sha256	565ee42e11c00578e6660447ff5716abba9d61907929f87478354b623b6ed368
+original_umask_fixture_sha256	ce54645d4a717591a9ab3f3e284536db4839f99c6d76fcfae56aca490ec1b8d7
+workflow_sha256	48794ff8ed21ae67e54325717927746b674b2793e5d54cda7e57347a9d4dec46
+shared_time	PASS3/3 native and3/3 actual reference;existing timing gate unchanged
+shared_times	PASS1/1 native and1/1 actual reference;existing cumulative-times gate unchanged
+shared_exec	PASS6/6 native and6/6 actual reference;existing exec gate unchanged
+shared_ulimit	PASS16 native cases and15 paired reference cases;existing gate unchanged;documented reference case25 defect receives no new allowance
+shared_read	62matches2FAIL of64;zero TIMEOUT;reference63matches1FAIL;unchanged table
+negative_controls	PASS4 compiled mutants rejected at runtime1 after compiler0;actual preceding runtime also rejected original umask case10;see negative-controls.tsv
+model_execution	PASS native D;separate original Oils Python2 reference and original harness only;no source-text interpreter fallback
+test_reference	original CPython2.7.13 UCS4;executableeb14858366801a5d2e74832124db692e0cb69a14c79dae4ffd2be332b5a4af31;official source35d543986882f78261f97787fd3e06274bfa6df29fac9b4a94f73930ff98f731
+reference_host_patch	private test-only static mathmodule sinpi helper rename for glibc prototype compatibility;patch13a91cad2008f0d8baecf4d6685633bbd3dc8728c98621defd71d268a3cb7fc4;tracked Oils source unchanged
+gawk	actual GNU gawk5.2.1;binaryf22455a98ecc9bf4e68c726e5574191b33044bddd61e688b5d8bc2bb68423ee4;official source673553b91f9e18cc5792ed51075df8d510c9040f550a6f74e09c9add243a7e4f;private test PATH;no awk substitution
+final_binary_validation	PASS final current executable used for full inherited and shared gates;new module metadata is included
+clean_rebuild	PASS separate clean same-host worktree at local_validation_head;production bytes identical;cmp0
+independent_rebuild	NOT_RUN second-host byte reproducibility of new umask executable
+parse_only	PASS both unchanged retained FP IL-0 programs;--ast-format none -n
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;qualifier95f2b5841204ea9ec9fb01c841b4ec8dd3a7495dfb3e2e2fa048eaa3ae5508a3;Lua87306483cec50f8c750a22dda1d0742246fad756
+producer_missing_dependency_control	PASS actual producer exits1 with BLOCKED missing_ick_driver;not Lua production success;native executable hash preserved before/after
+producer_compiler_recovery	PASS exact Icky C closure recovered from artifact11468256648;published ZIP digest03a86b94e862b1d726ffc369407168145485a055322fda46370a99ccde2e0475 and pinned driver/cc1/collect2 hashes verified;recovery is separate from execution
+producer_restored_compiler_attempt	REJECTED initial actual producer attempt stops at missing_host_gcc13_link_support;restored-compiler-no-host-support/receipt.tsv;subsequently repaired by verified private host support
+producer_host_support	verified official Debian libgcc-13-dev13.3.0-16;package SHA2560cd4b5bbead6f7908db91846caa7d73533e8ffe26e628e60cd572b8bd363fbdf;private extraction bound at unchanged /usr/lib/gcc/x86_64-linux-gnu/13 path inside namespace with read-only root;no system installation
+producer_semantic_execution	PASS actual unchanged qualifier through final ysh-d and exact pinned Icky C closure;interpreter semantics,embedded semantics,embedded source bytes;checked static Lua runtime object;producer process exit0
+producer_thirteen_controls	PASS all13 original controls through final ysh-d;13PASS rows and process exit0;see producer-controls.tsv and raw evidence archive
+dynamic_dependencies	libgcc_s.so.1;libc.so.6;ld-linux-x86-64.so.2;bounded current executable inspection
+symbol_and_link_inspection	PASS bounded no C++ runtime marker;not independent static/transitive exclusion
+independent_ai_ci	NOT_RUN whole-language or static/transitive closure acceptance
+physical_acceptance	NOT_RUN;host syscall and process evidence is not physical-device evidence
+other_targets	NOT_RUN Android or NetBSD;no device compilation or installation
+first_blocker	shared diagnostic reporter/try I/O failure is suppressed in D;reference status1 and seeded/nested control flow differ
+next_untranslated_ordinary_builtin	shift;builtin/assign_osh.py:623;original builtin-misc cases4-6;D exits3 versus reference0
+remaining_work	repair shared reporter/try I/O boundary;translate shift;remaining223 inherited failures;complete reachable shared-shell/interactive semantics;independent closure proof;conditional package acceptance
+next_consumer	Grease issue58;Cat Food131 and FP IL-0 remain conditional;no managed admission
+output_paths	paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;shared-exec.tsv;shared-time.tsv;shared-time-pipeline.tsv;shared-time-errexit.tsv;shared-times.tsv;shared-ulimit.tsv;shared-ulimit-nofile.tsv;shared-umask-all.tsv;shared-umask-basic.tsv;shared-umask-symbolic.tsv;negative-controls.tsv;producer-receipt.tsv;producer-controls.tsv;execution-logs.zip;artifacts.tsv
