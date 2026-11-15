@@ -11,12 +11,14 @@ on:
       - 'spec/builtin-process.test.sh'
       - 'spec/builtin-misc.test.sh'
       - 'spec/builtin-times.test.sh'
+      - 'spec/builtin-umask.test.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
       - 'test/spec_lib.py'
       - 'builtin/process_osh.py'
       - 'builtin/misc_osh.py'
+      - 'builtin/umask_osh.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -27,6 +29,8 @@ on:
       - 'pyext/posixmodule.c'
       - 'mycpp/mops.py'
       - 'frontend/flag_def.py'
+      - 'frontend/args.py'
+      - 'frontend/flag_util.py'
       - '.github/workflows/ysh-d.yml'
   pull_request:
     paths:
@@ -37,12 +41,14 @@ on:
       - 'spec/builtin-process.test.sh'
       - 'spec/builtin-misc.test.sh'
       - 'spec/builtin-times.test.sh'
+      - 'spec/builtin-umask.test.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
       - 'test/spec_lib.py'
       - 'builtin/process_osh.py'
       - 'builtin/misc_osh.py'
+      - 'builtin/umask_osh.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -53,6 +59,8 @@ on:
       - 'pyext/posixmodule.c'
       - 'mycpp/mops.py'
       - 'frontend/flag_def.py'
+      - 'frontend/args.py'
+      - 'frontend/flag_util.py'
       - '.github/workflows/ysh-d.yml'
 
 permissions:
@@ -370,6 +378,9 @@ jobs:
 
       - name: Qualify unchanged times case through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-times.grease
+
+      - name: Qualify unchanged umask cases through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-umask.grease
 
       - name: Preserve tested partial translation
         if: always()

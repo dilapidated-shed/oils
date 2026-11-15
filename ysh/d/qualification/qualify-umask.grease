@@ -1,0 +1,29 @@
+#!/usr/bin/env grease
+# Original fixture and Python-2 reference are test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-umask.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+
+proc compare (range, name, records, matches) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range "$range" --timeout=3 \
+    --tmp-env "$output/tmp/$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/$name.tsv" \
+    "$root/spec/builtin-umask.test.sh" "$output/native-osh" "$root/bin/osh"
+  var actualRecords = $(wc -l < "$output/$name.tsv")
+  test "$actualRecords" -eq "$records"
+  var actualMatches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/$name.tsv")
+  test "$actualMatches" -eq "$matches"
+}
+
+# Original cases8/9 expect -S/-p output absent from the retained reference.
+# Keep their FAILs in the full paired receipt; grant no new native allowance.
+compare 0-7 shared-umask-basic 17 16
+compare 10-23 shared-umask-symbolic 29 28
+echo 'PASS 22 unchanged umask cases in native D and actual Oils'

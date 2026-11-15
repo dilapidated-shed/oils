@@ -2434,6 +2434,12 @@ class ProgramParser {
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "umask":
+                    evalArguments();
+                    if (typedArguments !is null || hasBlock) throw new UsageError("umask does not accept typed arguments");
+                    import yshd.umask : runUmask;
+                    mem.lastStatus = runUmask(words, mem);
+                    return;
                 case "times":
                     // Times ignores arguments after normal eager/lazy typed
                     // argument evaluation. A supplied block is never run.
