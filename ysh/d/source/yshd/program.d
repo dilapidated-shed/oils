@@ -21,7 +21,7 @@ import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
 import yshd.pretty : prettyValue, prettyCell, asdlValue, terminalWidth;
 import yshd.lexer : Lexer, Token, TokenKind, HereDocument;
 import yshd.process : runExternal, execExternal, runPipeline, runSourcePipeline, runSourceJob, captureSourceOutput;
-import yshd.state : Memory, ReturnMode, Frame, DescriptorScope;
+import yshd.state : Memory, ReturnMode, Frame, DescriptorScope, ShellArgumentFrame;
 import yshd.options : ShellOptions;
 import yshd.trace : TraceScope;
 import yshd.var_check : VariableChecker, DefinitionKind;
@@ -2428,12 +2428,24 @@ class ProgramParser {
             auto selectedBuiltin = builtinKind(commandName);
             // core/vm.py:_RunBuiltinProc flushes stdout after each builtin.
             // This must happen before a later command can terminate by signal.
-            scope (exit) if (selectedBuiltin != BuiltinKind.none) flushBuiltinOutput(mem);
+            bool reportFlushError = true;
+            scope (exit) if (selectedBuiltin != BuiltinKind.none)
+                flushBuiltinOutput(mem, commandName, reportFlushError);
+            // The reference collects stdout errors while unwinding, but only
+            // reports them after a normal return from the builtin body.
+            scope (failure) reportFlushError = false;
             if (selectedBuiltin != BuiltinKind.none && (selectedBuiltin != BuiltinKind.privateBuiltin || builtinOnly))
                 mem.trace.builtin(argv, mem);
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "shift":
+                    // The retained special builtin ignores supplied typed
+                    // arguments and blocks after normal argument evaluation.
+                    evalArguments();
+                    import yshd.shift : runShift;
+                    mem.lastStatus = runShift(words, mem);
+                    return;
                 case "umask":
                     evalArguments();
                     if (typedArguments !is null || hasBlock) throw new UsageError("umask does not accept typed arguments");
@@ -2548,11 +2560,15 @@ class ProgramParser {
                 default: break;
                 }
             } catch (UsageError error) {
-                mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 2; return;
+                reportFlushError = false;
+                mem.writeDiagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 2; return;
             } catch (ClosedDescriptorError error) {
-                mem.diagnostic("ysh-d: " ~ error.msg); mem.lastStatus = 1; return;
+                reportFlushError = false;
+                mem.writeDiagnostic("ysh-d: " ~ commandName ~ " builtin I/O error: " ~ error.msg);
+                mem.lastStatus = 1; return;
             } catch (ErrnoException error) {
-                mem.diagnostic("ysh-d: " ~ commandName ~ " builtin I/O error: " ~ error.msg);
+                reportFlushError = false;
+                mem.writeDiagnostic("ysh-d: " ~ commandName ~ " builtin I/O error: " ~ error.msg);
                 mem.lastStatus = 1;
                 return;
             }
@@ -2765,12 +2781,13 @@ class ProgramParser {
         mem.lastStatus = runPipeline(pipeline, mem);
     }
 
-    private void flushBuiltinOutput(Memory mem) {
+    private void flushBuiltinOutput(Memory mem, string builtinName, bool reportErrors) {
         auto output = mem.descriptorFile(1);
         if (!output.isOpen) return;
         try { output.flush(); }
         catch (ErrnoException error) {
-            mem.diagnostic("ysh-d: builtin I/O error: " ~ error.msg);
+            if (!reportErrors) return;
+            mem.writeDiagnostic("ysh-d: " ~ builtinName ~ " builtin I/O error: " ~ error.msg);
             mem.lastStatus = 1;
         }
     }
@@ -2915,15 +2932,15 @@ class ProgramParser {
         auto traceScope = TraceScope(mem, "source", ["source"] ~ words);
         auto savedMode = mem.returnMode;
         auto savedMain = mem.isMain;
-        auto savedArguments = mem.shellArguments;
+        auto savedArguments = mem.shellArgumentFrame;
         mem.returnMode = ReturnMode.shell;
         mem.isMain = false;
-        if (words.length > 1) mem.shellArguments = words[1 .. $].dup;
+        if (words.length > 1) mem.shellArgumentFrame = new ShellArgumentFrame(words[1 .. $]);
         mem.pushSourceDirectory(embedded ? "stdlib/" ~ path : path);
         scope (exit) {
             mem.returnMode = savedMode;
             mem.isMain = savedMain;
-            mem.shellArguments = savedArguments;
+            if (words.length > 1) mem.shellArgumentFrame = savedArguments;
             --mem.sourceDirectories.length;
         }
         try {
@@ -4058,6 +4075,9 @@ class ProgramParser {
         auto savedSuppression = mem.errexitSuppression;
         mem.errexitSuppression = 0;
         scope (exit) mem.errexitSuppression = savedSuppression;
+        bool reportFlushError = true;
+        scope (exit) flushBuiltinOutput(mem, "try", reportFlushError);
+        scope (failure) reportFlushError = false;
         try {
             .executeProgram(body, mem, false, multiline_);
             error.dictValue.set("code", Value.integer(0));
@@ -4069,6 +4089,14 @@ class ProgramParser {
             // Syntax errors aren't runtime exceptions and aren't catchable.
             if (caught.status != 3) throw caught;
             error.dictValue.set("code", Value.integer(3));
+        } catch (ErrnoException caught) {
+            // This is the outer builtin I/O boundary, not a caught shell
+            // error. Inner redirections have restored stderr, and Try.Run
+            // never reached its assignments to the error registers.
+            reportFlushError = false;
+            mem.writeDiagnostic("ysh-d: try builtin I/O error: " ~ caught.msg);
+            mem.lastStatus = 1;
+            return;
         }
         mem.setGlobal("_error", error);
         mem.setGlobal("_status", error.dictValue.get("code"));
@@ -4760,7 +4788,7 @@ class ProgramParser {
             foreach (ch; name) if (ch < '0' || ch > '9') throw new ParseError("Invalid positional parameter");
             try { positionalIndex = to!size_t(name); } catch (Exception error) { throw new ParseError("Positional index is too large"); }
         }
-        bool positionalDefined = !syntaxOnly_ && (positionalIndex == 0 || positionalIndex <= mem.shellArguments.length);
+        bool positionalDefined = !syntaxOnly_ && mem.shellArgumentDefined(positionalIndex);
         string parameterValue() {
             if (syntaxOnly_) return "";
             if (!positional) return mem.wordVariable(name);

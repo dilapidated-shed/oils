@@ -1,0 +1,5 @@
+set +o errexit
+umask 0124
+try { umask >/dev/full }
+echo status=$? error=$[_error.code]
+umask

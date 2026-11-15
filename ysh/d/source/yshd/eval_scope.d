@@ -53,17 +53,20 @@ Value withEvalBindings(Memory mem, EvalOptions options, Value delegate() evaluat
     struct Saved { string name; bool existed; Value value; }
     Saved[] saved;
     auto zero = mem.argumentZero;
-    auto arguments = mem.shellArguments;
+    auto arguments = mem.shellArgumentFrame;
     scope (exit) {
         foreach (binding; saved) {
             if (binding.existed) mem.setVar(binding.name, binding.value);
             else mem.unsetLocal(binding.name);
         }
-        if (options.changeArguments) mem.shellArguments = arguments;
+        if (options.changeArguments) mem.shellArgumentFrame = arguments;
         if (options.changeZero) mem.argumentZero = zero;
     }
     if (options.changeZero) mem.argumentZero = options.dollarZero;
-    if (options.changeArguments) mem.shellArguments = options.arguments.dup;
+    if (options.changeArguments) {
+        import yshd.state : ShellArgumentFrame;
+        mem.shellArgumentFrame = new ShellArgumentFrame(options.arguments);
+    }
     if (options.variables !is null) foreach (name, value; options.variables) {
         auto cell = mem.findLocal(name);
         auto previous = Saved(name, cell !is null, cell is null ? Value.nullValue() : cell.value);

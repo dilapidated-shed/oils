@@ -1,0 +1,6 @@
+set +o errexit
+try { error previous (code=17) }
+umask 0124
+try { umask >/dev/full 2>/dev/full }
+echo status=$? error=$[_error.code]
+umask

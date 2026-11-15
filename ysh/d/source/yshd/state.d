@@ -152,6 +152,61 @@ class DescriptorScope {
     }
 }
 
+/// core/state.py:_ArgFrame retains its original words and a signed cursor.
+/// In particular, a negative shift can expose words consumed earlier.
+class ShellArgumentFrame {
+    private string[] words;
+    private BigInt shifted;
+
+    this(string[] arguments) { reset(arguments); }
+
+    void reset(string[] arguments) {
+        words = arguments.dup;
+        shifted = BigInt(0);
+    }
+
+    string[] visible() {
+        import std.conv : to;
+        auto start = shifted;
+        if (start < 0) start += words.length;
+        if (start < 0) start = BigInt(0);
+        if (start > words.length) start = BigInt(words.length);
+        return words[to!size_t(start) .. $].dup;
+    }
+
+    BigInt count() { return BigInt(words.length) - shifted; }
+
+    int shift(BigInt amount) {
+        auto next = shifted + amount;
+        if (next > words.length) return 1;
+        shifted = next;
+        return 0;
+    }
+
+    private bool position(size_t argument, out size_t index) {
+        import std.conv : to;
+        auto selected = shifted + BigInt(argument) - 1;
+        if (selected >= words.length) return false;
+        if (selected < 0) selected += words.length;
+        // Python's retained list indexing fails below -len(argv). Preserve
+        // the fatal boundary without manufacturing an interpreter traceback.
+        if (selected < 0) throw new FatalRuntimeError("Positional argument index out of range");
+        index = to!size_t(selected);
+        return true;
+    }
+
+    bool defined(size_t argument) {
+        size_t index;
+        return position(argument, index);
+    }
+
+    string argument(size_t argument) {
+        size_t index;
+        if (!position(argument, index)) throw new FatalRuntimeError("Undefined positional argument");
+        return words[index];
+    }
+}
+
 /// The translated lexical frames and shell registers of core/state.py:Mem.
 class Memory {
     TrapState traps;
@@ -222,7 +277,23 @@ class Memory {
     string argumentZero = "ysh-d";
     string workingDirectory;
     DirectoryStack directoryStack;
-    string[] shellArguments;
+    private ShellArgumentFrame currentShellArguments;
+
+    @property ShellArgumentFrame shellArgumentFrame() {
+        if (currentShellArguments is null) currentShellArguments = new ShellArgumentFrame([]);
+        return currentShellArguments;
+    }
+    @property void shellArgumentFrame(ShellArgumentFrame frame) {
+        assert(frame !is null);
+        currentShellArguments = frame;
+    }
+    @property string[] shellArguments() { return shellArgumentFrame.visible(); }
+    @property void shellArguments(string[] arguments) { shellArgumentFrame.reset(arguments); }
+    BigInt shellArgumentCount() { return shellArgumentFrame.count(); }
+    int shiftShellArguments(BigInt amount) { return shellArgumentFrame.shift(amount); }
+    bool shellArgumentDefined(size_t index) {
+        return index == 0 || shellArgumentFrame.defined(index);
+    }
     long rootPid;
     long shellStartTime;
     bool shellEnvironmentInitialized;
@@ -253,7 +324,7 @@ class Memory {
         import std.array : join;
         switch (name) {
         case '?': return to!string(lastStatus);
-        case '#': return to!string(shellArguments.length);
+        case '#': return to!string(shellArgumentCount());
         case '$': return to!string(rootPid);
         case '!':
             if (lastBackgroundPid >= 0) return to!string(lastBackgroundPid);
@@ -286,7 +357,8 @@ class Memory {
     }
 
     string shellArgument(size_t index) {
-        if (index && index <= shellArguments.length) return shellArguments[index - 1];
+        if (index == 0) return argumentZero;
+        if (shellArgumentDefined(index)) return shellArgumentFrame.argument(index);
         if (nounset) throw new FatalRuntimeError("Undefined positional argument");
         return "";
     }
@@ -324,6 +396,17 @@ class Memory {
         if (!errorStream.isOpen) return;
         try { errorStream.writeln(message); }
         catch (ErrnoException error) {} // The command's failure status is retained.
+    }
+
+    // core/vm.py:_RunBuiltinProc lets a failed error report escape the
+    // builtin. The enclosing descriptor scope must unwind before an outer
+    // builtin (for example try) can report that I/O failure.
+    void writeDiagnostic(string message) {
+        import core.stdc.errno : EBADF;
+        import std.exception : ErrnoException;
+        if (!errorStream.isOpen) throw new ErrnoException("writing diagnostic", EBADF);
+        errorStream.writeln(message);
+        errorStream.flush();
     }
     // File values own references to the open-file description.  A permanent
     // exec redirection must retain that reference beyond its redirect scope.
@@ -438,7 +521,7 @@ class Memory {
 
     void initializeArguments(string argumentZero, string[] arguments) {
         this.argumentZero = argumentZero;
-        shellArguments = arguments.dup;
+        shellArguments = arguments;
         Value[] values;
         foreach (argument; arguments) {
             values ~= Value.str(argument);

@@ -1,0 +1,4 @@
+set +o errexit
+umask 0124
+umask 'u+r,q' 2>/dev/full
+echo wrong

@@ -1,0 +1,51 @@
+#!/usr/bin/env grease
+# Paired CLI probes for the retained reporter/try boundary.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-reporter-io.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+var fixtures = "$root/ysh/d/qualification/reporter-io"
+var output = "$root/ysh/d/.build/reporter-io"
+mkdir -p "$output"
+printf 'case\tshell\tstatus\tresult\n' > "$output/paired.tsv"
+
+proc check (name, expectedStatus) {
+  for shell in (['native', 'reference']) {
+    var binary = "$root/ysh/d/.build/ysh-d"
+    if (shell === 'reference') {
+      setvar binary = "$root/bin/ysh"
+    } else {
+      test "$shell" = native
+    }
+    test -x "$binary"
+    var status = 0
+    if "$binary" "$fixtures/$name.grease" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
+      setvar status = 0
+    } else {
+      setvar status = $?
+    }
+    test "$status" -eq "$expectedStatus"
+    if test -f "$fixtures/$name.stdout" {
+      cmp "$fixtures/$name.stdout" "$output/$name.$shell.stdout"
+    } else {
+      test ! -s "$output/$name.$shell.stdout"
+    }
+    test -s "$output/$name.$shell.stderr"
+    printf '%s\t%s\t%s\tpass\n' "$name" "$shell" "$status" >> "$output/paired.tsv"
+  }
+}
+
+check edge 0
+check seeded 0
+check nested 0
+check stdout-only 0
+check both-streams 0
+check top-direct 2
+check top-try 2
+var records = $(wc -l < "$output/paired.tsv")
+test "$records" -eq 15
+var nativeMatches = $(grep -Ec '	native	[02]	pass$' "$output/paired.tsv")
+test "$nativeMatches" -eq 7
+var referenceMatches = $(grep -Ec '	reference	[02]	pass$' "$output/paired.tsv")
+test "$referenceMatches" -eq 7
+echo 'PASS seven paired reporter I/O probes in native D and actual Oils'

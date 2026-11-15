@@ -12,6 +12,7 @@ on:
       - 'spec/builtin-misc.test.sh'
       - 'spec/builtin-times.test.sh'
       - 'spec/builtin-umask.test.sh'
+      - 'spec/arg-parse.test.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
@@ -19,6 +20,10 @@ on:
       - 'builtin/process_osh.py'
       - 'builtin/misc_osh.py'
       - 'builtin/umask_osh.py'
+      - 'builtin/assign_osh.py'
+      - 'builtin/error_ysh.py'
+      - 'bin/oils_for_unix.py'
+      - 'core/state.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -42,6 +47,7 @@ on:
       - 'spec/builtin-misc.test.sh'
       - 'spec/builtin-times.test.sh'
       - 'spec/builtin-umask.test.sh'
+      - 'spec/arg-parse.test.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
@@ -49,6 +55,10 @@ on:
       - 'builtin/process_osh.py'
       - 'builtin/misc_osh.py'
       - 'builtin/umask_osh.py'
+      - 'builtin/assign_osh.py'
+      - 'builtin/error_ysh.py'
+      - 'bin/oils_for_unix.py'
+      - 'core/state.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -381,6 +391,12 @@ jobs:
 
       - name: Qualify unchanged umask cases through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-umask.grease
+
+      - name: Qualify unchanged shift cases through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-shift.grease
+
+      - name: Qualify paired reporter I/O boundaries through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-reporter-io.grease
 
       - name: Preserve tested partial translation
         if: always()

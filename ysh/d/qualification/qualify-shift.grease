@@ -1,0 +1,27 @@
+#!/usr/bin/env grease
+# Original fixtures and Python-2 reference are test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-shift.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+
+proc compare (fixture, range, name, records, matches) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range "$range" --timeout=3 \
+    --tmp-env "$output/tmp/$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/$name.tsv" \
+    "$root/$fixture" "$output/native-osh" "$root/bin/osh"
+  var actualRecords = $(wc -l < "$output/$name.tsv")
+  test "$actualRecords" -eq "$records"
+  var actualMatches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/$name.tsv")
+  test "$actualMatches" -eq "$matches"
+}
+
+compare spec/builtin-misc.test.sh 4-6 shared-shift 7 6
+compare spec/arg-parse.test.sh 1 shared-shift-extra 3 2
+echo 'PASS four unchanged shift cases in native D and actual Oils'

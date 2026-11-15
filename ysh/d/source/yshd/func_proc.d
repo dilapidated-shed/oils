@@ -440,9 +440,10 @@ class YshProc {
         assert(memory !is null);
         auto previousGlobal = memory.setActiveGlobalFrame(moduleFrame);
         auto previousBuiltins = memory.builtins;
-        auto previousArguments = memory.shellArguments;
+        auto previousArguments = memory.shellArgumentFrame;
         auto previousMode = memory.returnMode;
-        memory.shellArguments = words;
+        import yshd.state : ShellArgumentFrame;
+        memory.shellArgumentFrame = new ShellArgumentFrame(words);
         memory.builtins = builtins;
         memory.returnMode = ReturnMode.procValue;
         import yshd.options : ShellOptions;
@@ -454,7 +455,7 @@ class YshProc {
             memory.popFrame();
             memory.setActiveGlobalFrame(previousGlobal);
             memory.builtins = previousBuiltins;
-            memory.shellArguments = previousArguments;
+            memory.shellArgumentFrame = previousArguments;
             memory.returnMode = previousMode;
         }
         try { executeProcedureBody(bodySource, memory, attributeScope, multiline); }

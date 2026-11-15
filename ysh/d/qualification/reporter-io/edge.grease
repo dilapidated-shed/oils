@@ -1,0 +1,5 @@
+set +o errexit
+umask 0124
+try { umask 'u+r,q' 2>/dev/full }
+echo status=$?
+umask

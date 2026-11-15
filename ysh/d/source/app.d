@@ -35,7 +35,9 @@ private int runBatchSource(string source, Memory mem) {
     catch (LexError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 2; }
     catch (YshError error) { mem.diagnostic("ysh-d: " ~ error.msg); status = error.status; }
     catch (FileException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
-    catch (ErrnoException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
+    // bin/oils_for_unix.py:main treats raw, unhandled I/O failures as2.
+    // Ordinary builtin I/O failures have already returned their own status.
+    catch (ErrnoException error) { mem.errorFile.writeln("ysh-d: I/O error (main): ", error.msg); status = 2; }
     return mem.traps.finish(mem, status);
 }
 

@@ -1251,9 +1251,12 @@ private string evaluateReplacement(Value replacement, Memory mem, string dollarZ
     if (replacement.kind == ValueKind.stringValue) return replacement.stringValue;
     auto closure = cast(YshExpression)replacement.callableValue;
     auto previousZero = mem.argumentZero;
-    auto previousArguments = mem.shellArguments;
+    auto previousArguments = mem.shellArgumentFrame;
     mem.argumentZero = dollarZero;
-    if (changePositional) mem.shellArguments = positional;
+    if (changePositional) {
+        import yshd.state : ShellArgumentFrame;
+        mem.shellArgumentFrame = new ShellArgumentFrame(positional);
+    }
     auto frame = mem.currentFrame;
     import yshd.state : Cell;
     Cell[string] previousCells;
@@ -1264,7 +1267,7 @@ private string evaluateReplacement(Value replacement, Memory mem, string dollarZ
     }
     scope (exit) {
         mem.argumentZero = previousZero;
-        mem.shellArguments = previousArguments;
+        if (changePositional) mem.shellArgumentFrame = previousArguments;
         foreach (name, cell; previousCells) {
             if (cell is null) frame.cells.remove(name);
             else frame.cells.set(name, cell);
