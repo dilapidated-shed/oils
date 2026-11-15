@@ -1,6 +1,7 @@
 module yshd.program;
 
 import std.algorithm : sort, endsWith;
+import std.bigint : BigInt;
 import std.conv : to;
 import std.file : FileException, chdir, read;
 import std.exception : ErrnoException;
@@ -2792,6 +2793,28 @@ class ProgramParser {
         }
     }
 
+    // Parsed builtins still enter the same runtime boundary as argv-dispatched
+    // builtins. Their argument expressions are evaluated before this call.
+    private void runParsedBuiltin(Memory mem, string builtinName, void delegate() body) {
+        bool reportFlushError = true;
+        scope (exit) flushBuiltinOutput(mem, builtinName, reportFlushError);
+        scope (failure) reportFlushError = false;
+        try { body(); }
+        catch (UsageError error) {
+            reportFlushError = false;
+            mem.writeDiagnostic("ysh-d: " ~ error.msg);
+            mem.lastStatus = 2;
+        } catch (ClosedDescriptorError error) {
+            reportFlushError = false;
+            mem.writeDiagnostic("ysh-d: " ~ builtinName ~ " builtin I/O error: " ~ error.msg);
+            mem.lastStatus = 1;
+        } catch (ErrnoException error) {
+            reportFlushError = false;
+            mem.writeDiagnostic("ysh-d: " ~ builtinName ~ " builtin I/O error: " ~ error.msg);
+            mem.lastStatus = 1;
+        }
+    }
+
     private void parseShopt(Memory mem) {
         advance(); // shopt
         string[] words;
@@ -3945,10 +3968,9 @@ class ProgramParser {
         }
     }
 
-    /// YSH `call f(...)` evaluates a function-call expression for its
-    /// side effects and discards the returned value.
     private void parseJson(Memory mem) {
-        auto encoding = current_.text == "json8" ? WriteEncoding.j8 : WriteEncoding.json;
+        auto builtinName = current_.text;
+        auto encoding = builtinName == "json8" ? WriteEncoding.j8 : WriteEncoding.json;
         bool hasTyped;
         advance(); // json
         string[] words;
@@ -3960,103 +3982,104 @@ class ProgramParser {
             ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
             : parseTypedArguments("()", true);
         if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after JSON typed arguments");
-        if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) &&
-                (words[0] == "write" || words[0] == "read"))) {
-            mem.errorFile.writeln("json: expected read or write with no word arguments");
-            mem.lastStatus = 2;
-            return;
-        }
         auto values = arguments.eval(mem);
-        if (words[0] == "read") {
-            import yshd.data_decode : decodeDataValue, DataDecodeError;
-            import yshd.state : FramePlace;
-            import std.exception : ErrnoException;
-            Value place;
-            if (hasTyped) {
-                if (values.positional.length != 1 || values.named.length || values.hasBlock ||
-                        values.positional[0].kind != ValueKind.placeValue)
-                    throw new YshTypeError("json read expects one Place argument");
-                place = values.positional[0];
-            } else place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
-            string contents;
-            try {
-                while (true) {
-                    auto chunk = mem.inputFile.readln();
-                    if (!chunk.length) break;
-                    contents ~= chunk;
+        runParsedBuiltin(mem, builtinName, {
+            if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) &&
+                    (words[0] == "write" || words[0] == "read")))
+                throw new UsageError(builtinName ~ ": expected read or write with no word arguments");
+            if (words[0] == "read") {
+                import yshd.data_decode : decodeDataValue, DataDecodeError;
+                import yshd.state : FramePlace;
+                Value place;
+                if (hasTyped) {
+                    if (values.positional.length != 1 || values.named.length || values.hasBlock ||
+                            values.positional[0].kind != ValueKind.placeValue)
+                        throw new YshTypeError("json read expects one Place argument");
+                    place = values.positional[0];
+                } else place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
+                string contents;
+                try {
+                    while (true) {
+                        auto chunk = mem.inputFile.readln();
+                        if (!chunk.length) break;
+                        contents ~= chunk;
+                    }
+                    auto value = decodeDataValue(contents, encoding == WriteEncoding.j8);
+                    place.placeValue.assign(value);
+                } catch (DataDecodeError error) {
+                    mem.writeDiagnostic(builtinName ~ " read: " ~ error.msg);
+                    mem.lastStatus = 1;
+                    return;
+                } catch (ErrnoException error) {
+                    mem.writeDiagnostic(builtinName ~ " read: " ~ error.msg);
+                    mem.lastStatus = 1;
+                    return;
                 }
-                auto value = decodeDataValue(contents, encoding == WriteEncoding.j8);
-                place.placeValue.assign(value);
-            } catch (DataDecodeError error) {
-                mem.errorFile.writeln("json read: ", error.msg);
-                mem.lastStatus = 1;
+                mem.lastStatus = 0;
                 return;
-            } catch (ErrnoException error) {
-                mem.errorFile.writeln("json read: ", error.msg);
+            }
+            if (values.positional.length != 1 || values.hasBlock)
+                throw new YshTypeError("json write expects one typed argument");
+            auto options = dataOptions(values.named, 2);
+            // Buffer before writing so errors never leave an incomplete document.
+            try {
+                auto message = encodeDataValue(values.positional[0], encoding, options.space, options.typeErrors);
+                mem.outputFile.writeln(message);
+            } catch (DataEncodeError error) {
+                mem.writeDiagnostic(builtinName ~ " write: " ~ error.msg);
                 mem.lastStatus = 1;
                 return;
             }
             mem.lastStatus = 0;
-            return;
-        }
-        if (values.positional.length != 1 || values.hasBlock)
-            throw new YshTypeError("json write expects one typed argument");
-        auto options = dataOptions(values.named, 2);
-        // Buffer before writing so errors never leave an incomplete document.
-        try {
-            auto message = encodeDataValue(values.positional[0], encoding, options.space, options.typeErrors);
-            mem.outputFile.writeln(message);
-        } catch (DataEncodeError error) {
-            mem.errorFile.writeln("json write: ", error.msg);
-            mem.lastStatus = 1;
-            return;
-        }
-        mem.lastStatus = 0;
+        });
     }
 
     private void parsePrettyPrint(Memory mem) {
         advance(); // pp
-        if (current_.kind != TokenKind.name) throw new UsageError("pp: expected an action");
-        auto action = current_.text;
-        advance();
-        if (action == "frame_vars_") {
-            string[] names;
-            foreach (name, cell; mem.currentFrame.cells) names ~= name;
-            mem.outputFile.writeln("    [frame_vars_] ", names.join(" "));
-            mem.lastStatus = 0;
-            return;
-        }
-        if (action == "cell_") {
-            string[] names;
-            while (!isEndStatement(current_.kind)) names ~= readCommandWord(mem);
-            mem.lastStatus = 0;
-            foreach (name; names) {
-                if (!name.length || !asciiIdentifierStart(name[0])) throw new UsageError("pp cell_: invalid variable name");
-                foreach (ch; name) if (!asciiIdentifierContinue(ch)) throw new UsageError("pp cell_: invalid variable name");
-                auto cell = mem.getCell(name);
-                if (cell is null) {
-                    mem.errorFile.writeln("pp: Couldn't find a variable named ", name);
-                    mem.lastStatus = 1;
-                } else mem.outputFile.writeln(prettyCell(name, cell.value, cell.readOnly, terminalWidth(mem.outputFile.fileno())));
-            }
-            return;
-        }
-        if (action != "value" && action != "test_" && action != "asdl_") throw new UsageError("pp: invalid action " ~ action);
+        string[] words;
+        while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen)
+            words ~= readCommandWord(mem);
         auto parsed = current_.kind == TokenKind.leftParen
             ? parseTypedArguments("(" ~ collectParenthesizedExpression(true) ~ ")", true)
             : parseTypedArguments("()", true);
-        if (!isEndStatement(current_.kind)) throw new UsageError("pp: unexpected word arguments");
+        if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after pp typed arguments");
         auto values = parsed.eval(mem);
-        if (values.positional.length != 1 || values.named.length || values.hasBlock)
-            throw new YshTypeError("pp expects one typed argument");
-        auto value = values.positional[0];
-        if (action == "value") mem.outputFile.writeln(prettyValue(value, terminalWidth(mem.outputFile.fileno())));
-        else if (action == "asdl_") mem.outputFile.writeln(asdlValue(value, terminalWidth(mem.outputFile.fileno())));
-        else {
-            if (value.kind <= ValueKind.dict || value.kind == ValueKind.objectValue) mem.outputFile.write("(", kindName(value), ")   ");
-            mem.outputFile.writeln(encodeDataValue(value, WriteEncoding.j8, -1, false, true));
-        }
-        mem.lastStatus = 0;
+        runParsedBuiltin(mem, "pp", {
+            if (!words.length) throw new UsageError("pp: expected an action");
+            auto action = words[0];
+            if (action == "frame_vars_") {
+                string[] names;
+                foreach (name, cell; mem.currentFrame.cells) names ~= name;
+                mem.outputFile.writeln("    [frame_vars_] ", names.join(" "));
+                mem.lastStatus = 0;
+                return;
+            }
+            if (action == "cell_") {
+                mem.lastStatus = 0;
+                foreach (name; words[1 .. $]) {
+                    if (!name.length || !asciiIdentifierStart(name[0])) throw new UsageError("pp cell_: invalid variable name");
+                    foreach (ch; name) if (!asciiIdentifierContinue(ch)) throw new UsageError("pp cell_: invalid variable name");
+                    auto cell = mem.getCell(name);
+                    if (cell is null) {
+                        mem.writeDiagnostic("pp: Couldn't find a variable named " ~ name);
+                        mem.lastStatus = 1;
+                    } else mem.outputFile.writeln(prettyCell(name, cell.value, cell.readOnly, terminalWidth(mem.outputFile.fileno())));
+                }
+                return;
+            }
+            if (action != "value" && action != "test_" && action != "asdl_") throw new UsageError("pp: invalid action " ~ action);
+            if (words.length != 1) throw new UsageError("pp: unexpected word arguments");
+            if (values.positional.length != 1 || values.named.length || values.hasBlock)
+                throw new YshTypeError("pp expects one typed argument");
+            auto value = values.positional[0];
+            if (action == "value") mem.outputFile.writeln(prettyValue(value, terminalWidth(mem.outputFile.fileno())));
+            else if (action == "asdl_") mem.outputFile.writeln(asdlValue(value, terminalWidth(mem.outputFile.fileno())));
+            else {
+                if (value.kind <= ValueKind.dict || value.kind == ValueKind.objectValue) mem.outputFile.write("(", kindName(value), ")   ");
+                mem.outputFile.writeln(encodeDataValue(value, WriteEncoding.j8, -1, false, true));
+            }
+            mem.lastStatus = 0;
+        });
     }
 
     private void runRead(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
@@ -4783,10 +4806,12 @@ class ProgramParser {
             if (mem.nounset) throw new FatalRuntimeError("Undefined shell array element");
             return "";
         }
-        size_t positionalIndex;
+        BigInt positionalIndex;
         if (positional) {
-            foreach (ch; name) if (ch < '0' || ch > '9') throw new ParseError("Invalid positional parameter");
-            try { positionalIndex = to!size_t(name); } catch (Exception error) { throw new ParseError("Positional index is too large"); }
+            foreach (ch; name) {
+                if (ch < '0' || ch > '9') throw new ParseError("Invalid positional parameter");
+                positionalIndex = positionalIndex * 10 + (ch - '0');
+            }
         }
         bool positionalDefined = !syntaxOnly_ && mem.shellArgumentDefined(positionalIndex);
         string parameterValue() {

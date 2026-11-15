@@ -1,0 +1,4 @@
+set +o errexit
+try { error previous (code=17) }
+try { json write (42) >/dev/full }
+echo status=$? error=$[_error.code]

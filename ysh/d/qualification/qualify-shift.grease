@@ -24,4 +24,11 @@ proc compare (fixture, range, name, records, matches) {
 
 compare spec/builtin-misc.test.sh 4-6 shared-shift 7 6
 compare spec/arg-parse.test.sh 1 shared-shift-extra 3 2
-echo 'PASS four unchanged shift cases in native D and actual Oils'
+"$root/ysh/d/.build/ysh-d" "$directory/shift-wide.grease" > "$output/shift-wide.native.stdout" 2> "$output/shift-wide.native.stderr"
+"$root/bin/ysh" "$directory/shift-wide.grease" > "$output/shift-wide.reference.stdout" 2> "$output/shift-wide.reference.stderr"
+cmp "$directory/shift-wide.stdout" "$output/shift-wide.native.stdout"
+cmp "$directory/shift-wide.stdout" "$output/shift-wide.reference.stdout"
+test ! -s "$output/shift-wide.native.stderr"
+test ! -s "$output/shift-wide.reference.stderr"
+printf 'case\tshell\tstatus\tresult\nwide-index\tnative\t0\tpass\nwide-index\treference\t0\tpass\n' > "$output/shared-shift-wide.tsv"
+echo 'PASS four unchanged shift cases and one wide-index probe in native D and actual Oils'

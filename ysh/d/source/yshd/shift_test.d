@@ -58,6 +58,27 @@ version (unittest) {
 
     unittest {
         auto mem = memory();
+        run(`
+            set -- alpha '' 'two words'
+            shift -18446744073709551623
+            echo "${18446744073709551624}"
+            echo "${00018446744073709551624}"
+            echo "${18446744073709551625-default}"
+            echo "${18446744073709551625:-default}"
+            echo "${18446744073709551625+present}"
+            echo "${18446744073709551626}"
+            echo "${18446744073709551627-default}"
+            echo $#
+            shift 18446744073709551623
+            echo "$1:$3:$#"
+        `, mem);
+        assert(contents(mem.outputFile) ==
+            "alpha\nalpha\n\ndefault\npresent\ntwo words\ndefault\n18446744073709551626\nalpha:two words:3\n");
+        assert(mem.lastStatus == 0 && contents(mem.errorFile) == "");
+    }
+
+    unittest {
+        auto mem = memory();
         mem.initializeArguments("zero", ["a", "b", "c"]);
         enum huge = "99999999999999999999999999999999999999999999999999";
         assert(runShift(["-" ~ huge], mem) == 0);

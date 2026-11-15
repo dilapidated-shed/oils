@@ -183,9 +183,9 @@ class ShellArgumentFrame {
         return 0;
     }
 
-    private bool position(size_t argument, out size_t index) {
+    private bool position(BigInt argument, out size_t index) {
         import std.conv : to;
-        auto selected = shifted + BigInt(argument) - 1;
+        auto selected = shifted + argument - 1;
         if (selected >= words.length) return false;
         if (selected < 0) selected += words.length;
         // Python's retained list indexing fails below -len(argv). Preserve
@@ -195,16 +195,18 @@ class ShellArgumentFrame {
         return true;
     }
 
-    bool defined(size_t argument) {
+    bool defined(BigInt argument) {
         size_t index;
         return position(argument, index);
     }
+    bool defined(size_t argument) { return defined(BigInt(argument)); }
 
-    string argument(size_t argument) {
+    string argument(BigInt argument) {
         size_t index;
         if (!position(argument, index)) throw new FatalRuntimeError("Undefined positional argument");
         return words[index];
     }
+    string argument(size_t argument) { return this.argument(BigInt(argument)); }
 }
 
 /// The translated lexical frames and shell registers of core/state.py:Mem.
@@ -291,9 +293,10 @@ class Memory {
     @property void shellArguments(string[] arguments) { shellArgumentFrame.reset(arguments); }
     BigInt shellArgumentCount() { return shellArgumentFrame.count(); }
     int shiftShellArguments(BigInt amount) { return shellArgumentFrame.shift(amount); }
-    bool shellArgumentDefined(size_t index) {
+    bool shellArgumentDefined(BigInt index) {
         return index == 0 || shellArgumentFrame.defined(index);
     }
+    bool shellArgumentDefined(size_t index) { return shellArgumentDefined(BigInt(index)); }
     long rootPid;
     long shellStartTime;
     bool shellEnvironmentInitialized;
@@ -356,12 +359,13 @@ class Memory {
         }
     }
 
-    string shellArgument(size_t index) {
+    string shellArgument(BigInt index) {
         if (index == 0) return argumentZero;
         if (shellArgumentDefined(index)) return shellArgumentFrame.argument(index);
         if (nounset) throw new FatalRuntimeError("Undefined positional argument");
         return "";
     }
+    string shellArgument(size_t index) { return shellArgument(BigInt(index)); }
 
     // Command aliases are shell parser state, not lexical-frame variables.
     // Keep them across source/eval and calls that share this Memory.

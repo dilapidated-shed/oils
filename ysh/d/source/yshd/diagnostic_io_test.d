@@ -159,4 +159,41 @@ version (unittest) {
             assert(failed && contents(mem.errorFile) == "");
         });
     }
+
+    unittest {
+        isolated("parsed data builtins retain the VM I/O boundary", {
+            foreach (command; ["json write (42)", "json8 write (42)", "pp value (42)",
+                    "pp test_ (42)", "pp asdl_ (42)", "pp cell_ retained", "pp frame_vars_"]) {
+                struct Sink { string redirect; string expected; string marker; }
+                foreach (sink; [
+                        Sink(">/dev/full", "status=0 error=1\n", "builtin I/O error"),
+                        Sink(">&-", "status=0 error=1\n", "builtin I/O error"),
+                        Sink(">/dev/full 2>/dev/full", "status=1 error=17\n", "try builtin I/O error"),
+                        Sink(">&- 2>&-", "status=1 error=17\n", "try builtin I/O error")]) {
+                    auto mem = memory();
+                    executeProgram("set +o errexit; var retained = 42; try { error previous (code=17) }; " ~
+                        "try { " ~ command ~ " " ~ sink.redirect ~ " }; echo status=$? error=$[_error.code]", mem);
+                    assert(mem.lastStatus == 0 && contents(mem.outputFile) == sink.expected,
+                        command ~ " " ~ sink.redirect ~ "\n" ~ contents(mem.outputFile));
+                    assert(contents(mem.errorFile).indexOf(sink.marker) >= 0, command ~ " " ~ sink.redirect);
+                }
+            }
+            foreach (command; ["json write (1 / 0)", "json8 write (1 / 0)", "pp value (1 / 0)",
+                    "json invalid (1 / 0)", "pp invalid (1 / 0)", "json write ('text'; space='invalid')"]) {
+                auto mem = memory();
+                executeProgram("set +o errexit; try { error previous (code=17) }; try { " ~ command ~
+                    " >/dev/full 2>/dev/full }; echo status=$? error=$[_error.code]", mem);
+                assert(contents(mem.outputFile) == "status=0 error=3\n", command);
+                assert(contents(mem.errorFile) == "", command ~ ": output failure replaced an earlier typed error");
+            }
+            foreach (command; ["json read <<< 'invalid'", "json8 read <<< 'invalid'", "pp cell_ absent",
+                    "json write (1..<3)", "json8 write (1..<3)"]) {
+                auto mem = memory();
+                executeProgram("set +o errexit; try { error previous (code=17) }; try { " ~ command ~
+                    " 2>/dev/full }; echo status=$? error=$[_error.code]", mem);
+                assert(contents(mem.outputFile) == "status=1 error=17\n", command);
+                assert(contents(mem.errorFile).indexOf("try builtin I/O error") >= 0, command);
+            }
+        });
+    }
 }

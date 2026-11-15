@@ -40,12 +40,14 @@ check seeded 0
 check nested 0
 check stdout-only 0
 check both-streams 0
+check json-write-full 0
+check json-both-streams 0
 check top-direct 2
 check top-try 2
 var records = $(wc -l < "$output/paired.tsv")
-test "$records" -eq 15
+test "$records" -eq 19
 var nativeMatches = $(grep -Ec '	native	[02]	pass$' "$output/paired.tsv")
-test "$nativeMatches" -eq 7
+test "$nativeMatches" -eq 9
 var referenceMatches = $(grep -Ec '	reference	[02]	pass$' "$output/paired.tsv")
-test "$referenceMatches" -eq 7
-echo 'PASS seven paired reporter I/O probes in native D and actual Oils'
+test "$referenceMatches" -eq 9
+echo 'PASS nine paired reporter I/O probes in native D and actual Oils'
