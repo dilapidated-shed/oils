@@ -84,3 +84,29 @@ case-pattern and bracket-command parsing gaps in uncalled function bodies.
 The exact reducers `f() { case $x in a@b*) true ;; esac; }` and
 `f() { [ -n x ]; }` remain dependencies. Whole updater execution, default
 strict-errexit parity and complete qualification remain unverified.
+
+## Final oracle-only correction
+
+Run `43796799174` at `1da92072c1d188501ad3eac47d93fc95a425ccd0`
+collected all 28 rows, with 24 PASS and four failed assertions. Its retained
+artifact `14195081089` binds the unchanged executable
+`d34240e3efec7059ea36b28fff816a9caf2852d6b9c91a7d524e8c92bb422021`.
+The default pipeline and compound failures are genuine: native status 0 versus
+actual reference status 1, with Pipeline/BraceGroup strict-errexit diagnostics.
+
+Two remaining golden assumptions need correction without changing runtime:
+the reference rejects redirects on the control-flow command `exit`, so that
+specimen becomes an explicit invalid-input case requiring status 2 and a
+diagnostic. Native acceptance remains a failure. A separate legal parse-only
+specimen, `! false >/dev/null; echo forbidden`, must produce no stdout; any
+execution would print the sentinel.
+
+Canonical `display/ui.py:PrintAst` intentionally writes `AST not printed.\n`
+to stderr for format `none`. The earlier author implementation and root's
+quiet-mode advice both missed that notice. Successful reference parse probes
+now require its exact bytes; native successful parses separately require empty
+diagnostics. This is an explicitly declared output difference, not byte-parity
+or runtime-qualification evidence. All previous raw artifacts remain intact.
+The corrected qualifier collects all 30 rows and must still fail for genuine
+default semantic or invalid-input divergences. No native implementation is
+changed, and no approval or green result is asserted.

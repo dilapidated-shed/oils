@@ -36,7 +36,17 @@ proc check (name, mode, source, expectedStatus, expectedOutput, expectedError) {
     var result = 'PASS'
     if test "$status" -eq "$expectedStatus" {} else { setvar result = 'FAIL' }
     if cmp -s "$output/$name.expected" "$output/$name.$shell.stdout" {} else { setvar result = 'FAIL' }
-    if (expectedError === 'present') {
+    if (expectedError === 'parse-success') {
+      # PrintAst intentionally reports this notice even with format none.
+      # Native D currently emits no parse diagnostic; these are declared
+      # implementation-specific contracts rather than byte-parity evidence.
+      if (shell === 'reference') {
+        printf '%s\n' 'AST not printed.' > "$output/$name.$shell.expected-stderr"
+      } else {
+        printf '%s' '' > "$output/$name.$shell.expected-stderr"
+      }
+      if cmp -s "$output/$name.$shell.expected-stderr" "$output/$name.$shell.stderr" {} else { setvar result = 'FAIL' }
+    } elif (expectedError === 'present') {
       if test -s "$output/$name.$shell.stderr" {} else { setvar result = 'FAIL' }
     } else {
       test "$expectedError" = empty
@@ -55,7 +65,10 @@ check errexit execute 'set -e; ! true >/dev/null; echo after' 0 b'after\n' empty
 check pipeline execute '! true | false' 1 '' present
 check compound execute '! { echo hidden; false; } >/dev/null; echo status=$?' 1 '' present
 check quoted-document execute b'! cat >/dev/null <<\'EOF\'\nliteral $undefined [body]\nEOF\necho status=$?' 0 b'status=1\n' empty
-check no-execution parse '! exit 91 >/dev/null; if ! false >/dev/null 2>&1; then exit 92; fi' 0 '' empty
+check no-execution parse '! false >/dev/null; echo forbidden' 0 '' parse-success
+# The reference forbids redirects on control-flow commands. Native acceptance
+# remains a required failure; this specimen is not a valid no-execution probe.
+check control-flow-redirect parse '! exit 91 >/dev/null; if ! false >/dev/null 2>&1; then exit 92; fi' 2 '' present
 check empty parse '!' 2 '' present
 check missing-redirect parse '! true >' 2 '' present
 check missing-pipeline parse '! true |' 2 '' present
@@ -64,17 +77,17 @@ check missing-document parse b'! cat <<\'EOF\'\nmissing terminator\n' 2 '' prese
 
 var consumer = "$root/.catfood-negated-command/update-tools.ysh"
 printf '%s  %s\n' a426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45 "$consumer" | sha256sum -c -
-check updater parse-file "$consumer" 0 '' empty
+check updater parse-file "$consumer" 0 '' parse-success
 var records = $(wc -l < "$output/cases.tsv")
-test "$records" -eq 29
+test "$records" -eq 31
 var sourceRevision = $(git -C "$root" rev-parse HEAD)
 var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
 var qualification = 'PASS'
 if test "$failures" -ne 0 { setvar qualification = 'FAIL' }
-printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\npaired_cli_cases\t26\nconsumer_parse_cases\t2\nfailed_cases\t%s\nqualification_result\t%s\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" "$failures" "$qualification" > "$output/receipt.tsv"
+printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\npaired_cli_cases\t28\nconsumer_parse_cases\t2\nparse_diagnostics\tnative-empty/reference-exact-ast-not-printed-notice\nfailed_cases\t%s\nqualification_result\t%s\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" "$failures" "$qualification" > "$output/receipt.tsv"
 printf 'consumer_revision\td85832da32e5b0e1905003b62737f54129f192de\nconsumer_sha256\ta426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45\n' >> "$output/receipt.tsv"
 if test "$failures" -ne 0 {
   echo "FAIL $failures required negation/consumer results; complete evidence retained" >&2
   exit 1
 }
-echo 'PASS 26 paired negation CLI controls and unchanged Cat Food updater parse'
+echo 'PASS 28 paired negation CLI controls and unchanged Cat Food updater parse'
