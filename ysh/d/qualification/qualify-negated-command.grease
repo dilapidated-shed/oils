@@ -16,7 +16,7 @@ proc check (name, mode, source, expectedStatus, expectedOutput) {
     if (shell === 'reference') { setvar binary = "$root/bin/ysh" }
     var status = 0
     if (mode === 'parse') {
-      if "$binary" -n -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
+      if "$binary" -n --ast-format none -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
         setvar status = 0
       } else { setvar status = $? }
     } else {
@@ -55,8 +55,8 @@ printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime
 
 var consumer = "$root/.catfood-negated-command/update-tools.ysh"
 printf '%s  %s\n' a426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45 "$consumer" | sha256sum -c -
-"$root/ysh/d/.build/ysh-d" -n "$consumer" > "$output/updater.native.stdout" 2> "$output/updater.native.stderr"
-"$root/bin/ysh" -n "$consumer" > "$output/updater.reference.stdout" 2> "$output/updater.reference.stderr"
+"$root/ysh/d/.build/ysh-d" -n --ast-format none "$consumer" > "$output/updater.native.stdout" 2> "$output/updater.native.stderr"
+"$root/bin/ysh" -n --ast-format none "$consumer" > "$output/updater.reference.stdout" 2> "$output/updater.reference.stderr"
 test ! -s "$output/updater.native.stdout"
 test ! -s "$output/updater.native.stderr"
 test ! -s "$output/updater.reference.stdout"

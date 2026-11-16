@@ -37,3 +37,15 @@ Further updater parser/runtime failures are separate measured dependencies.
 No whole-language result, independent static/transitive C++ closure, managed
 admission, source-host execution or live updater acceptance follows from
 parse-only success.
+
+## Initial qualifier correction
+
+The first published qualifier at `3e1de799b5ca490e4f457d283e2d8358d003a642`
+incorrectly expected empty reference stdout for bare `-n`. The retained
+`frontend/flag_def.py` defaults `--ast-format` to `abbrev-text`, and
+`core/shell.py` prints the AST during parse-only operation. Both binaries must
+receive the explicit supported `-n --ast-format none` selection for the quiet
+parse contract. This is a test-oracle defect, not a runtime failure; the empty
+output assertions remain strict. Owner run `43795133190` preserves the initial
+attempt. The other Grease qualification programs contain no paired `-n` probes
+with this assumption.
