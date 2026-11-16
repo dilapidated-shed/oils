@@ -49,3 +49,38 @@ parse contract. This is a test-oracle defect, not a runtime failure; the empty
 output assertions remain strict. Owner run `43795133190` preserves the initial
 attempt. The other Grease qualification programs contain no paired `-n` probes
 with this assumption.
+
+The actual compiled `3e1de799` artifact also exposed a parameter-type mistake
+in the qualifier: proc word arguments are `Str`, so comparing `expectedStatus`
+with integer `2` using typed exact equality selects the wrong stderr branch.
+A real CLI control printed `false true` for comparisons to `2` and `'2'`.
+The qualifier uses numeric shell `test` for that status branch, preserving
+required diagnostics for invalid input and empty stderr for valid input.
+
+## Measured next dependency
+
+Owner run `43795340812` at `720a873639d5c3d629bf1724d61eb137d72d5e1c`
+compiled and passed the native suites, six CLI controls, paired ENV controls,
+all existing inherited/shared gates and unchanged Kitchen transfer fixture.
+The new paired gate then stopped at default `! true | false`: native D ran it,
+while the actual reference reported `strict_errexit`, `OILS-ERR-300`.
+Artifact `14194277010` preserves those streams. The original qualifier did not
+save that failing reference status before asserting; an initial report of
+status 2 was an unsupported assumption and is corrected. Canonical `e_die`
+raises `FatalRuntime(1)`; the final collection records actual statuses before
+checking them.
+
+The reference's `_HasManyStatuses` recursively classifies command AST shapes,
+including redirect/sentence wrappers, singleton and multi-stage pipelines and
+AndOr children. The D source-dispatch model does not retain that reusable
+structural status shape. A token blacklist would not implement this rule.
+The final qualifier preserves required default pipeline/compound refusal
+controls, collects all valid/invalid probes and both unchanged updater parses,
+then exits nonzero for any divergence. No `set +e` replacement or runtime
+guard approximation clears those failures.
+
+Separately, the updater's imported repository helper exposes unquoted `@`
+case-pattern and bracket-command parsing gaps in uncalled function bodies.
+The exact reducers `f() { case $x in a@b*) true ;; esac; }` and
+`f() { [ -n x ]; }` remain dependencies. Whole updater execution, default
+strict-errexit parity and complete qualification remain unverified.

@@ -6,9 +6,10 @@ var directory = $(dirname "$0")
 var root = $(realpath "$directory/../../..")
 var output = "$root/ysh/d/.build/negated-command"
 mkdir "$output"
+var failures = 0
 printf 'case\tshell\tstatus\tresult\n' > "$output/cases.tsv"
 
-proc check (name, mode, source, expectedStatus, expectedOutput) {
+proc check (name, mode, source, expectedStatus, expectedOutput, expectedError) {
   printf '%s' "$source" > "$output/$name.source"
   printf '%s' "$expectedOutput" > "$output/$name.expected"
   for shell in (['native', 'reference']) {
@@ -19,47 +20,61 @@ proc check (name, mode, source, expectedStatus, expectedOutput) {
       if "$binary" -n --ast-format none -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
         setvar status = 0
       } else { setvar status = $? }
+    } elif (mode === 'parse-file') {
+      if "$binary" -n --ast-format none "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
+        setvar status = 0
+      } else { setvar status = $? }
     } else {
       test "$mode" = execute
       if "$binary" -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
         setvar status = 0
       } else { setvar status = $? }
     }
-    test "$status" -eq "$expectedStatus"
-    cmp "$output/$name.expected" "$output/$name.$shell.stdout"
-    if (expectedStatus === 2) {
-      test -s "$output/$name.$shell.stderr"
-    } else { test ! -s "$output/$name.$shell.stderr" }
-    printf '%s\t%s\t%s\tPASS\n' "$name" "$shell" "$status" >> "$output/cases.tsv"
+    # Preserve every actual result before checking it. A known mismatch must
+    # not prevent the other implementation or later consumer from running.
+    printf '%s\n' "$status" > "$output/$name.$shell.status"
+    var result = 'PASS'
+    if test "$status" -eq "$expectedStatus" {} else { setvar result = 'FAIL' }
+    if cmp -s "$output/$name.expected" "$output/$name.$shell.stdout" {} else { setvar result = 'FAIL' }
+    if (expectedError === 'present') {
+      if test -s "$output/$name.$shell.stderr" {} else { setvar result = 'FAIL' }
+    } else {
+      test "$expectedError" = empty
+      if test ! -s "$output/$name.$shell.stderr" {} else { setvar result = 'FAIL' }
+    }
+    if (result === 'FAIL') { setglobal failures += 1 }
+    printf '%s\t%s\t%s\t%s\n' "$name" "$shell" "$status" "$result" >> "$output/cases.tsv"
   }
 }
 
-check redirect-true execute '! true >/dev/null' 1 ''
-check redirect-false execute '! false >/dev/null 2>&1' 0 ''
-check retained-if execute 'if ! false >/dev/null 2>&1; then echo selected; else echo wrong; fi' 0 b'selected\n'
-check errexit execute 'set -e; ! true >/dev/null; echo after' 0 b'after\n'
-check pipeline execute '! true | false' 0 ''
-check compound execute '! { echo hidden; false; } >/dev/null; echo status=$?' 0 b'status=0\n'
-check quoted-document execute b'! cat >/dev/null <<\'EOF\'\nliteral $undefined [body]\nEOF\necho status=$?' 0 b'status=1\n'
-check no-execution parse '! exit 91 >/dev/null; if ! false >/dev/null 2>&1; then exit 92; fi' 0 ''
-check empty parse '!' 2 ''
-check missing-redirect parse '! true >' 2 ''
-check missing-pipeline parse '! true |' 2 ''
-check malformed-expression parse '! echo $[1 +]' 2 ''
-check missing-document parse b'! cat <<\'EOF\'\nmissing terminator\n' 2 ''
-var records = $(wc -l < "$output/cases.tsv")
-test "$records" -eq 27
-var sourceRevision = $(git -C "$root" rev-parse HEAD)
-var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
-printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\npaired_cli_cases\t26\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" > "$output/receipt.tsv"
+check redirect-true execute '! true >/dev/null' 1 '' empty
+check redirect-false execute '! false >/dev/null 2>&1' 0 '' empty
+check retained-if execute 'if ! false >/dev/null 2>&1; then echo selected; else echo wrong; fi' 0 b'selected\n' empty
+check errexit execute 'set -e; ! true >/dev/null; echo after' 0 b'after\n' empty
+# These default strict_errexit refusals remain required counterexamples.
+check pipeline execute '! true | false' 1 '' present
+check compound execute '! { echo hidden; false; } >/dev/null; echo status=$?' 1 '' present
+check quoted-document execute b'! cat >/dev/null <<\'EOF\'\nliteral $undefined [body]\nEOF\necho status=$?' 0 b'status=1\n' empty
+check no-execution parse '! exit 91 >/dev/null; if ! false >/dev/null 2>&1; then exit 92; fi' 0 '' empty
+check empty parse '!' 2 '' present
+check missing-redirect parse '! true >' 2 '' present
+check missing-pipeline parse '! true |' 2 '' present
+check malformed-expression parse '! echo $[1 +]' 2 '' present
+check missing-document parse b'! cat <<\'EOF\'\nmissing terminator\n' 2 '' present
 
 var consumer = "$root/.catfood-negated-command/update-tools.ysh"
 printf '%s  %s\n' a426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45 "$consumer" | sha256sum -c -
-"$root/ysh/d/.build/ysh-d" -n --ast-format none "$consumer" > "$output/updater.native.stdout" 2> "$output/updater.native.stderr"
-"$root/bin/ysh" -n --ast-format none "$consumer" > "$output/updater.reference.stdout" 2> "$output/updater.reference.stderr"
-test ! -s "$output/updater.native.stdout"
-test ! -s "$output/updater.native.stderr"
-test ! -s "$output/updater.reference.stdout"
-test ! -s "$output/updater.reference.stderr"
-printf 'consumer_revision\td85832da32e5b0e1905003b62737f54129f192de\nconsumer_sha256\ta426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45\nconsumer_parse\tPASS\n' >> "$output/receipt.tsv"
+check updater parse-file "$consumer" 0 '' empty
+var records = $(wc -l < "$output/cases.tsv")
+test "$records" -eq 29
+var sourceRevision = $(git -C "$root" rev-parse HEAD)
+var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
+var qualification = 'PASS'
+if test "$failures" -ne 0 { setvar qualification = 'FAIL' }
+printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\npaired_cli_cases\t26\nconsumer_parse_cases\t2\nfailed_cases\t%s\nqualification_result\t%s\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" "$failures" "$qualification" > "$output/receipt.tsv"
+printf 'consumer_revision\td85832da32e5b0e1905003b62737f54129f192de\nconsumer_sha256\ta426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45\n' >> "$output/receipt.tsv"
+if test "$failures" -ne 0 {
+  echo "FAIL $failures required negation/consumer results; complete evidence retained" >&2
+  exit 1
+}
 echo 'PASS 26 paired negation CLI controls and unchanged Cat Food updater parse'
