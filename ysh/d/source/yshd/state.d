@@ -616,18 +616,19 @@ class Memory {
 
         string[string] result;
         foreach (name, value; env.dictValue) {
-            if (value.kind != ValueKind.stringValue) {
-                throw new YshError(format("ENV.%s must be a Str", name));
-            }
-            result[name] = value.stringValue;
+            // core/state.py:_FillEnvObj ignores non-Str properties rather
+            // than stringifying them or rejecting process creation.
+            if (value.kind == ValueKind.stringValue) result[name] = value.stringValue;
         }
         if (!options.get("env_obj") && shellEnvironmentInitialized) result = null;
         if (!options.get("no_exported")) foreach (frame; frameStack) foreach (name, cell; frame.cells) {
             if (cell.exported && cell.value.kind == ValueKind.stringValue) result[name] = cell.value.stringValue;
         }
-        // ENV overlays exported cells in ysh:upgrade, as GetEnv does in the
-        // reference. A removed ENV property must not revive a host variable.
-        if (options.get("env_obj")) foreach (name, value; env.dictValue) result[name] = value.stringValue;
+        // ENV strings overlay exported cells in ysh:upgrade. Non-Str ENV
+        // members leave those earlier exported entries intact, as _FillEnvObj does.
+        if (options.get("env_obj")) foreach (name, value; env.dictValue) {
+            if (value.kind == ValueKind.stringValue) result[name] = value.stringValue;
+        }
         return result;
     }
 

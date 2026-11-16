@@ -2,10 +2,10 @@ module yshd.dispatch_test;
 
 version (unittest) {
     import std.stdio : File;
-    import yshd.state : Memory;
+    import yshd.state : Cell, Memory;
     import yshd.program : executeProgram;
     import yshd.printf_osh : runPrintf;
-    import yshd.value : UsageError;
+    import yshd.value : UsageError, Value, ValueKind, YshError;
 
     private string contents(File file) {
         file.rewind();
@@ -83,5 +83,45 @@ version (unittest) {
         assert(mem.getEnv("PATH") == "/chosen/path");
         executeProgram("unset PATH", mem);
         assert(mem.getEnv("PATH", "missing") == "missing");
+    }
+
+    unittest {
+        auto mem = new Memory(File.tmpfile(), File.tmpfile(), File.tmpfile());
+        mem.options.set("ysh:all", true);
+        mem.initializeShellEnvironment();
+        auto env = mem.get("ENV").dictValue;
+        env.set("NATIVE_ENV_STRING", Value.str("kept"));
+        env.set("NATIVE_ENV_EMPTY", Value.str(""));
+        env.set("NATIVE_ENV_NULL", Value.nullValue());
+        env.set("NATIVE_ENV_INTEGER", Value.integer(42));
+        env.set("NATIVE_ENV_BOOLEAN", Value.boolean(false));
+        env.set("NATIVE_ENV_LIST", Value.list([Value.str("not exported")]));
+        env.set("NATIVE_ENV_DICT", Value.dict());
+        auto child = mem.childEnvironment();
+        assert(child["NATIVE_ENV_STRING"] == "kept");
+        assert("NATIVE_ENV_EMPTY" in child && child["NATIVE_ENV_EMPTY"] == "");
+        foreach (name; ["NATIVE_ENV_NULL", "NATIVE_ENV_INTEGER", "NATIVE_ENV_BOOLEAN", "NATIVE_ENV_LIST", "NATIVE_ENV_DICT"])
+            assert(name !in child);
+        assert(env.get("NATIVE_ENV_NULL").kind == ValueKind.nullValue);
+        assert(env.get("NATIVE_ENV_INTEGER").integerValue == 42);
+        assert(env.get("NATIVE_ENV_LIST").listValue.length == 1);
+
+        // GetEnv fills exported cells first, then overlays only ENV strings.
+        mem.options.set("no_exported", false);
+        auto exported = new Cell(Value.str("exported"));
+        exported.exported = true;
+        mem.globalFrame.cells.set("NATIVE_ENV_SHADOW", exported);
+        env.set("NATIVE_ENV_SHADOW", Value.nullValue());
+        assert(mem.childEnvironment()["NATIVE_ENV_SHADOW"] == "exported");
+        env.set("NATIVE_ENV_SHADOW", Value.str("overlay"));
+        assert(mem.childEnvironment()["NATIVE_ENV_SHADOW"] == "overlay");
+        mem.options.set("env_obj", false);
+        assert(mem.childEnvironment()["NATIVE_ENV_SHADOW"] == "exported");
+        assert("NATIVE_ENV_STRING" !in mem.childEnvironment());
+        mem.options.set("env_obj", true);
+        bool scalarRejected;
+        try { mem.getEnv("NATIVE_ENV_NULL"); }
+        catch (YshError error) { scalarRejected = true; }
+        assert(scalarRejected);
     }
 }

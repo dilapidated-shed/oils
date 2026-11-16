@@ -1,0 +1,3 @@
+string-kept
+
+PASS strings retained and non-string ENV members omitted

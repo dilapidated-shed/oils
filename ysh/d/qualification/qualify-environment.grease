@@ -1,0 +1,18 @@
+#!/usr/bin/env grease
+# The original Python-backed Oils reference is a separate test-only process.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-environment.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+var output = "$root/ysh/d/.build/environment-values"
+mkdir "$output"
+env NATIVE_ENV_REMOVED=synthetic-inherited-value "$root/ysh/d/.build/ysh-d" "$root/ysh/d/qualification/environment-values.grease" > "$output/native.stdout" 2> "$output/native.stderr"
+env NATIVE_ENV_REMOVED=synthetic-inherited-value "$root/bin/ysh" "$root/ysh/d/qualification/environment-values.grease" > "$output/reference.stdout" 2> "$output/reference.stderr"
+cmp "$root/ysh/d/qualification/environment-values.stdout" "$output/native.stdout"
+cmp "$root/ysh/d/qualification/environment-values.stdout" "$output/reference.stdout"
+test ! -s "$output/native.stderr"
+test ! -s "$output/reference.stderr"
+var sourceRevision = $(git -C "$root" rev-parse HEAD)
+var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
+printf 'schema\tgrease-d-environment-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\nnative\tPASS\nreference\tPASS\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" > "$output/receipt.tsv"
+echo 'PASS actual native/reference child ENV string filtering'

@@ -51,3 +51,16 @@ PENDING until the exact owner workflow completes. No local D compiler is present
 This repair does not implement `getopts`, close the remaining inherited
 behavior gaps, establish static/transitive C++ exclusion, admit a managed
 runtime, or reopen the parked whole-translation PR. Those are separate outcomes.
+
+## Actual owner build
+
+Run `43789537062` compiled source
+`b5da24fc85341be4409e6b1b22ab7e7731d574b0` through the pinned Icky DMD and passed
+the native units, six CLI controls, dynamic dependency checks, original smoke,
+inherited/reference collection and shared gates. Actual executable SHA-256:
+`4762f4f859e19b2248425fe7c3dbb8aa8f83e6cc61625450c2a85a28bae2ca83`.
+Artifact `14192007139` and its exact ZIP digest are recorded in the
+[next environment attempt](../native-env-values/attempt.md). The whole job
+correctly remains FAIL because the unchanged Kitchen consumer then exposed
+`ENV.GH_TOKEN must be a Str`, before any transfer POST. This is a distinct next
+runtime gap, not a failed version check or a reason to waive the consumer.

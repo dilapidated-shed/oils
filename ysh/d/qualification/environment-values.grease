@@ -1,0 +1,22 @@
+#!/usr/bin/env grease
+# Literal source run through native D and the actual retained Oils reference.
+set -eu -o pipefail
+setglobal ENV.NATIVE_ENV_REMOVED = null
+setglobal ENV.NATIVE_ENV_STRING = 'string-kept'
+setglobal ENV.NATIVE_ENV_EMPTY = ''
+setglobal ENV.NATIVE_ENV_INTEGER = 42
+setglobal ENV.NATIVE_ENV_BOOLEAN = false
+setglobal ENV.NATIVE_ENV_LIST = ['not-exported']
+setglobal ENV.NATIVE_ENV_DICT = {value: 'not-exported'}
+/usr/bin/printenv NATIVE_ENV_STRING
+/usr/bin/printenv NATIVE_ENV_EMPTY
+for name in NATIVE_ENV_REMOVED NATIVE_ENV_INTEGER NATIVE_ENV_BOOLEAN NATIVE_ENV_LIST NATIVE_ENV_DICT {
+    if /usr/bin/printenv "$name"; then
+        echo "non-string ENV member reached child: $name" >&2
+        exit 1
+    fi
+}
+assert [ENV.NATIVE_ENV_REMOVED === null]
+assert [ENV.NATIVE_ENV_INTEGER === 42]
+assert [len(ENV.NATIVE_ENV_LIST) === 1]
+echo 'PASS strings retained and non-string ENV members omitted'

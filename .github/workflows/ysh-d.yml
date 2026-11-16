@@ -371,6 +371,9 @@ jobs:
           python3 ysh/d/qualification/run-inherited-spec.py \
             --fixture spec/ysh-builtins.test.sh
 
+      - name: Compare actual native and reference child environment values
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-environment.grease
+
       - name: Compare all unchanged inherited YSH and Grease fixtures
         shell: bash
         run: |
@@ -431,6 +434,7 @@ jobs:
             ysh/d/.build/native-needed.txt
             ysh/d/.build/native-resolved.txt
             ysh/d/.build/cli-version/
+            ysh/d/.build/environment-values/
             ysh/d/.build/inherited-spec/
           if-no-files-found: error
           retention-days: 90
