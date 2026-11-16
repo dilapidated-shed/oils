@@ -1,0 +1,67 @@
+#!/usr/bin/env grease
+# Source/host CLI evidence only; this does not admit a managed Grease package.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-cli-version.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+var binary = "$root/ysh/d/.build/ysh-d"
+var output = "$root/ysh/d/.build/cli-version"
+test -x "$binary"
+mkdir "$output"
+var sourceVersion = $(head -n 1 "$root/oils-version.txt")
+printf 'Oils %s\t\thttps://oils.pub/\n\nImplementation: native D translation (partial)\n' "$sourceVersion" > "$output/expected.stdout"
+mkdir "$output/unrelated directory"
+cd "$output/unrelated directory"
+"$binary" --version > "$output/direct.stdout" 2> "$output/direct.stderr"
+cmp "$output/expected.stdout" "$output/direct.stdout"
+test ! -s "$output/direct.stderr"
+"$binary" -e --version -c 'touch "$1"' version-control "$output/unexecuted" > "$output/options.stdout" 2> "$output/options.stderr"
+cmp "$output/expected.stdout" "$output/options.stdout"
+test ! -s "$output/options.stderr"
+test ! -e "$output/unexecuted"
+var invalidStatus = 0
+if "$binary" --version --invalid-version-control > "$output/invalid.stdout" 2> "$output/invalid.stderr"; then
+    echo 'invalid flag unexpectedly accepted with --version' >&2
+    exit 1
+else
+    setvar invalidStatus = $?
+fi
+test "$invalidStatus" -eq 2
+test ! -s "$output/invalid.stdout"
+test -s "$output/invalid.stderr"
+var missingStatus = 0
+if "$binary" --version -c > "$output/missing.stdout" 2> "$output/missing.stderr"; then
+    echo 'missing -c operand unexpectedly accepted with --version' >&2
+    exit 1
+else
+    setvar missingStatus = $?
+fi
+test "$missingStatus" -eq 2
+test ! -s "$output/missing.stdout"
+test -s "$output/missing.stderr"
+var commandStatus = 0
+if "$binary" -c 'exit 23' --version > "$output/command.stdout" 2> "$output/command.stderr"; then
+    echo '--version argv word replaced command status' >&2
+    exit 1
+else
+    setvar commandStatus = $?
+fi
+test "$commandStatus" -eq 23
+test ! -s "$output/command.stdout"
+test ! -s "$output/command.stderr"
+test -e /dev/full
+var outputStatus = 0
+if "$binary" --version > /dev/full 2> "$output/full.stderr"; then
+    echo 'failed version output unexpectedly returned success' >&2
+    exit 1
+else
+    setvar outputStatus = $?
+fi
+test "$outputStatus" -eq 2
+test -s "$output/full.stderr"
+printf 'case\tstatus\tresult\ndirect\t0\tPASS\nno-execution\t0\tPASS\ninvalid-flag\t2\tPASS\nmissing-command\t2\tPASS\ncommand-argv\t23\tPASS\noutput-failure\t2\tPASS\n' > "$output/cases.tsv"
+var sourceRevision = $(git -C "$root" rev-parse HEAD)
+var binarySha = $(sha256sum "$binary" | cut -d ' ' -f 1)
+var versionSourceSha = $(sha256sum "$root/oils-version.txt" | cut -d ' ' -f 1)
+printf 'schema\tgrease-d-cli-version-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\nversion_source_sha256\t%s\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$binarySha" "$versionSourceSha" > "$output/receipt.tsv"
+echo 'PASS source-bound native D version identity and six CLI controls'

@@ -2,8 +2,8 @@ module app;
 
 import std.file : FileException, exists, read;
 import std.exception : ErrnoException;
-import std.stdio : stderr, stdin, writeln;
-import std.string : join;
+import std.stdio : stderr, stdin, stdout, writeln;
+import std.string : indexOf, join;
 import std.path : baseName;
 import core.stdc.locale : setlocale, LC_CTYPE, LC_COLLATE;
 
@@ -14,6 +14,26 @@ import yshd.func_proc : ProcReturn;
 import yshd.state : Memory, ReturnMode;
 import yshd.options : ShellOptions;
 import yshd.value : UsageError, YshError, repr;
+
+private string versionDescription() {
+    // core/pyutil.py:GetVersion ignores everything after the first line.
+    enum sourceVersion = import("oils-version.txt");
+    auto lineEnd = sourceVersion.indexOf('\n');
+    auto referenceVersion = lineEnd < 0 ? sourceVersion : sourceVersion[0 .. lineEnd];
+    return "Oils " ~ referenceVersion ~ "\t\thttps://oils.pub/\n\n" ~
+        "Implementation: native D translation (partial)";
+}
+
+private int printVersion() {
+    try {
+        stdout.writeln(versionDescription());
+        stdout.flush();
+        return 0;
+    } catch (ErrnoException error) {
+        stderr.writeln("ysh-d: I/O error (version): ", error.msg);
+        return 2;
+    }
+}
 
 private Memory shellMemory(string argumentZero, string[] arguments,
         ShellOptions options = null) {
@@ -53,13 +73,17 @@ int main(string[] args) {
         size_t sourceIndex = 1;
         bool literalPath;
         bool commandString;
+        bool versionRequested;
         // The reference selects its initial option group before applying CLI
         // flags. The shared OSH mode is also needed by inherited upgrade tests.
         auto executableName = baseName(args[0]);
         auto options = new ShellOptions(executableName != "osh" && executableName != "osh-d");
         while (sourceIndex < args.length) {
             auto option = args[sourceIndex];
-            if (option == "-n") {
+            if (option == "--version") {
+                versionRequested = true;
+                ++sourceIndex;
+            } else if (option == "-n") {
                 options.setOld("noexec", true);
                 ++sourceIndex;
             } else if (option == "--ast-format" || option == "--ast-format=none") {
@@ -97,6 +121,13 @@ int main(string[] args) {
                 break;
             }
         }
+        // As in core/shell.py, validate flags before reporting identity, then
+        // return without opening a source file or executing a command.
+        if (commandString && args.length == sourceIndex) {
+            stderr.writeln("ysh-d: -c requires program text");
+            return 2;
+        }
+        if (versionRequested) return printVersion();
         parseOnly = options.get("noexec");
 
         if (!commandString && (sourceIndex == args.length || (!literalPath && args[sourceIndex] == "-"))) {
@@ -121,10 +152,6 @@ int main(string[] args) {
         }
 
         if (commandString) {
-            if (args.length == sourceIndex) {
-                stderr.writeln("ysh-d: -c requires program text");
-                return 2;
-            }
             // Only the next argv member is source. Later words initialize
             // $0 and ARGV; they must never be joined into executable text.
             auto source = args[sourceIndex];
@@ -175,6 +202,13 @@ int main(string[] args) {
 }
 
 unittest {
+    assert(versionDescription().indexOf("\nImplementation: native D translation (partial)") >= 0);
+    assert(main(["ysh-d", "--version"]) == 0);
+    assert(main(["osh-d", "-e", "--version"]) == 0);
+    assert(main(["ysh-d", "--version", "-c", "exit 91"]) == 0);
+    assert(main(["ysh-d", "--version", "--invalid-version-control"]) == 2);
+    assert(main(["ysh-d", "--version", "-c"]) == 2);
+    assert(main(["ysh-d", "-c", "exit 23", "--version"]) == 23);
     assert(main(["ysh-d", "-c", "case ('μx') { / <capture dot> / { assert [_group(1) === 'μ'] } }"]) == 0);
     // CLI words after -c belong to argv, even when they look executable.
     assert(main(["ysh-d", "-c", "true", "not-source", "echo", "wrong"]) == 0);

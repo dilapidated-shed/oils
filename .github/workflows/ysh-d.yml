@@ -5,6 +5,7 @@ on:
     branches: [d/ysh-first-slice]
     paths:
       - 'ysh/d/**'
+      - 'oils-version.txt'
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
       - 'stdlib/**'
@@ -40,6 +41,7 @@ on:
   pull_request:
     paths:
       - 'ysh/d/**'
+      - 'oils-version.txt'
       - 'frontend/option_def.py'
       - 'frontend/option_gen.py'
       - 'stdlib/**'
@@ -171,6 +173,7 @@ jobs:
             -conf= -fPIC -w
             -Iysh/d/source
             -Jstdlib
+            -J.
             -I"$GITHUB_WORKSPACE/.runtime-dmd/druntime/import"
             -I"$GITHUB_WORKSPACE/.runtime-phobos"
             "$phobos"
@@ -195,6 +198,9 @@ jobs:
 
       - name: Check CLI argument boundaries and terminal status
         run: ysh/d/.build/ysh-d-cli-unittests -c true
+
+      - name: Qualify source-bound partial native CLI version identity
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-cli-version.grease
 
       - name: Reject dynamically linked C++ dependencies in D YSH
         shell: bash
@@ -401,6 +407,20 @@ jobs:
       - name: Qualify paired reporter I/O boundaries through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-reporter-io.grease
 
+      - name: Check out the retained Kitchen consumer fixture
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: isomorphisms/kitchen
+          ref: 32c3bf2d7c6268b50f1e48395dc972cfbafec7a9
+          path: .kitchen-cli-version
+          persist-credentials: false
+
+      - name: Execute the unchanged native transfer consumer fixture
+        shell: sh
+        env:
+          GREASE_BINARY: ${{ github.workspace }}/ysh/d/.build/ysh-d
+        run: sh .kitchen-cli-version/tests/github-repository-transfer-grease.sh
+
       - name: Preserve tested partial translation
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -410,6 +430,7 @@ jobs:
             ysh/d/.build/ysh-d
             ysh/d/.build/native-needed.txt
             ysh/d/.build/native-resolved.txt
+            ysh/d/.build/cli-version/
             ysh/d/.build/inherited-spec/
           if-no-files-found: error
           retention-days: 90
