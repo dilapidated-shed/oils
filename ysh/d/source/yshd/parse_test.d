@@ -16,6 +16,16 @@ version (unittest) {
     }
 
     unittest {
+        foreach (source; ["! true >/dev/null", "if ! false >/dev/null 2>&1; then :; fi",
+                "! true | false", "! { echo hidden; false; } >/dev/null",
+                "! cat >/dev/null <<'EOF'\nliteral $undefined [body]\nEOF\n"])
+            parseProgram(source);
+        foreach (source; ["!", "! ;", "! true >", "! true |", "! { echo bad;",
+                "! cat <<'EOF'\nmissing terminator\n", "! echo $[1 +]"])
+            rejects(source);
+    }
+
+    unittest {
         import yshd.options : ShellOptions;
         import yshd.state : ReturnMode;
         // The word grammar owns ordinary shell brackets. An unpaired byte

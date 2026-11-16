@@ -489,9 +489,7 @@ class ProgramParser {
                 parseReturn(null);
                 break;
             case TokenKind.bang:
-                advance();
-                if (isEndStatement(current_.kind)) throw new YshError("expected command after '!'");
-                parseProgram(collectRhs(false));
+                parseNegatedCommand(null);
                 break;
             case TokenKind.name:
                 if (!completeCommandWord(source_, current_)) { parseCommandWords(); break; }
@@ -854,12 +852,35 @@ class ProgramParser {
 
     private void parseNegatedCommand(Memory mem) {
         advance();
-        auto command = collectRhs(false);
+        auto command = collectNegatedCommand();
         if (command.length == 0) throw new YshError("! requires a command");
+        parseProgram(command);
+        if (syntaxOnly_) return;
         ++mem.errexitSuppression;
         scope (exit) --mem.errexitSuppression;
         executeProgram(command, mem);
         mem.lastStatus = mem.lastStatus == 0 ? 1 : 0;
+    }
+
+    /// Negation owns shell source, not an expression RHS. In particular, a
+    /// slash following > is a redirect word rather than an Eggex delimiter.
+    private string collectNegatedCommand() {
+        auto start = current_.offset;
+        auto scanner = commandScannerAt(start);
+        int depth;
+        size_t end;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof || (!depth && isEndStatement(token.kind))) {
+                end = token.offset;
+                break;
+            }
+            adjustDepth(depth, token);
+        }
+        auto command = commandFragment(start, 0, end, scanner);
+        if (!scanner.documents().length) moveTo(start + end);
+        else while (current_.kind != TokenKind.eof && current_.offset < start + end) advance();
+        return command;
     }
 
     /// Expand a command-position, unquoted alias using the same D parser

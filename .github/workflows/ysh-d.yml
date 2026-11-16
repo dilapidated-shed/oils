@@ -424,6 +424,17 @@ jobs:
           GREASE_BINARY: ${{ github.workspace }}/ysh/d/.build/ysh-d
         run: sh .kitchen-cli-version/tests/github-repository-transfer-grease.sh
 
+      - name: Check out the retained Cat Food updater parse consumer
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: isomorphisms/catfood
+          ref: d85832da32e5b0e1905003b62737f54129f192de
+          path: .catfood-negated-command
+          persist-credentials: false
+
+      - name: Compare actual native and reference negated shell commands
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-negated-command.grease
+
       - name: Preserve tested partial translation
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -435,6 +446,7 @@ jobs:
             ysh/d/.build/native-resolved.txt
             ysh/d/.build/cli-version/
             ysh/d/.build/environment-values/
+            ysh/d/.build/negated-command/
             ysh/d/.build/inherited-spec/
           if-no-files-found: error
           retention-days: 90

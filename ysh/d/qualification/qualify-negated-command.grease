@@ -1,0 +1,65 @@
+#!/usr/bin/env grease
+# Real paired CLI controls; the reference is a separate test-only process.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-negated-command.grease takes no arguments' >&2; exit 2 }
+var directory = $(dirname "$0")
+var root = $(realpath "$directory/../../..")
+var output = "$root/ysh/d/.build/negated-command"
+mkdir "$output"
+printf 'case\tshell\tstatus\tresult\n' > "$output/cases.tsv"
+
+proc check (name, mode, source, expectedStatus, expectedOutput) {
+  printf '%s' "$source" > "$output/$name.source"
+  printf '%s' "$expectedOutput" > "$output/$name.expected"
+  for shell in (['native', 'reference']) {
+    var binary = "$root/ysh/d/.build/ysh-d"
+    if (shell === 'reference') { setvar binary = "$root/bin/ysh" }
+    var status = 0
+    if (mode === 'parse') {
+      if "$binary" -n -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
+        setvar status = 0
+      } else { setvar status = $? }
+    } else {
+      test "$mode" = execute
+      if "$binary" -c "$source" > "$output/$name.$shell.stdout" 2> "$output/$name.$shell.stderr" {
+        setvar status = 0
+      } else { setvar status = $? }
+    }
+    test "$status" -eq "$expectedStatus"
+    cmp "$output/$name.expected" "$output/$name.$shell.stdout"
+    if (expectedStatus === 2) {
+      test -s "$output/$name.$shell.stderr"
+    } else { test ! -s "$output/$name.$shell.stderr" }
+    printf '%s\t%s\t%s\tPASS\n' "$name" "$shell" "$status" >> "$output/cases.tsv"
+  }
+}
+
+check redirect-true execute '! true >/dev/null' 1 ''
+check redirect-false execute '! false >/dev/null 2>&1' 0 ''
+check retained-if execute 'if ! false >/dev/null 2>&1; then echo selected; else echo wrong; fi' 0 b'selected\n'
+check errexit execute 'set -e; ! true >/dev/null; echo after' 0 b'after\n'
+check pipeline execute '! true | false' 0 ''
+check compound execute '! { echo hidden; false; } >/dev/null; echo status=$?' 0 b'status=0\n'
+check quoted-document execute b'! cat >/dev/null <<\'EOF\'\nliteral $undefined [body]\nEOF\necho status=$?' 0 b'status=1\n'
+check no-execution parse '! exit 91 >/dev/null; if ! false >/dev/null 2>&1; then exit 92; fi' 0 ''
+check empty parse '!' 2 ''
+check missing-redirect parse '! true >' 2 ''
+check missing-pipeline parse '! true |' 2 ''
+check malformed-expression parse '! echo $[1 +]' 2 ''
+check missing-document parse b'! cat <<\'EOF\'\nmissing terminator\n' 2 ''
+var records = $(wc -l < "$output/cases.tsv")
+test "$records" -eq 27
+var sourceRevision = $(git -C "$root" rev-parse HEAD)
+var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
+printf 'schema\tgrease-d-negated-command-source-v1\nsource_revision\t%s\nruntime_sha256\t%s\npaired_cli_cases\t26\nscope\tSOURCE_HOST_ONLY\nmanaged_admission\tNOT_VERIFIED\n' "$sourceRevision" "$runtimeSha" > "$output/receipt.tsv"
+
+var consumer = "$root/.catfood-negated-command/update-tools.ysh"
+printf '%s  %s\n' a426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45 "$consumer" | sha256sum -c -
+"$root/ysh/d/.build/ysh-d" -n "$consumer" > "$output/updater.native.stdout" 2> "$output/updater.native.stderr"
+"$root/bin/ysh" -n "$consumer" > "$output/updater.reference.stdout" 2> "$output/updater.reference.stderr"
+test ! -s "$output/updater.native.stdout"
+test ! -s "$output/updater.native.stderr"
+test ! -s "$output/updater.reference.stdout"
+test ! -s "$output/updater.reference.stderr"
+printf 'consumer_revision\td85832da32e5b0e1905003b62737f54129f192de\nconsumer_sha256\ta426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45\nconsumer_parse\tPASS\n' >> "$output/receipt.tsv"
+echo 'PASS 26 paired negation CLI controls and unchanged Cat Food updater parse'
