@@ -4,6 +4,105 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Retained hash and shared executable cache, 2026-11-19
+
+This continues SUN IL0-CFREE-01 from retained head
+`cf4083fb47f4eb9c904af16a8fd77ca42976b804`. Implementation commit
+`99f76d3e01ecbd0fc6a5ab013fec0a146e864d50` and local validation commit
+`3cf5693ea391e9633d3e632cc341e5032f2ec39b` have the identical complete tree
+`3a4436a8055dc086ba0d41e810cdf2ae2e6be24b`, source subtree
+`bd3afa9146de390210e178aef06ac3fbfab1fb01`. The native runtime is 3,319,776
+bytes, SHA-256 `0d1d1e1104fc2243e78b9b6c738036ee9503a502297b4b8721d16100832f397d`.
+Pinned Icky DMD builds pass. Sequential native executions pass 58 library and
+59 CLI/module suites. A separate clean worktree rebuild reproduces the exact
+production bytes on this host; second-host reproducibility is not established.
+
+The slice follows `builtin/pure_osh.py:Hash`, `core/executor.py:SearchPath` and
+`core/sh_init.py:EnvConfig`. One Memory-owned cache stores successful name-to-path
+lookups. Hash prints sorted path values, preserving duplicates belonging to
+different names. It accepts only retained flags, rejects typed arguments after
+normal eager preparation, preserves prior cache changes when later operands
+fail, and does not cache unsuccessful lookup. The flag parser's original
+`-0` to `-Z` diagnostic mapping is retained rather than silently corrected.
+
+Ordinary external commands and explicit exec resolve through this same cache
+before forking or replacing the shell. Existing entries are neither revalidated
+nor cleared when PATH, cwd or the filesystem changes. A deleted cached command
+therefore fails rather than falling through to another PATH entry. Reflection
+uses fresh regular-executable lookup without populating the cache. Command -p
+uses the exact retained six-directory default search without reading or writing
+the cache. Explicit slash paths use the reference's existence-only selection;
+bare PATH search skips directories and nonexecutable files. Shell functions and
+the last foreground pipeline stage share parent state, while producer stages,
+subshells, substitutions and background jobs retain process isolation. The
+legacy expanded-argv pipeline path also avoids inserting producer-only entries
+into the parent.
+
+Lookup reads configured PATH independently of child export rules. OSH reads
+shell cells; YSH reads ENV.PATH, then its private `__defaults__.PATH` only when
+the ENV property is absent. A present non-string value supplies no directories.
+An empty string supplies a current-directory component. The initial default is
+installed once; later unset does not silently recreate it. Shvar PATH bindings
+explicitly clear the shared cache, including the reference's early-clear effect
+before a later invalid operand. Source continues to use fresh non-executable
+file lookup rather than poisoning the executable cache.
+
+Actual probes also repaired two shared error boundaries. A missing-command
+diagnostic writes and flushes in the parent. An unhandled I/O failure returns 2
+before top-level EXIT handling, with signal and descriptor restoration intact.
+The three child evaluator boundaries preserve raw I/O status 2 instead of
+classifying it as generic internal status 3. A surrounding try sees the escaped
+reporter failure after inner redirections unwind and preserves earlier error
+registers. Embedded NUL in any filesystem candidate is rejected before stat,
+access or C-string conversion; it produces the retained minimal reference's
+uncaught internal-failure status 1 and bypasses EXIT handling. No traceback or
+byte-identical diagnostic formatting claim is made.
+
+The strict [`qualify-hash.grease`](qualification/qualify-hash.grease) gate passes
+15 unchanged original cases and 61 new cases in each interpreter: 152 passing
+records. The full unchanged 16-case fixture remains visible: case 14 returns 2
+in both interpreters, but its unqualified expected 1 gives native FAIL while its
+existing OSH-specific expected 2 gives reference ok. The new arguments fixture
+strictly checks the real status 2 in both; no original allowance, fixture or
+shell label was changed. Six new fixtures cover cache behavior, flags,
+configuration, typed/effect order, failed reporters and byte pathnames. Four
+isolated faulty implementations compile successfully but each fails the same
+real expectation probe that the final runtime passes. An independent final
+24-probe review matches actual status and literal stdout with unchanged source
+and runtime hashes.
+
+The idle 81-fixture matrix records 899/1,119 native matches and 220 failures,
+with no native regressions and no TIME/TIMEOUT records. Its sole changed native
+verdict versus the getopts checkpoint is `spec/ysh-bugs.test.sh` case 5,
+"don't execute empty command": empty command-name lookup now returns 127.
+The actual reference's 1,045 matches and 74 failures are unchanged on this
+workspace, including the previously documented `/home` prompt assumption.
+Shared read is byte-identical to the previous checkpoint: native 62/64,
+reference 63/64. All preceding selected builtin, getopts, version, ENV, negation
+and Kitchen gates pass on these final bytes. The existing Grease outcome guard
+passes both actual tables with the original labels and three-second limits.
+The comparison driver's historical oct27/oct31 column names are unchanged;
+the oct31 columns in this checkpoint contain the final November 19 run.
+
+The actual unchanged Icky Lua producer and all thirteen original producer
+controls pass on these final bytes. Their source, pinned compiler closure and
+verified private GCC13 namespace remain distinct from target runtime acceptance.
+Actual ELF inspection resolves libgcc_s, libc and the loader without a C++
+runtime dependency. The broad symbol scan retains the D runtime's optional
+__cxa_demangle pointer/lookup and glibc's weak __cxa_finalize findings. Neither
+this scan nor producer execution proves independent static/transitive C++
+closure. Whole Grease and managed package admission remain BLOCKED.
+
+The next measured ordinary gap is `help OILS-ERR-100`: native returns 3 with
+`Untranslated builtin: help`; actual Oils returns 0 and prints its retained
+error-catalog URL. Its owner is `builtin/misc_osh.py:Help.Run/_ShowTopic`.
+Remaining inherited/shared-shell failures, interactive semantics, independent
+closure acceptance and managed delivery are still incomplete. There is no
+merge, release, package activation, Android/NetBSD or physical-device claim.
+
+Exact receipts, full verdict tables and raw execution evidence are in
+[the hash checkpoint](qualification/il0-hash-2026-11-19/receipt.tsv).
+
 ## Retained getopts and command effects, 2026-11-19
 
 This continues SUN IL0-CFREE-01 from the live retained branch head

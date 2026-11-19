@@ -1,0 +1,69 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease/package admission;scoped retained hash/shared cache and error-boundary continuation PASS
+observed_date	2026-11-19 America/Detroit
+owner_repository	dilapidated-shed/oils;Grease issue58
+branch	d/ysh-first-slice
+starting_head	cf4083fb47f4eb9c904af16a8fd77ca42976b804
+implementation_commit	99f76d3e01ecbd0fc6a5ab013fec0a146e864d50
+local_validation_commit	3cf5693ea391e9633d3e632cc341e5032f2ec39b
+identical_full_tree	3a4436a8055dc086ba0d41e810cdf2ae2e6be24b;implementation and local validation have identical repository trees
+implementation_source_tree	bd3afa9146de390210e178aef06ac3fbfab1fb01
+source_state	Frozen native source/reference/fixtures unchanged through final qualification;documentation/receipts separate
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	6b339321420eb05bf0930ca51064c4d8cc2b5121a26472c12dd38dd62274f783
+bootstrap	Pinned official LDC1.36.0 builds Icky DMD only;target compiled by pinned Icky DMD
+host	Disposable container5135d1448df6;Debian GNU/Linux13.6 trixie;Linux6.18.57 x86_64
+binary_name	ysh-d;partial implementation artifact
+binary_bytes	3319776
+binary_sha256	0d1d1e1104fc2243e78b9b6c738036ee9503a502297b4b8721d16100832f397d
+native_build	PASS pinned DMD production/library/CLI builds;clean production compile argv/logs in producer/clean-rebuild
+library_units	PASS58 modules;process0;SHA2561dc0846c6e4d64c298036e23147f3c2bbcaf7a0ae5d18b739518b7f9ab1cf1e9
+cli_units	PASS59 modules;process0;SHA2562af45c73d34b9f8e7eb4fd2703de7f89e9562565b5c1b711e75580200a40c3a2
+unit_execution	Final persisted raw execution logs captured library then CLI serially;no concurrent fixture collision
+contract_owners	builtin/pure_osh.py:Hash;core/executor.py:SearchPath/RunExternal;core/sh_init.py:EnvConfig;builtin/process_osh.py:Exec;builtin/pure_ysh.py:Shvar
+hash_contract	PASS flags/reset/list/sorted path values/duplicates;partial successful insertions;failed operands uncached;typed/lazy/block rejection follows normal eager preparation
+retained_flag_quirk	frontend/args.py Parse maps0toZ;hash -0 diagnostic retains this original behavior
+shared_cache	One Memory-owned successful lookup cache shared by ordinary execution and exec;resolution beforefork;no implicit PATH/cwd/filesystem revalidation or invalidation
+lookup_rules	Bare PATH lookup selects regular+x files;explicit slash lookup exists-only;relative/empty components preserve exact path spellings;empty PATH searchescwd
+reflection_and_default_path	PASS fresh regular+x reflection without cache mutation;command-p exact six-directory lookup bypasses read/write cache
+process_scopes	PASS functions and foreground last stage share caller cache;subshell/substitution/background/producer state isolated;legacy expanded pipeline avoids parent insertion for producer-only lookup
+configured_path	PASS OSH shell cells independently of export;YSH ENV.PATH then private __defaults__ only when absent;presentnonStr disables lookup;one-time startup default;shvar PATH earlyclear
+source_lookup	Fresh non-executable source lookup uses same configured PATH but not executable cache
+notfound_reporter	PASS missing-command diagnostic writes+flushes beforefork;raw CLI I/O2 bypasses EXIT with scopes/signals restored;three child boundaries preserve rawIO2 ratherthan generic3
+notfound_try	PASS reporter exception escapes redirect scope before outertry;prior error/status registers preserved
+nul_pathnames	PASS entire filesystem candidate checked before stat/access/Cstring conversion;uncaught minimal-reference failure1 bypasses EXIT;no truncated path executed
+strict_hash_gate	PASS15 unchanged original+61 new cases in each interpreter;76pairedcases152PASSrecords
+full_original	16 unchanged cases;native15PASS1FAIL;reference15pass1ok;case14bothactual2 but genericexpected1 and retainedOSHoverride2;full32records retained
+new_fixture_inventory	cache22;arguments10;environment9;typed-effects8;diagnostics8;pathname-bytes4;all six hashes unchanged
+negative_controls	PASS4 isolated compiled mutants;compile0/baseline0/faulty1 each;exact patches/manifests/argv/output/status;ELF copied fixtures independently hashed
+independent_review	PASS24 direct final-runtime/reference probes;status/literal stdout match;no scoped unresolved findings;source/runtime input hashes unchanged
+baseline_negative	Starting c9946aa4 runtime hash-r3 vs reference0;old cache/original fixture failures retained as negative provenance only
+inherited	899matches220FAIL;1119 unchanged cases81fixtures;zero native regressions;zero TIME/TIMEOUT
+inherited_reference	1045matches74FAIL;unchanged from local getopts checkpoint;zero TIME/TIMEOUT
+inherited_schema	Original driver retains historical oct27/oct31 column names;oct31 fields in this table contain this final November19 run
+native_verdict_delta	One priorFAIL nowpass:spec/ysh-bugs.test.sh case5 empty command-name handling returns127;all other native/reference verdicts retained
+shared_read	62matches2FAIL native;63matches1FAIL reference;64cases;byte-identical to preceding table;no TIME/TIMEOUT
+preceding_gates	PASS cli-version,environment,negated-command,exec,ulimit,time,times,umask,shift,reporter-io,getopts,Kitchen
+outcome_guard	PASS actual final inherited/shared-read tables;original TIME/TIMEOUT labels and3sec limits unchanged
+baseline_integrity	Original reference,shared fixtures,harness,baseline and allowance files unchanged
+reference	Actual minimal CPython2.7.13 UCS4;SHA256f58305a0d5d4f9e9e3cc4263048015659875469ddda566eba76d2ceb1effc4b2;private retained sinpi rename;tracked source/build unchanged
+gawk	Actual GNU gawk5.2.1 SHA2566f67ab710f348f1263b778764e5cb940bc3e9a05030c90dd81a8a66ead717dac
+clean_rebuild	PASS separate clean worktree at3cf5693;cmp0 identical0d1d1e11;actual linker map retained
+second_host_reproducibility	NOT_RUN
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;Lua87306483cec50f8c750a22dda1d0742246fad756;stock0b29f408433e92953cc72b1d3e06c7ac8139e439
+producer_execution	PASS fresh actual unchanged qualifier process0 on final runtime;no reuse of preceding result
+producer_controls	PASS fresh actual original13-control program process0;exactly13PASS+header
+producer_support	Exact pinned Icky C closure;fresh artifact/hash/source verification and authenticated private GCC13 namespace;no compiler substitution/system installation
+dynamic_dependencies	Actual ELF resolves libgcc_s,libc,loader;no C++ runtime dependency in bounded inspection
+symbol_findings	D optional __cxa_demangle B pointer/lookup and glibc weak __cxa_finalize recorded;not zero-marker or static closure proof
+independent_cpp_closure	NOT_RUN independent static/transitive acceptance;complete Grease/package admission remainsBLOCKED
+hosted_ci_scope	Final publishing commit checked separately by Actions;this local receipt makes no hosted CI claim
+physical_acceptance	NOT_RUN;no Android/NetBSD or physical-device execution/installation
+first_ordinary_gap	help OILS-ERR-100;native3 Untranslated builtin:help;actualreference0 with retained error-catalog URL
+next_owner	builtin/misc_osh.py:Help.Run/_ShowTopic
+archive_scope	Rawlogs/receipts/digests/maps/mutation patches;early/invalid runs labelednegative only;no executables/fullclones/producerarchives/temporarysignedURLs
+output_paths	receipt.tsv;paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;hash-summary.tsv;hash-original.tsv;negative-controls.tsv;producer-receipt.tsv;producer-controls.tsv;execution-logs.zip;artifacts.tsv

@@ -2,22 +2,21 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The November 19 `getopts` continuation
-passes **58 CLI/module suites and 57 library suites**. Its strict paired gate
-passes 28 unchanged original cases and 59 additional contracts in native D and
-the actual minimal Oils reference. Three original reset expectations fail in
-both implementations and remain visible in the full 31-case table. The new
-contracts cover byte-oriented option clusters, arbitrary-precision option
-indices, partial writes, readonly variables, typed arguments, temporary bindings,
-redirection effects and child failure boundaries. The retained version,
-environment, Kitchen consumer and repaired negation gates also pass.
-The full local matrix records **898/1,119 native matches and 221 failures**,
-two more matches than the preceding checkpoint, with no native regressions or
-timeouts. The reference records 1,045 matches and 74 failures on this host;
-one prompt fixture assumes its temporary path is below `/home`, which this
-workspace does not satisfy. Shared read remains 62/64 native and 63/64 reference.
+The translation remains incomplete. The November 19 `hash` continuation passes
+**59 CLI/module suites and 58 library suites**. Its strict paired gate passes
+15 unchanged command cases and 61 additional contracts in native D and the
+actual minimal Oils reference. Hash and command execution share one real
+pre-fork executable cache, including stale entries and process-scope rules.
+The new contracts also cover PATH configuration, reflection, explicit exec,
+typed arguments, failed diagnostics and rejected NUL pathnames. The retained
+version, environment, Kitchen, negation and getopts gates pass on this runtime.
+The idle full matrix records **899/1,119 native matches and 220 failures**,
+one more match than the getopts checkpoint, with no regressions or timeouts.
+The reference retains 1,045 matches and 74 failures on this workspace; its
+`/home` prompt assumption still differs from the actual `/workspace` path.
+Shared read remains 62/64 native and 63/64 reference, with identical verdicts.
 Exact source identities and compatibility results are recorded in
-[PORTING.md](PORTING.md) and [the current host receipt](qualification/il0-getopts-2026-11-19/receipt.tsv).
+[PORTING.md](PORTING.md) and [the current host receipt](qualification/il0-hash-2026-11-19/receipt.tsv).
 
 Scoped extra descriptors now reach native builtins and external processes with
 ordered duplication, nested restoration and closed-fd handling. Terminal read
@@ -75,12 +74,20 @@ Simple commands now prepare expanded words and eager typed arguments once,
 then evaluate redirect operands and install descriptors, then evaluate prefix
 bindings and dispatch. Lazy arguments remain unforced. OSH temporary variable
 frames and YSH ENV overlays follow their separate retained scope rules.
-The next measured ordinary builtin gap is `hash -r`: D exits 3 for the
-untranslated builtin while the actual reference returns 0.
+Native `hash` now shares a cache with ordinary external execution and `exec`.
+Successful lookup precedes fork, and cached paths survive PATH changes,
+directory changes, deletion and permission changes. Reflection stays fresh;
+`command -p` bypasses the cache; `shvar PATH=...` explicitly clears it.
+PATH configuration distinguishes an unset value, an empty current-directory
+search and a non-string value, including YSH's private `__defaults__` fallback.
+Embedded NUL pathnames fail before C-string conversion instead of executing a
+truncated path. Raw diagnostic I/O failures bypass top-level EXIT traps with
+status 2 and preserve status 2 in children. The next measured ordinary builtin
+gap is `help OILS-ERR-100`: D exits 3 while the reference prints its catalog URL.
 
 The October 27 checkpoint's 39 CLI/module suites, 38 library suites, original
 owner smoke and producer controls remain historical evidence. The final
-November 19 runtime's actual Icky Lua producer and all thirteen controls pass.
+November 19 hash runtime's actual Icky Lua producer and all thirteen controls pass.
 The preceding reporter/shift and umask controls remain historical evidence. The
 producer uses the exact pinned compiler and private verified GCC13 support
 mounted at the original path inside a namespace with a read-only root. A clean
