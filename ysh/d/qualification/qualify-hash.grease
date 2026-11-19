@@ -1,0 +1,35 @@
+#!/usr/bin/env grease
+# Original reference and spec harness remain separate test-only boundaries.
+set -eu -o pipefail
+if (len(ARGV) !== 0) { echo 'qualify-hash.grease takes no arguments' >&2; exit 2 }
+var root = $(realpath "$(dirname "$0")/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+test -x "$output/native-osh"
+test -x "$root/bin/osh"
+
+proc compare (fixture, range, name, records, matches) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range "$range" --timeout=3 \
+    --tmp-env "$output/tmp/$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/$name.tsv" \
+    "$root/$fixture" "$output/native-osh" "$root/bin/osh"
+  var actualRecords = $(wc -l < "$output/$name.tsv")
+  test "$actualRecords" -eq "$records"
+  var actualMatches = $(grep -Ec '	(native-osh|osh)	pass$' "$output/$name.tsv")
+  test "$actualMatches" -eq "$matches"
+}
+
+# Original case14 gives only osh an OK status2 override. The correct native
+# status2 therefore fails its unqualified status1 expectation. Preserve that
+# full-table verdict; the new arguments fixture strictly checks both as2.
+compare spec/command_.test.sh 0-13 shared-command-hash 29 28
+compare spec/command_.test.sh 15-15 shared-command-path-type 3 2
+compare ysh/d/qualification/hash/cache.test.sh 0-21 hash-cache 45 44
+compare ysh/d/qualification/hash/arguments.test.sh 0-9 hash-arguments 21 20
+compare ysh/d/qualification/hash/environment.test.sh 0-8 hash-environment 19 18
+compare ysh/d/qualification/hash/typed-effects.test.sh 0-7 hash-typed-effects 17 16
+compare ysh/d/qualification/hash/diagnostics.test.sh 0-7 hash-diagnostics 17 16
+compare ysh/d/qualification/hash/pathname-bytes.test.sh 0-3 hash-pathname-bytes 9 8
+echo 'PASS 15 unchanged command cases and 61 additional paired hash/cache contracts in native D and actual Oils'

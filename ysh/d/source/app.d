@@ -61,7 +61,10 @@ private int runBatchSource(string source, Memory mem) {
     catch (FileException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
     // bin/oils_for_unix.py:main treats raw, unhandled I/O failures as2.
     // Ordinary builtin I/O failures have already returned their own status.
-    catch (ErrnoException error) { mem.errorFile.writeln("ysh-d: I/O error (main): ", error.msg); status = 2; }
+    catch (ErrnoException error) {
+        mem.diagnostic("ysh-d: I/O error (main): " ~ error.msg);
+        return 2;
+    }
     return mem.traps.finish(mem, status);
 }
 
@@ -299,4 +302,19 @@ version (Posix) unittest {
     `, mem) == 1);
     assert(contents(output) == "EXIT\n", "an ordinary fatal runtime error skipped the EXIT trap");
     assert(contents(errors).indexOf("Can't assign to readonly value 'opt'") >= 0);
+
+    foreach (redirect; ["2>/dev/full", "2>&-"]) {
+        output = File.tmpfile();
+        errors = File.tmpfile();
+        mem = shellMemory("unhandled-io.grease", []);
+        mem.outputFile = output;
+        mem.errorFile = errors;
+        assert(sigaction(SIGINT, null, &before) == 0);
+        assert(runBatchSource("trap --add EXIT { echo EXIT }; hash-no-such-command " ~
+            redirect ~ "; echo resumed", mem) == 2);
+        assert(contents(output) == "", "an unhandled I/O failure ran EXIT or resumed evaluation");
+        assert(contents(errors).indexOf("I/O error (main)") >= 0);
+        assert(sigaction(SIGINT, null, &after) == 0);
+        assert(before.sa_handler == after.sa_handler, "unhandled I/O skipped signal restoration");
+    }
 }

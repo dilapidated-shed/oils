@@ -4,6 +4,107 @@ import std.string : split;
 import yshd.state : Memory;
 import yshd.value : ValueKind;
 
+private void checkPath(string path) {
+    import std.string : indexOf;
+    import yshd.value : InterpreterFailure;
+    if (path.indexOf('\0') >= 0)
+        throw new InterpreterFailure("filesystem pathname contains NUL");
+}
+
+// core/executor.py:LookupExecutable uses existence for an explicit pathname,
+// but a regular executable file for a name searched through PATH.
+private bool pathExists(string path) {
+    import core.sys.posix.sys.stat : stat_t, stat;
+    import std.string : toStringz;
+    stat_t information;
+    checkPath(path);
+    return stat(path.toStringz(), &information) == 0;
+}
+
+private bool regularFile(string path, bool executable) {
+    import core.sys.posix.sys.stat : stat_t, stat, S_ISREG;
+    import core.sys.posix.unistd : access, X_OK;
+    import std.string : toStringz;
+    stat_t information;
+    checkPath(path);
+    return (!executable || access(path.toStringz(), X_OK) == 0) &&
+        stat(path.toStringz(), &information) == 0 && S_ISREG(information.st_mode);
+}
+
+private string pathJoin(string directory, string name) {
+    return !directory.length ? name :
+        directory[$ - 1] == '/' ? directory ~ name : directory ~ "/" ~ name;
+}
+
+enum defaultCommandPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+string lookupExecutable(string name, string[] directories, bool execRequired = true) {
+    import std.string : indexOf;
+    if (!name.length) return null;
+    if (name.indexOf('/') >= 0) return pathExists(name) ? name : null;
+    foreach (directory; directories) {
+        auto candidate = pathJoin(directory, name);
+        if (regularFile(candidate, execRequired)) return candidate;
+    }
+    return null;
+}
+
+/// One interpreter owns one cache. Lexical frames and PATH changes do not
+/// replace it; OS process isolation naturally gives forked shells a copy.
+class SearchPath {
+    private Memory memory;
+    private string[string] cache;
+
+    this(Memory memory) { this.memory = memory; }
+
+    private string[] directories() {
+        bool defined;
+        auto path = memory.configuredPath(&defined);
+        return defined ? (path.length ? path.split(":") : [""]) : [];
+    }
+
+    string lookupOne(string name, bool execRequired = true) {
+        return lookupExecutable(name, directories(), execRequired);
+    }
+
+    string[] lookupReflect(string name, bool all) {
+        import std.string : indexOf;
+        if (!name.length) return [];
+        if (name.indexOf('/') >= 0) return regularFile(name, true) ? [name] : [];
+        string[] result;
+        foreach (directory; directories()) {
+            auto candidate = pathJoin(directory, name);
+            if (!regularFile(candidate, true)) continue;
+            result ~= candidate;
+            if (!all) break;
+        }
+        return result;
+    }
+
+    string cachedLookup(string name) {
+        if (auto found = name in cache) return *found;
+        auto path = lookupOne(name);
+        if (path !is null) cache[name] = path;
+        return path;
+    }
+
+    // Expanded-argv pipeline producers will immediately exec in a child.
+    // They inherit existing cache hits, but their new entries cannot survive
+    // in the parent's interpreter state.
+    string lookupForSubprogram(string name) {
+        if (auto found = name in cache) return *found;
+        return lookupOne(name);
+    }
+
+    void maybeRemoveEntry(string name) { cache.remove(name); }
+    void clearCache() { cache = null; }
+    string[] cachedCommands() {
+        string[] result;
+        foreach (path; cache) result ~= path;
+        return result;
+    }
+}
+
 // Names and precedence from frontend/builtin_def.py and meta_oils._ResolveName.
 // Recognition is distinct from implementation: an untranslated builtin must
 // never fall through to a same-named host executable.
@@ -40,19 +141,15 @@ struct CommandResolution {
 }
 
 string[] executablePaths(string name, string path, bool all) {
-    import core.sys.posix.unistd : access, X_OK;
-    import std.file : isDir;
     import std.string : indexOf, toStringz;
     if (!name.length) return [];
     string[] candidates;
     if (name.indexOf('/') >= 0) candidates = [name];
-    else foreach (directory; path.split(":"))
-        candidates ~= directory.length ? directory ~ "/" ~ name : name;
+    else foreach (directory; path.length ? path.split(":") : [""])
+        candidates ~= pathJoin(directory, name);
     string[] result;
     foreach (candidate; candidates) {
-        if (access(toStringz(candidate), X_OK) != 0) continue;
-        try { if (isDir(candidate)) continue; }
-        catch (Exception error) { continue; }
+        if (!regularFile(candidate, true)) continue;
         result ~= candidate;
         if (!all) break;
     }
@@ -78,7 +175,7 @@ CommandResolution[] resolveCommand(string name, Memory mem, bool all,
     }
     if (builtin == BuiltinKind.normal || builtin == BuiltinKind.assignment)
         result ~= CommandResolution(name, "builtin", builtin == BuiltinKind.assignment ? "special" : "");
-    foreach (path; executablePaths(name, mem.getEnv("PATH"), all)) result ~= CommandResolution(name, "file", path);
+    foreach (path; mem.searchPath.lookupReflect(name, all)) result ~= CommandResolution(name, "file", path);
     if (includePrivate && builtin == BuiltinKind.privateBuiltin)
         result ~= CommandResolution(name, "builtin", "private");
     return result;

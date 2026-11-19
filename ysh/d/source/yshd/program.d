@@ -2741,6 +2741,12 @@ class ProgramParser {
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "hash":
+                    evalArguments();
+                    if (typedArguments !is null || hasBlock) throw new UsageError("got unexpected typed args");
+                    import yshd.hash : runHash;
+                    mem.lastStatus = runHash(words, mem);
+                    return;
                 case "getopts":
                     // GetOpts.Run ignores supplied typed values and blocks
                     // after their normal eager/lazy argument evaluation.
@@ -2973,6 +2979,7 @@ class ProgramParser {
                         auto equal = word.indexOf('=');
                         if (equal < 0) throw new UsageError("shvar: expected name=value");
                         options.variables.set(word[0 .. equal], Value.str(word[equal + 1 .. $]));
+                        if (word[0 .. equal] == "PATH") mem.searchPath.clearCache();
                     }
                     withEvalBindings(mem, options, () {
                         (cast(YshCommand)arguments.block.callableValue).evalInCurrentFrame(mem);
@@ -3246,14 +3253,8 @@ class ProgramParser {
                 return;
             }
         } else {
-            if (path.indexOf('/') < 0) {
-                import std.path : buildPath;
-                import std.file : exists;
-                foreach (directory; mem.getEnv("PATH").split(":")) {
-                    auto candidate = buildPath(directory, path);
-                    if (exists(candidate)) { path = candidate; break; }
-                }
-            }
+            auto found = mem.searchPath.lookupOne(path, false);
+            if (found !is null) path = found;
             try { source = cast(string)read(path); }
             catch (FileException error) {
                 mem.errorFile.writeln("ysh-d: ", error.msg);
@@ -4679,7 +4680,7 @@ class ProgramParser {
         mem.lastStatus = 0;
         foreach (name; words[index .. $]) {
             if (forcePath) {
-                auto paths = executablePaths(name, mem.getEnv("PATH"), all);
+                auto paths = mem.searchPath.lookupReflect(name, all);
                 foreach (path; paths) mem.outputFile.writeln(path);
                 if (!paths.length) mem.lastStatus = 1;
                 continue;

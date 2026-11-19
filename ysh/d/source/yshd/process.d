@@ -5,6 +5,7 @@ import std.process : Pipe, pipe;
 import std.stdio : File;
 import std.string : indexOf, replace, split, toStringz;
 import std.conv : to;
+import std.exception : ErrnoException;
 
 import yshd.state : Memory, ReturnMode;
 import yshd.func_proc : ProcReturn;
@@ -82,6 +83,7 @@ private int evaluateChild(string source, Memory mem,
     catch (ProcReturn control) { status = control.status; }
     catch (InterpreterFailure error) { mem.errorFile.writeln("ysh-d: internal interpreter failure: ", error.msg); status = 1; }
     catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = error.status; }
+    catch (ErrnoException error) { mem.diagnostic("ysh-d: I/O error (main): " ~ error.msg); status = 2; }
     catch (Throwable error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 3; }
     mem.outputFile.flush();
     mem.errorFile.flush();
@@ -195,6 +197,9 @@ int runSourcePipeline(string[] stages, Memory mem,
                 } catch (YshError error) {
                     mem.errorFile.writeln("ysh-d: ", error.msg);
                     status = error.status;
+                } catch (ErrnoException error) {
+                    mem.diagnostic("ysh-d: I/O error (main): " ~ error.msg);
+                    status = 2;
                 } catch (Throwable error) {
                     mem.errorFile.writeln("ysh-d: ", error.msg);
                     mem.errorFile.flush();
@@ -280,6 +285,9 @@ SourceCapture captureSource(string source, Memory mem,
             } catch (YshError error) {
                 mem.errorFile.writeln("ysh-d: ", error.msg);
                 status = error.status;
+            } catch (ErrnoException error) {
+                mem.diagnostic("ysh-d: I/O error (main): " ~ error.msg);
+                status = 2;
             } catch (Throwable error) {
                 mem.errorFile.writeln("ysh-d: ", error.msg);
                 mem.errorFile.flush();
@@ -356,10 +364,8 @@ private int launchExternal(string[] argv, File input, File output,
     }
 
     version (Posix) {
-        // Resolve PATH from the shell's environment, not the D host process.
-        // Passing an explicit environment to std.process does not do this and
-        // merges deleted host variables back into the child unless newEnv is
-        // selected. Keep both responsibilities at this POSIX boundary.
+        // Shell lookup has already selected one pathname in the parent.
+        // Child environment export rules are independent of PATH lookup.
         const(char)*[] arguments;
         foreach (index, word; argv)
             arguments ~= toStringz(index == 0 && hasArgumentZero ? argumentZero : word);
@@ -368,16 +374,7 @@ private int launchExternal(string[] argv, File input, File output,
         foreach (name, value; childEnvironment)
             environment ~= toStringz(name ~ "=" ~ value);
         environment ~= null;
-        string[] paths;
-        if (explicitExec) paths = [resolvedPath];
-        else if (argv[0].indexOf('/') >= 0) paths = [argv[0]];
-        else {
-            auto path = "PATH" in childEnvironment;
-            auto searchPath = useDefaultPath ? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" :
-                (path is null ? "/bin:/usr/bin" : *path);
-            foreach (directory; searchPath.split(":"))
-                paths ~= directory.length ? directory ~ "/" ~ argv[0] : argv[0];
-        }
+        string[] paths = [resolvedPath];
         if (output.isOpen) output.flush();
         if (errors.isOpen) errors.flush();
         if (!replaceProcess) {
@@ -424,6 +421,11 @@ private int launchExternal(string[] argv, File input, File output,
             auto limit = sysconf(_SC_OPEN_MAX);
             for (int descriptor = highest + 1; descriptor < limit; ++descriptor) close(descriptor);
         }
+        if (resolvedPath is null) {
+            auto message = format("ysh-d: Command '%s' not found (OILS-ERR-100)\n", argv[0]);
+            write(2, message.ptr, message.length);
+            _exit(127);
+        }
         int lastError = ENOENT;
         bool denied;
         foreach (path; paths) {
@@ -458,11 +460,20 @@ private int launchExternal(string[] argv, File input, File output,
 /// expansion stay in the D implementation, while process creation itself is a
 /// normal POSIX/library boundary.
 int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
+    import yshd.command_lookup : lookupExecutable, defaultCommandPath;
+    if (!argv.length) throw new YshError("external command needs a program name");
     auto environment = mem.childEnvironment();
+    auto path = useDefaultPath ? lookupExecutable(argv[0], defaultCommandPath.split(":")) :
+        mem.searchPath.cachedLookup(argv[0]);
+    if (path is null) {
+        mem.writeDiagnostic("ysh-d: Command '" ~ argv[0] ~ "' not found (OILS-ERR-100)");
+        return 127;
+    }
     auto replacing = mem.canReplaceProcess && !mem.traps.hasActions();
     if (replacing) mem.trace.exec(argv, mem);
     auto child = launchExternal(argv, mem.descriptorFile(0), mem.descriptorFile(1),
-        mem.descriptorFile(2), environment, replacing, useDefaultPath, mem.extraDescriptors);
+        mem.descriptorFile(2), environment, replacing, useDefaultPath, mem.extraDescriptors,
+        false, "", false, path);
     mem.trace.processStart(child, TraceProcessKind.external, argv, mem);
     return waitSourceChild(child, mem);
 }
@@ -470,22 +481,17 @@ int runExternal(string[] argv, Memory mem, bool useDefaultPath = false) {
 /// builtin/process_osh.py:Exec bypasses command/proc/builtin lookup and replaces
 /// this process. Keep the executable path distinct from an overridden argv[0].
 void execExternal(string[] argv, Memory mem, bool hasArgumentZero = false, string argumentZero = "") {
-    import yshd.command_lookup : executablePaths;
-    import std.file : exists;
     if (!argv.length) throw new YshError("exec requires a program");
-    bool hasPath;
-    auto path = mem.getEnv("PATH", "", &hasPath);
-    auto paths = argv[0].indexOf('/') >= 0
-        ? (exists(argv[0]) ? [argv[0]] : [])
-        : hasPath ? executablePaths(argv[0], path, false) : [];
-    if (!paths.length)
+    auto environment = mem.childEnvironment();
+    auto path = mem.searchPath.cachedLookup(argv[0]);
+    if (path is null)
         throw new YshError("exec: '" ~ argv[0] ~ "' not found", 127);
     auto tracedArguments = argv.dup;
     if (hasArgumentZero) tracedArguments[0] = argumentZero;
     mem.trace.exec(tracedArguments, mem);
     launchExternal(argv, mem.descriptorFile(0), mem.descriptorFile(1), mem.descriptorFile(2),
-        mem.childEnvironment(), true, false, mem.extraDescriptors,
-        hasArgumentZero, argumentZero, true, paths[0]);
+        environment, true, false, mem.extraDescriptors,
+        hasArgumentZero, argumentZero, true, path);
     assert(0);
 }
 
@@ -515,8 +521,11 @@ int runPipeline(string[][] commands, Memory mem) {
             auto output = index + 1 == commands.length
                 ? mem.outputFile
                 : links[index].writeEnd;
+            auto environment = mem.childEnvironment();
+            auto path = index + 1 == commands.length ? mem.searchPath.cachedLookup(command[0]) :
+                mem.searchPath.lookupForSubprogram(command[0]);
             children ~= launchExternal(command, input, output, mem.errorFile,
-                mem.childEnvironment(), false, false, mem.extraDescriptors);
+                environment, false, false, mem.extraDescriptors, false, "", false, path);
         }
     } catch (Exception error) {
         foreach (ref link; links) {

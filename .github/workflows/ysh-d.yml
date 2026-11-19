@@ -15,6 +15,7 @@ on:
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
+      - 'spec/command_.test.sh'
       - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
@@ -25,9 +26,13 @@ on:
       - 'builtin/umask_osh.py'
       - 'builtin/assign_osh.py'
       - 'builtin/pure_osh.py'
+      - 'builtin/pure_ysh.py'
       - 'builtin/error_ysh.py'
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
+      - 'core/sh_init.py'
+      - 'pylib/os_path.py'
+      - 'pylib/path_stat.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -54,6 +59,7 @@ on:
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
+      - 'spec/command_.test.sh'
       - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
@@ -64,9 +70,13 @@ on:
       - 'builtin/umask_osh.py'
       - 'builtin/assign_osh.py'
       - 'builtin/pure_osh.py'
+      - 'builtin/pure_ysh.py'
       - 'builtin/error_ysh.py'
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
+      - 'core/sh_init.py'
+      - 'pylib/os_path.py'
+      - 'pylib/path_stat.py'
       - 'core/process.py'
       - 'core/executor.py'
       - 'core/pyos.py'
@@ -418,6 +428,9 @@ jobs:
 
       - name: Qualify retained getopts and argument-effect boundaries through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-getopts.grease
+
+      - name: Qualify retained hash and shared executable cache through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-hash.grease
 
       - name: Check out the retained Kitchen consumer fixture
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

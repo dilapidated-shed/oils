@@ -11,6 +11,7 @@ import yshd.dirs : DirectoryStack;
 import yshd.traps : TrapState;
 import yshd.jobs : JobTable;
 import yshd.trace : TraceState;
+import yshd.command_lookup : SearchPath;
 
 enum ReturnMode { shell, functionValue, procValue }
 
@@ -211,6 +212,8 @@ class ShellArgumentFrame {
 
 /// The translated lexical frames and shell registers of core/state.py:Mem.
 class Memory {
+    SearchPath searchPath;
+    private YshDict environmentDefaults;
     TrapState traps;
     JobTable jobs;
     bool canReplaceProcess;
@@ -483,6 +486,8 @@ class Memory {
         this.outputFile = outputFile;
         this.errorFile = errorFile;
         options = new ShellOptions();
+        searchPath = new SearchPath(this);
+        environmentDefaults = new YshDict();
         trace = new TraceState();
         traps = new TrapState();
         jobs = new JobTable();
@@ -515,6 +520,7 @@ class Memory {
         globalFrame.cells.set("INFINITY", new Cell(Value.floating(double.infinity)));
         import yshd.expr : builtinNamespaces, builtinFunctionNames, builtinFunctionValue;
         builtins = new BuiltinRegistry();
+        builtins.cells["__defaults__"] = new Cell(Value.dictRef(environmentDefaults));
         foreach (name, value; builtinNamespaces()) builtins.cells[name] = new Cell(value);
         foreach (name; builtinFunctionNames) builtins.cells[name] = new Cell(builtinFunctionValue(name));
         import yshd.module_ysh : moduleInvokeValue;
@@ -553,6 +559,15 @@ class Memory {
     /// core/sh_init.py:InitVarsAfterEnv. OSH exports PWD even in an empty
     /// environment. YSH's no_init_globals keeps only the private cwd register.
     void initializeDirectory() {
+        // core/sh_init.py:InitVarsAfterEnv initializes the configured PATH
+        // once. A later unset does not silently reinstall this default.
+        bool pathDefined;
+        configuredPath(&pathDefined);
+        if (!pathDefined) {
+            auto path = Value.str("/sbin:/usr/sbin:/bin:/usr/bin");
+            if (options.get("env_obj")) environmentDefaults.set("PATH", path);
+            else setGlobal("PATH", path);
+        }
         if (options.get("no_init_globals")) return;
         import core.sys.posix.sys.stat : stat_t, stat;
         import std.string : toStringz;
@@ -610,6 +625,31 @@ class Memory {
         }
         if (defined !is null) *defined = true;
         return found.stringValue;
+    }
+
+    /// core/sh_init.py:EnvConfig.Get('PATH'). A present non-Str disables
+    /// lookup; only an absent ENV property falls back to __defaults__.PATH.
+    string configuredPath(bool* defined = null) {
+        if (defined !is null) *defined = false;
+        Value* value;
+        if (!options.get("env_obj")) {
+            auto cell = getCell("PATH");
+            if (cell !is null) {
+                if (cell.value.kind != ValueKind.stringValue) return null;
+                if (defined !is null) *defined = true;
+                return cell.value.stringValue;
+            }
+            if (shellEnvironmentInitialized) return null;
+            // A bare Memory has not imported its shell cells yet.
+            value = get("ENV").dictValue.find("PATH");
+        } else {
+            auto env = get("ENV");
+            if (env.kind == ValueKind.dict) value = env.dictValue.find("PATH");
+            if (value is null) value = environmentDefaults.find("PATH");
+        }
+        if (value is null || value.kind != ValueKind.stringValue) return null;
+        if (defined !is null) *defined = true;
+        return value.stringValue;
     }
 
     string[string] childEnvironment() {
