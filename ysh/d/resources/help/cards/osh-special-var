@@ -1,0 +1,24 @@
+Special Variables
+
+  [Oils VM]       OILS_VERSION      LIB_OSH
+  [libc locale]   osh-locale
+  [Interactive]   OILS_COMP_UI      HISTFILE
+  [POSIX Special] $@  $*  $#     $?  $-     $$  $!   $0  $9
+  [Shell Vars]    IFS             X LANG       X GLOBIGNORE
+  [Shell Options] SHELLOPTS       X BASHOPTS
+  [Other Env]     HOME              PATH
+  [Other Special] BASH_REMATCH     @PIPESTATUS
+  [Platform]      HOSTNAME          OSTYPE
+  [Call Stack]    @BASH_SOURCE     @FUNCNAME    @BASH_LINENO   
+                X @BASH_ARGV     X @BASH_ARGC
+  [Tracing]       LINENO
+  [Process State] UID               EUID         PPID       X BASHPID
+X [Process Stack] BASH_SUBSHELL     SHLVL
+X [Shell State]   BASH_CMDS        @DIRSTACK
+  [Completion]   @COMP_WORDS        COMP_CWORD    COMP_LINE   COMP_POINT
+                  COMP_WORDBREAKS  @COMPREPLY   X COMP_KEY
+                X COMP_TYPE         COMP_ARGV
+  [cd]            PWD               OLDPWD      X CDPATH
+  [getopts]       OPTIND            OPTARG      X OPTERR
+  [read]          REPLY
+  [Functions]   X RANDOM            SECONDS

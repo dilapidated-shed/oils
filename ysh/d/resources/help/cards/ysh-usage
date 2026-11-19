@@ -1,0 +1,14 @@
+bin/ysh is the shell with data tYpes, influenced by pYthon, JavaScript, ...
+
+Usage:
+    ysh FLAG* SCRIPT ARG*
+    ysh FLAG* -c COMMAND ARG*
+    ysh FLAG*
+
+Examples:
+    ysh -c 'echo hi'
+    ysh myscript.ysh
+    echo 'echo hi' | ysh
+
+Note that bin/ysh is the same as bin/osh with the ysh:all option group set:
+    osh -o ysh:all -c 'echo hi'  # Same as YSH

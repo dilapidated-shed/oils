@@ -1,0 +1,36 @@
+#!/usr/bin/env grease
+# Collect the unchanged whole fixture without hiding its inherited syntax gaps.
+set -eu -o pipefail
+var root = $(realpath "$(dirname "$0")/../../..")
+if (len(ARGV) > 1) { echo 'qualify-help-original.grease takes at most one full-reference root' >&2; exit 2 }
+var reference = root
+if (len(ARGV) === 1) { setvar reference = $(realpath "$[ARGV[0]]") }
+var output = "$root/ysh/d/.build/help-contract"
+cd "$root"
+mkdir -p "$output"
+var sourceRevision = $(git rev-parse HEAD)
+var runtimeSha = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
+var harnessStatus = 0
+if env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range 0-5 --timeout=3 \
+    --tmp-env "$output/tmp/paired-original-full" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/paired-original-full.tsv" \
+    "$root/spec/ysh-builtin-help.test.sh" "$root/ysh/d/.build/inherited-spec/native-ysh" "$reference/bin/ysh" \
+    > "$output/paired-original-full.log" 2>&1; then
+    setvar harnessStatus = 0
+else
+    setvar harnessStatus = $?
+fi
+printf 'source_revision	%s\nruntime_sha256	%s\nharness_status	%s\n' \
+    "$sourceRevision" "$runtimeSha" "$harnessStatus" > "$output/paired-original-full-receipt.tsv"
+
+test "$harnessStatus" -le 1
+var records = $(wc -l < "$output/paired-original-full.tsv")
+test "$records" -eq 13
+var referenceMatches = $(grep -Ec '	ysh	pass$' "$output/paired-original-full.tsv")
+test "$referenceMatches" -eq 6
+var inspection = 0
+if grep -nE '(^|	)(TIME|TIMEOUT)(	|$)' "$output/paired-original-full.tsv" >&2 { exit 1 } else { setvar inspection = $? }
+test "$inspection" -eq 1
+echo 'Recorded all six original help cases; unsupported parser cases remain visible'

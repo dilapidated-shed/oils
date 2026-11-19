@@ -1,0 +1,3 @@
+# Preserve original generator output bytes, including padding and final blanks.
+cards/* -whitespace
+oils-version.txt -whitespace

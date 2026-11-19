@@ -1,0 +1,35 @@
+Builtin Commands
+
+  [Memory]        cmd/append             Add elements to end of array
+                  pp                     value   proc      test_
+                                         asdl_   cell_   X gc-stats_
+  [Handle Errors] error                  error 'failed' (status=2)
+                  try                    Run with errexit, set _error
+                  failed                 Test if _error.code !== 0
+                  boolstatus             Enforce 0 or 1 exit status
+                  assert                 assert [42 === f(x)]
+  [Shell State]   ysh-cd       ysh-shopt compatible, and takes a block
+                  shvar                  Temporary modify global settings
+                  ctx                    Share and update a temporary "context"
+                  push-registers         Save registers like $?, PIPESTATUS
+  [Word Lookup]   invoke                 Run a command, and control name lookup
+                  runproc                Run a proc; use as main entry point
+                X extern                 Run an external command, with an ENV
+  [Modules]       
+                  source-guard           guard against duplicate 'source'
+                  is-main                false when sourcing a file
+                  use                    create a module Obj from a source file
+  [I/O]           ysh-read               flags --all, -0
+                  ysh-echo               no -e -n with simple_echo
+                  ysh-test               --file --true etc.
+                  ysh-wait               wait --all --verbose
+                  write                  Like echo, with --, --sep, --end
+                  fork         forkwait  Replace & and (), and takes a block
+                  redir                  Run a block, with redirects
+  [Run Code]      ysh-trap
+  [Private]       cat          rm        POSIX-compatible
+                  sleep
+  [Hay Config]    hay          haynode   For DSLs and config files
+  [Completion]    compadjust   compexport
+  [Data Formats]  json                   read write
+                  json8                  read write

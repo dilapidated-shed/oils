@@ -1,0 +1,4 @@
+Other Mini Languages
+
+  [Patterns]      glob-pat      *.py
+  [Other Sublang] braces        {alice,bob}@example.com

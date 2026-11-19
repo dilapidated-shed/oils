@@ -1,0 +1,49 @@
+Expression Language and Assignments
+
+  [Assignment]    assign        =
+                  aug-assign    +=   -=   *=   /=   **=   //=   %=
+                                &=   |=   ^=   <<=   >>=
+  [Literals]      atom-literal  null   true   false
+                  int-literal   42  65_536  0xFF  0o755  0b10
+                  float-literal 3.14  1.5e-10
+                X num-suffix    42 K Ki M Mi G Gi T Ti / ms us
+                  char-literal  \\ \t \"   \y00   \u{3bc}
+                  ysh-string    "x is $x"  $"x is $x"   r'[a-z]\n'
+                                u'line\n'  b'byte \yff'
+                  triple-quoted """  $"""  r'''  u'''  b'''
+                  list-literal  ['one', 'two', 3]  :| unquoted words |
+                  dict-literal  {name: 'bob'}  {a, b}
+                  range         1 ..< n  1 ..= n
+                  block-expr    ^(echo $PWD)
+                  expr-literal  ^[1 + 2*3]
+                  str-template  ^"$a and $b" for Str.replace()
+                  expr-sub      $[myobj]
+                  expr-splice   @[myobj]
+  [Operators]     op-precedence Like Python
+                  concat        s1 ++ s2,  L1 ++ L2,  dict1 ++ dict2
+                  ysh-equals    ===   !==   ~==   is, is not
+                  ysh-in        in, not in
+                  ysh-compare   <  <=  >  >=  (numbers only)
+                  ysh-logical   not  and  or
+                  ysh-arith     +  -  *  /  //  %   ** 
+                  ysh-unary     +  -
+                  ysh-bitwise   ~  &  |  ^  <<  >>
+                  ysh-ternary   '+' if x >= 0 else '-'
+                  ysh-index     s[0]  mylist[3]  mydict['key']
+                  ysh-attr      mydict.key  mystr.startsWith('x')
+                  ysh-slice     a[1:-1]  s[1:-1]
+                  ysh-func-call f(x, y, ...pos; n=1, ...named)
+                  thin-arrow    mylist->pop()
+                  fat-arrow     mylist => join() => upper()
+                  match-ops     ~   !~   ~~   !~~
+  [Eggex]         re-literal    / d+ ; re-flags ; ERE /
+                  re-primitive  %zero    'sq'
+                  class-literal [c a-z 'abc' @str_var \\ \y01 \u{3bc}]
+                  re-chars      \y01 \u{3bc}
+                  named-class    dot   digit   space   word   d  s  w
+                  re-repeat     d?   d*   d+   d{3}   d{2,4}
+                  re-compound    seq1 seq2   alt1|alt2   (expr1 expr2)
+                  re-capture    <capture d+ as name: int>
+                  re-splice     Subpattern   @subpattern
+                  re-flags      reg_icase   reg_newline
+                X re-multiline  ///

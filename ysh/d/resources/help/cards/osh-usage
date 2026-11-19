@@ -1,0 +1,11 @@
+bin/osh is compatible with POSIX shell, bash, and other shells.
+
+Usage:
+   osh FLAG* SCRIPT ARG*
+   osh FLAG* -c COMMAND ARG*
+   osh FLAG*
+
+Examples:
+    osh -c 'echo hi'
+    osh myscript.sh
+    echo 'echo hi' | osh

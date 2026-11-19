@@ -1,0 +1,4 @@
+Front End
+
+  [Lexing]        ascii-whitespace [ \t\r\n]
+                  ascii-control-chars

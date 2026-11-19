@@ -1,0 +1,24 @@
+field	value
+source_repository	dilapidated-shed/oils
+source_commit	7d30ce2edbe8f82e636b2776f322c8477ef29130
+original_generator	build/doc.sh all-ref
+generation_location	isolated full-reference checkout; main minimal-reference generated resources untouched
+generation_status	0
+markdown_inputs	23 doc/ref/*.md
+html_outputs	23 doc/ref/*.html
+topic_metadata_entries	524
+embedded_metadata_entries	7
+help_cards	34;27 index cards plus7 embedded cards
+version_first_line	0.37.0
+cmark_version	0.29.0
+cmark_source_commit	8daa6b1495124f0b67e6034130e12d7be83e38bd
+cmark_binary_sha256	b6777363bab09007cdab3ce0e5b6e936e8c4e671c5c24169b60b6d2d74e7b8d6
+original_help_meta_sha256	af8ae5256968fab9f2c2d49251b50cfcd2fde07847a4ad702545b60125fc413d
+original_version_file_sha256	e57bb9c6f1e8a67ecb4ac745ba13016ca61bcf8f9c783773389996f2b7a9304d
+input_checks	sha256sum -c ysh/d/resources/help/source-inputs.sha256;sha256sum -c ysh/d/resources/help/canonical-inputs.sha256
+d_converter	ysh/d/tools/help_data_gen.d;parses generated TOPICS byte-string/None dictionary;does not execute Python or render Markdown
+converter_arguments	ysh/d/resources/help/topics.pylit ysh/d/resources/help/cards ysh/d/resources/help/oils-version.txt OUTPUT_D
+native_default	closed embedded card table and source-owned version;canonical static metadata independent of resource root
+python_compatibility_route	explicit _OVM_RESOURCE_ROOT filesystem;_OVM_IS_BUNDLE=1/_OVM_PATH zip takes precedence
+minimal_reference_boundary	main minimal Python reference lacks help_meta/help cards;empty map and missing cards qualified through explicit contexts separately
+scope	resource generation and native help only;not complete YSH or Grease/package/C++ closure

@@ -2,7 +2,7 @@ module app;
 
 import std.file : FileException, exists, read;
 import std.exception : ErrnoException;
-import std.stdio : stderr, stdin, stdout, writeln;
+import std.stdio : File, stderr, stdin, stdout, writeln;
 import std.string : indexOf, join;
 import std.path : baseName;
 import core.stdc.locale : setlocale, LC_CTYPE, LC_COLLATE;
@@ -13,6 +13,9 @@ import yshd.program : ShellExit, executeProgram, parseProgram;
 import yshd.func_proc : ProcReturn;
 import yshd.state : Memory, ReturnMode;
 import yshd.options : ShellOptions;
+import yshd.help : HelpBuiltin, printHelpFlag;
+import yshd.help_resources : ResourceError, defaultResourceLoader;
+import yshd.help_data : canonicalTopicMetadata;
 import yshd.value : InterpreterFailure, UsageError, YshError, repr;
 
 private string versionDescription() {
@@ -35,9 +38,38 @@ private int printVersion() {
     }
 }
 
-private Memory shellMemory(string argumentZero, string[] arguments,
+private void drainHelpOutput(File output) {
+    import core.stdc.stdio : clearerr;
+    try { output.flush(); }
+    catch (ErrnoException error) {
+        // Python's final buffered stdout drain ignores this failure. Drain
+        // it here so druntime's mandatory final fflush cannot change status.
+        clearerr(output.getFP());
+    }
+}
+
+private int printHelp(string executablePath) {
+    auto applet = baseName(executablePath);
+    auto language = applet == "osh" || applet == "osh-d" ? "osh" : "ysh";
+    try {
+        printHelpFlag(defaultResourceLoader(executablePath), language ~ "-usage", stdout);
+    } catch (ErrnoException error) {
+        stderr.writeln("ysh-d: I/O error (main): ", error.msg);
+        return 2;
+    }
+    drainHelpOutput(stdout);
+    return 0;
+}
+
+private Memory shellMemory(string executablePath, string argumentZero, string[] arguments,
         ShellOptions options = null) {
+    // This is the applet selected at startup, independent of $0 and later
+    // option-group changes. Capture roots/version before user source runs.
+    auto applet = baseName(executablePath);
+    auto language = applet == "osh" || applet == "osh-d" ? "osh" : "ysh";
+    auto help = new HelpBuiltin(language, defaultResourceLoader(executablePath), canonicalTopicMetadata());
     auto mem = new Memory();
+    mem.helpBuiltin = help;
     mem.options = options is null ? new ShellOptions(true) : options;
     mem.initializeShellEnvironment();
     mem.initializeDirectory();
@@ -81,13 +113,17 @@ int main(string[] args) {
         bool literalPath;
         bool commandString;
         bool versionRequested;
+        bool helpRequested;
         // The reference selects its initial option group before applying CLI
         // flags. The shared OSH mode is also needed by inherited upgrade tests.
         auto executableName = baseName(args[0]);
         auto options = new ShellOptions(executableName != "osh" && executableName != "osh-d");
         while (sourceIndex < args.length) {
             auto option = args[sourceIndex];
-            if (option == "--version") {
+            if (option == "--help") {
+                helpRequested = true;
+                ++sourceIndex;
+            } else if (option == "--version") {
                 versionRequested = true;
                 ++sourceIndex;
             } else if (option == "-n") {
@@ -134,6 +170,7 @@ int main(string[] args) {
             stderr.writeln("ysh-d: -c requires program text");
             return 2;
         }
+        if (helpRequested) return printHelp(args[0]);
         if (versionRequested) return printVersion();
         parseOnly = options.get("noexec");
 
@@ -154,7 +191,7 @@ int main(string[] args) {
                 parseProgram(source, ReturnMode.shell, options);
                 return 0;
             }
-            auto mem = shellMemory(args[0], args[sourceIndex < args.length ? sourceIndex + 1 : sourceIndex .. $], options);
+            auto mem = shellMemory(args[0], args[0], args[sourceIndex < args.length ? sourceIndex + 1 : sourceIndex .. $], options);
             return runBatchSource(source, mem);
         }
 
@@ -168,7 +205,7 @@ int main(string[] args) {
             }
             auto argumentZero = args.length > sourceIndex + 1 ? args[sourceIndex + 1] : args[0];
             auto arguments = args.length > sourceIndex + 2 ? args[sourceIndex + 2 .. $] : [];
-            auto mem = shellMemory(argumentZero, arguments, options);
+            auto mem = shellMemory(args[0], argumentZero, arguments, options);
             return runBatchSource(source, mem);
         }
 
@@ -178,7 +215,7 @@ int main(string[] args) {
                 parseProgram(source, ReturnMode.shell, options);
                 return 0;
             }
-            auto mem = shellMemory(args[sourceIndex], args[sourceIndex + 1 .. $], options);
+            auto mem = shellMemory(args[0], args[sourceIndex], args[sourceIndex + 1 .. $], options);
             mem.pushSourceDirectory(args[sourceIndex]);
             return runBatchSource(source, mem);
         }
@@ -205,6 +242,9 @@ int main(string[] args) {
     } catch (YshError error) {
         stderr.writeln("ysh-d: ", error.msg);
         return parseOnly ? 2 : error.status;
+    } catch (ResourceError error) {
+        stderr.writeln("ysh-d: I/O error (main): ", error.msg);
+        return 2;
     } catch (FileException error) {
         stderr.writeln("ysh-d: ", error.msg);
         return 1;
@@ -212,12 +252,28 @@ int main(string[] args) {
 }
 
 unittest {
+    import core.stdc.stdio : ferror;
+    auto output = File("/dev/full", "w");
+    output.write("buffered help bytes");
+    drainHelpOutput(output);
+    assert(ferror(output.getFP()) == 0);
+    output.flush(); // A later mandatory runtime drain must also succeed.
+}
+
+unittest {
     assert(versionDescription().indexOf("\nImplementation: native D translation (partial)") >= 0);
+    assert(main(["ysh-d", "--help", "--version", "-c", "exit 91"]) == 0);
+    assert(main(["ysh-d", "--help", "--invalid-help-control"]) == 2);
+    assert(main(["ysh-d", "--help", "-c"]) == 2);
+    assert(main(["ysh-d", "-c", "exit 23", "--help"]) == 23);
     assert(main(["ysh-d", "--version"]) == 0);
     assert(main(["osh-d", "-e", "--version"]) == 0);
     assert(main(["ysh-d", "--version", "-c", "exit 91"]) == 0);
     assert(main(["ysh-d", "--version", "--invalid-version-control"]) == 2);
     assert(main(["ysh-d", "--version", "-c"]) == 2);
+    assert(main(["ysh-d", "--help", "--version", "-c", "exit 91"]) == 0);
+    assert(main(["ysh-d", "--help", "--invalid-help-control"]) == 2);
+    assert(main(["ysh-d", "--help", "-c"]) == 2);
     assert(main(["ysh-d", "-c", "exit 23", "--version"]) == 23);
     assert(main(["ysh-d", "-c", "case ('μx') { / <capture dot> / { assert [_group(1) === 'μ'] } }"]) == 0);
     // CLI words after -c belong to argv, even when they look executable.
@@ -234,7 +290,7 @@ unittest {
         "exit 91; var x = missing(1 / 0); echo $undefined; source /no/such/file"]) == 0);
     assert(main(["ysh-d", "-n", "-c", "if (false) { var x = 1 + }"]) == 2);
     assert(main(["ysh-d", "-n", "-c", "proc unused { echo $[1 +] }"]) == 2);
-    auto mem = shellMemory("script with spaces.grease", ["one word", "two"]);
+    auto mem = shellMemory("ysh-d", "script with spaces.grease", ["one word", "two"]);
     assert(mem.argumentZero == "script with spaces.grease");
     assert(mem.get("ARGV").listValue.length == 2);
     assert(mem.get("ARGV").listValue.items[0].stringValue == "one word");
@@ -273,7 +329,7 @@ version (Posix) unittest {
     }
 
     auto output = File.tmpfile(), errors = File.tmpfile();
-    auto mem = shellMemory("internal-failure.grease", []);
+    auto mem = shellMemory("ysh-d", "internal-failure.grease", []);
     mem.outputFile = output;
     mem.errorFile = errors;
     sigaction_t before, after;
@@ -291,7 +347,7 @@ version (Posix) unittest {
 
     output = File.tmpfile();
     errors = File.tmpfile();
-    mem = shellMemory("ordinary-failure.grease", []);
+    mem = shellMemory("ysh-d", "ordinary-failure.grease", []);
     mem.outputFile = output;
     mem.errorFile = errors;
     mem.declareLocal("opt", Value.str("readonly"), true);
@@ -306,7 +362,7 @@ version (Posix) unittest {
     foreach (redirect; ["2>/dev/full", "2>&-"]) {
         output = File.tmpfile();
         errors = File.tmpfile();
-        mem = shellMemory("unhandled-io.grease", []);
+        mem = shellMemory("ysh-d", "unhandled-io.grease", []);
         mem.outputFile = output;
         mem.errorFile = errors;
         assert(sigaction(SIGINT, null, &before) == 0);

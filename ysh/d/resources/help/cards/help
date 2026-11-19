@@ -1,0 +1,11 @@
+Usage: help TOPIC?
+
+Examples:
+
+    help               # this help
+    help echo          # help on the 'echo' builtin
+    help command-sub   # help on command sub $(date)
+
+    help oils-usage    # identical to oils-for-unix --help
+    help osh-usage     #              osh --help
+    help ysh-usage     #              ysh --help

@@ -1,0 +1,22 @@
+The reference is divided in to "chapters", each of which has its own table of
+contents.  Type:
+
+    help osh-$CHAPTER
+
+Where $CHAPTER is one of:
+
+    type-method
+    builtin-cmd
+    stdlib
+    front-end
+    cmd-lang
+    osh-assign
+    word-lang
+    mini-lang
+    option
+    special-var
+    plugin
+
+Example:
+
+    help osh-word-lang

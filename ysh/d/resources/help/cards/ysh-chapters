@@ -1,0 +1,24 @@
+The reference is divided in to "chapters", each of which has its own table of
+contents.  Type:
+
+    help ysh-$CHAPTER
+
+Where $CHAPTER is one of:
+
+    type-method
+    builtin-func
+    builtin-cmd
+    stdlib
+    front-end
+    cmd-lang
+    ysh-cmd
+    expr-lang
+    word-lang
+    option
+    special-var
+    plugin
+
+Example:
+
+    help ysh-expr-lang
+    help ysh-ysh-cmd    # may change

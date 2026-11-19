@@ -1,0 +1,40 @@
+Types and Methods
+
+  [Atoms]          Null        null
+                   Bool        expr/true        expr/false
+  [Numbers]        Int
+                   Float
+                   Range
+  [String]         Str         find()           findLast()
+                               contains()       replace()
+                               trim()           trimStart()       trimEnd()
+                               startsWith()     endsWith()
+                               upper()          lower()
+                               search()         leftMatch()
+                               split()          lines()
+  [Patterns]       Eggex
+                   Match       group()          start()           end()
+                             X groups()       X groupDict()
+  [Containers]     List        List/append()    pop()             extend()
+                               indexOf()        lastIndexOf()   X includes()
+                               insert()         remove()
+                               reverse()        List/clear()
+                   Dict        erase()          Dict/clear()      append()
+                               update()         inc()
+                   Place       setValue()
+  [Code Types]     Func        
+                   BuiltinFunc
+                   BoundFunc
+                   Proc        docComment()   
+                   BuiltinProc
+  [Objects]        Obj         __invoke__       new
+                             X __call__         __index__       X __str__
+  [Reflection]     Command     sourceCode()
+                   Expr
+                   Frame
+                   DebugFrame  toString()
+                   io          stdin            io/eval()         io/evalExpr()
+                               captureStdout()  captureAll()      promptVal()
+                             X time()         X strftime()        glob()
+                               libcGlob()
+                   vm          getFrame()       getDebugStack()   id() 

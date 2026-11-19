@@ -16,6 +16,11 @@ on:
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
       - 'spec/command_.test.sh'
+      - 'spec/ysh-builtin-help.test.sh'
+      - 'doc/ref/**'
+      - 'doctools/**'
+      - 'data_lang/htm8*'
+      - 'build/doc.sh'
       - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
@@ -31,6 +36,9 @@ on:
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
       - 'core/sh_init.py'
+      - 'core/util.py'
+      - 'core/pyutil.py'
+      - 'display/ansi.py'
       - 'pylib/os_path.py'
       - 'pylib/path_stat.py'
       - 'core/process.py'
@@ -60,6 +68,11 @@ on:
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
       - 'spec/command_.test.sh'
+      - 'spec/ysh-builtin-help.test.sh'
+      - 'doc/ref/**'
+      - 'doctools/**'
+      - 'data_lang/htm8*'
+      - 'build/doc.sh'
       - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
@@ -75,6 +88,9 @@ on:
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
       - 'core/sh_init.py'
+      - 'core/util.py'
+      - 'core/pyutil.py'
+      - 'display/ansi.py'
       - 'pylib/os_path.py'
       - 'pylib/path_stat.py'
       - 'core/process.py'
@@ -120,7 +136,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y build-essential ldc libreadline-dev gawk
+          sudo apt-get install -y build-essential ldc libreadline-dev gawk cmake
 
       - name: Check out qualified Icky DMD
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -211,6 +227,13 @@ jobs:
 
           test -x ysh/d/.build/ysh-d-unittests
           test -x ysh/d/.build/ysh-d
+
+      - name: Verify canonical help inputs and D data regeneration
+        run: |
+          ysh/d/.build/ysh-d ysh/d/qualification/qualify-help-data.grease \
+            "$GITHUB_WORKSPACE/.runtime-dmd/generated/linux/release/64/dmd" \
+            "$GITHUB_WORKSPACE/.runtime-dmd/druntime/import" \
+            "$GITHUB_WORKSPACE/.runtime-phobos"
 
       - name: Check CLI argument boundaries and terminal status
         run: ysh/d/.build/ysh-d-cli-unittests -c true
@@ -432,6 +455,44 @@ jobs:
       - name: Qualify retained hash and shared executable cache through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-hash.grease
 
+      - name: Check out canonical CommonMark renderer source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: commonmark/cmark
+          ref: 8daa6b1495124f0b67e6034130e12d7be83e38bd
+          path: .help-cmark
+          persist-credentials: false
+
+      - name: Build host-only canonical documentation renderer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S .help-cmark -B .help-cmark-build \
+            -DCMAKE_BUILD_TYPE=Release -DCMARK_TESTS=OFF \
+            -DCMARK_SHARED=OFF -DCMARK_STATIC=ON \
+            -DCMAKE_CXX_COMPILER=/usr/bin/false \
+            -DCMAKE_CXX_COMPILER_FORCED=TRUE -DCMAKE_CXX_COMPILER_ID=DISABLED \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/../oils.DEPS/wedge/cmark/0.29.0"
+          cmake --build .help-cmark-build --parallel "$(nproc)" --target install
+          "$GITHUB_WORKSPACE/../oils.DEPS/wedge/cmark/0.29.0/bin/cmark" --version
+
+      - name: Generate original full help reference after minimal-reference matrix
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p ysh/d/.build/help-data
+          DOC_TIMESTAMP='Thu, 19 Nov 2026 00:00:00 +0000' build/doc.sh all-ref \
+            > ysh/d/.build/help-data/original-doc-generation.log 2>&1
+
+      - name: Compare full canonical help with native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-help.grease
+
+      - name: Preserve whole original help fixture results
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-help-original.grease
+
+      - name: Qualify self-contained relocated native help
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-help-packaging.grease
+
       - name: Check out the retained Kitchen consumer fixture
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -470,5 +531,14 @@ jobs:
             ysh/d/.build/environment-values/
             ysh/d/.build/negated-command/
             ysh/d/.build/inherited-spec/
+            ysh/d/.build/help-data/*.log
+            ysh/d/.build/help-data/*.tsv
+            ysh/d/.build/help-contract/paired-*.log
+            ysh/d/.build/help-contract/paired-*.tsv
+            ysh/d/.build/help-contract/paired-*.txt
+            ysh/d/.build/help-contract/packaging-*
+            ysh/d/.build/help-contract/packaging.tsv
+            ysh/d/.build/help-contract/frozen-fixtures.log
+            ysh/d/.build/help-contract/reference-resources.diff
           if-no-files-found: error
           retention-days: 90

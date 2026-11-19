@@ -1,0 +1,34 @@
+osh and ysh accept standard POSIX shell flags, like:
+
+    bin/osh -o errexit -c 'false'
+    bin/ysh -n myfile.ysh
+    bin/ysh +o errexit -c 'false; echo ok'
+
+They also accept these flags:
+
+    --eval FILE
+        Evaluate the given file, similar to the 'source' builtin.  Specify it
+        multiple times to run multiple files.
+
+        If the errexit option is on (e.g. in YSH), then the shell stops when $?
+        is non-zero after evaluating a file.  The $0 value is set to FILE.
+
+    --eval-pure FILE
+        Like --eval, but disallow I/O (known as "pure mode").
+
+    --location-str
+        Use this string to display error messages.
+        See 'help sourceCode' for an example.
+
+    --location-start-line
+        Use this line number offset to display error messages.
+
+    --tool            Run a tool instead of the shell (cat-em|syntax-tree)
+    -n                Parse the program but don't execute it.  Print the AST.
+    --ast-format FMT  The format for the AST (text|text-abbrev)
+
+Examples:
+
+    ysh --eval one.ysh --eval two.ysh -c 'echo hi'  # Run 2 files first
+    osh -n -c 'hello'                               # pretty-print the AST
+    ysh --ast-format text -n -c 'hello'             # in unabridged format

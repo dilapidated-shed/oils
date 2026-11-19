@@ -1,0 +1,7 @@
+Errors
+
+  [UTF8]      err-utf8-encode       err-utf8-decode
+  [J8 String] err-j8-str-encode     err-j8-str-decode
+  [J8 Lines]  err-j8-lines-encode   err-j8-lines-decode
+  [JSON]      err-json-encode       err-json-decode
+  [JSON8]     err-json8-encode      err-json8-decode

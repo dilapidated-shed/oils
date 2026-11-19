@@ -12,6 +12,9 @@ import yshd.traps : TrapState;
 import yshd.jobs : JobTable;
 import yshd.trace : TraceState;
 import yshd.command_lookup : SearchPath;
+import yshd.help : HelpBuiltin;
+import yshd.help_resources : EmbeddedResourceLoader;
+import yshd.help_data : canonicalTopicMetadata;
 
 enum ReturnMode { shell, functionValue, procValue }
 
@@ -212,6 +215,7 @@ class ShellArgumentFrame {
 
 /// The translated lexical frames and shell registers of core/state.py:Mem.
 class Memory {
+    HelpBuiltin helpBuiltin;
     SearchPath searchPath;
     private YshDict environmentDefaults;
     TrapState traps;
@@ -482,6 +486,10 @@ class Memory {
     }
 
     this(File inputFile, File outputFile, File errorFile) {
+        // Library users receive the native embedded defaults. The executable
+        // replaces this context with its fixed applet/loader before running
+        // any shell source.
+        helpBuiltin = new HelpBuiltin("ysh", new EmbeddedResourceLoader(), canonicalTopicMetadata());
         this.inputFile = inputFile;
         this.outputFile = outputFile;
         this.errorFile = errorFile;

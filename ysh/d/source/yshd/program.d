@@ -2747,6 +2747,11 @@ class ProgramParser {
                     import yshd.hash : runHash;
                     mem.lastStatus = runHash(words, mem);
                     return;
+                case "help":
+                    evalArguments();
+                    if (typedArguments !is null || hasBlock) throw new UsageError("got unexpected typed args");
+                    mem.lastStatus = mem.helpBuiltin.run(words, mem);
+                    return;
                 case "getopts":
                     // GetOpts.Run ignores supplied typed values and blocks
                     // after their normal eager/lazy argument evaluation.

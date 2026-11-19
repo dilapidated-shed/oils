@@ -1,0 +1,9 @@
+Assignments and Expressions
+
+  [Literals]      sh-init-list  a=(v1 [i]=v2 [k]+=v3)   a+=(v1 [i]=v2 [k]+=v3)
+                  sh-array      array[123]=v   "${array[@]}"
+                  sh-assoc      assoc['k']=v   "${assoc[@]}"   "${!assoc[@]}"  
+  [Operators]     sh-assign     str='xyz'
+                  sh-append     str+='abc'
+  [Builtins]      local     readonly    export   unset   shift
+                  declare   typeset   X let

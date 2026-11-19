@@ -1,0 +1,23 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+if (len(ARGV) !== 3) { echo 'qualify-help-data.grease COMPILER DRUNTIME_IMPORT PHOBOS_ROOT' >&2; exit 2 }
+var root = $(realpath "$(dirname "$0")/../../..")
+cd "$root"
+var compiler = $(realpath "$[ARGV[0]]")
+var runtime = $(realpath "$[ARGV[1]]")
+var phobos = $(realpath "$[ARGV[2]]")
+var output = "$root/ysh/d/.build/help-data"
+mkdir -p "$output"
+test -x "$compiler"
+test -f "$runtime/object.d"
+test -f "$phobos/generated/linux/release/64/libphobos2.a"
+sha256sum -c ysh/d/resources/help/source-inputs.sha256 > "$output/source-inputs.log"
+sha256sum -c ysh/d/resources/help/canonical-inputs.sha256 > "$output/canonical-inputs.log"
+"$compiler" -conf= -fPIC -w "-I$runtime" "-I$phobos" \
+  "$phobos/generated/linux/release/64/libphobos2.a" -defaultlib= -debuglib= -L-lpthread -L-lm -L-ldl \
+  ysh/d/tools/help_data_gen.d "-of=$output/help-data-gen" > "$output/build.log" 2>&1
+"$output/help-data-gen" ysh/d/resources/help/topics.pylit ysh/d/resources/help/cards \
+  ysh/d/resources/help/oils-version.txt "$output/help_data.d"
+cmp ysh/d/source/yshd/help_data.d "$output/help_data.d"
+printf 'source-inputs\tPASS\ncanonical-inputs\tPASS\nd-generator-build\tPASS\nregeneration-byte-comparison\tPASS\n' > "$output/receipt.tsv"
+echo 'PASS canonical help inputs and native D data regeneration'

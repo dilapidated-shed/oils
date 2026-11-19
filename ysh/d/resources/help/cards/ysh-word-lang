@@ -1,0 +1,15 @@
+Word Language
+
+  [Glob]          ysh-glob         *.py
+  [Joining]       ysh-word-join    --flag='value'  PATH="value"
+  [Quotes]        ysh-string       "x is $x"  $"x is $x"  r'[a-z]\n'
+                                   u'line\n'  b'byte \yff'
+                  triple-quoted    """  $"""  r'''  u'''  b'''
+                X tagged-str       "<span id=$x>"html
+  [Substitutions] expr-sub         echo $[42 + a[i]]
+                  expr-splice      echo @[split(x)]
+                  var-splice       @myarray @ARGV
+                  command-sub      $(date)
+                  command-splice   @(cat my-j8-lines.txt)
+  [Formatting]  X ysh-printf       ${x %.3f}
+                X ysh-format       ${x|html}

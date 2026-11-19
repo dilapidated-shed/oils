@@ -1,0 +1,51 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+var root = $(realpath "$(dirname "$0")/../../..")
+if (len(ARGV) > 1) { echo 'qualify-help.grease takes at most one full-reference root' >&2; exit 2 }
+var reference = root
+if (len(ARGV) === 1) { setvar reference = $(realpath "$[ARGV[0]]") }
+var output = "$root/ysh/d/.build/help-contract"
+cd "$root"
+mkdir -p "$output"
+var sourceRevision = $(git rev-parse HEAD)
+var runtimeShaBefore = $(sha256sum "$root/ysh/d/.build/ysh-d" | cut -d ' ' -f 1)
+printf 'source_revision\t%s\nruntime_sha256\t%s\n' "$sourceRevision" "$runtimeShaBefore" > "$output/paired-start.tsv"
+sha256sum -c "$root/ysh/d/qualification/help/fixtures.sha256" > "$output/frozen-fixtures.log"
+cmp "$root/ysh/d/resources/help/topics.pylit" "$reference/_devbuild/gen/help_meta.py"
+cmp "$root/ysh/d/resources/help/oils-version.txt" "$reference/oils-version.txt"
+diff -ru "$root/ysh/d/resources/help/cards" "$reference/_devbuild/help" > "$output/reference-resources.diff"
+test -x "$output/../inherited-spec/native-osh"
+test -x "$output/../inherited-spec/native-ysh"
+proc qualify (fixture, name, language, range, records, matches) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" -v --details --range "$range" --timeout=3 \
+    --tmp-env "$output/tmp/paired-$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/paired-$name.tsv" \
+    "$root/$fixture" "$root/ysh/d/.build/inherited-spec/native-$language" "$reference/bin/$language" \
+    > "$output/paired-$name.log" 2>&1
+  var actualRecords = $(wc -l < "$output/paired-$name.tsv")
+  test "$actualRecords" -eq "$records"
+  var actualMatches = $(cut -f 3 "$output/paired-$name.tsv" | grep -c '^pass$')
+  test "$actualMatches" -eq "$matches"
+}
+# Two original cases currently hit pre-existing brace-expansion and
+# command-position @ARGV parser gaps. Preserve the entire original table
+# separately; these selected cases receive no new failure allowance.
+qualify spec/ysh-builtin-help.test.sh original-unknown ysh 0-0 3 2
+qualify spec/ysh-builtin-help.test.sh original-urls-default ysh 2-3 5 4
+qualify spec/ysh-builtin-help.test.sh original-errors ysh 5-5 3 2
+qualify ysh/d/qualification/help/topics.test.sh topics osh 0-10 23 22
+qualify ysh/d/qualification/help/arguments.test.sh arguments osh 0-9 21 20
+qualify ysh/d/qualification/help/typed-effects.test.sh typed-effects osh 0-6 15 14
+qualify ysh/d/qualification/help/io-environment.test.sh io-environment osh 0-10 23 22
+qualify ysh/d/qualification/help/resource-routing.test.sh resource-routing osh 0-11 25 24
+qualify ysh/d/qualification/help/defaults-osh.test.sh defaults-osh osh 0-6 15 14
+qualify ysh/d/qualification/help/defaults-ysh.test.sh defaults-ysh ysh 0-3 9 8
+qualify ysh/d/qualification/help/cli-edges.test.sh cli-edges osh 0-9 21 20
+sha256sum "$root/ysh/d/.build/ysh-d" > "$output/paired-runtime-sha256.txt"
+var runtimeShaAfter = $(cut -d ' ' -f 1 "$output/paired-runtime-sha256.txt")
+var sourceRevisionAfter = $(git rev-parse HEAD)
+test "$runtimeShaBefore" = "$runtimeShaAfter"
+test "$sourceRevision" = "$sourceRevisionAfter"
+echo 'PASS four unchanged original help cases and 72 additional contracts in native D and genuine full Oils'

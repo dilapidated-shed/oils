@@ -1,0 +1,18 @@
+Special Variables
+
+  [YSH Vars]      ARGV                ENV
+                  __defaults__        __builtins__        X __sh_function__
+                  _this_dir
+  [YSH Status]    _error
+                  _pipeline_status    _process_sub_status
+  [YSH Tracing]   SHX_indent          SHX_punct             SHX_pid_str
+  [YSH read]      _reply
+  [Oils VM]       OILS_VERSION        LIB_YSH
+                  OILS_GC_THRESHOLD   OILS_GC_ON_EXIT
+                  OILS_GC_STATS       OILS_GC_STATS_FD
+                  OILS_LOCALE_OK
+  [libc locale]   ysh-locale
+  [Interactive]   OILS_COMP_UI        YSH_HISTFILE
+  [Float]         NAN                 INFINITY
+  [Module]        __provide__ 
+  [Other Env]     HOME                PATH

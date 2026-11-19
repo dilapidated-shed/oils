@@ -1,0 +1,32 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+var root = $(realpath "$(dirname "$0")/../../..")
+if (len(ARGV) > 1) { echo 'qualify-help-packaging.grease takes at most one full-reference root' >&2; exit 2 }
+var reference = root
+if (len(ARGV) === 1) { setvar reference = $(realpath "$[ARGV[0]]") }
+var output = "$root/ysh/d/.build/help-contract"
+test -x "$root/ysh/d/.build/ysh-d"
+mkdir -p "$output/relocated" "$output/unrelated directory"
+cp "$root/ysh/d/.build/ysh-d" "$output/relocated/osh-d"
+cp "$root/ysh/d/.build/ysh-d" "$output/relocated/ysh-d"
+cd "$output/unrelated directory"
+for language in osh ysh; do
+  env -u _OVM_IS_BUNDLE -u _OVM_PATH -u _OVM_RESOURCE_ROOT "$reference/bin/$language" --help \
+    > "$output/packaging-$language-main.reference" 2> "$output/packaging-$language-main.reference.err"
+  env -u _OVM_IS_BUNDLE -u _OVM_PATH -u _OVM_RESOURCE_ROOT "$output/relocated/$language-d" --help \
+    > "$output/packaging-$language-main.native" 2> "$output/packaging-$language-main.native.err"
+  cmp "$output/packaging-$language-main.reference" "$output/packaging-$language-main.native"
+  test ! -s "$output/packaging-$language-main.reference.err"
+  test ! -s "$output/packaging-$language-main.native.err"
+  env -u _OVM_IS_BUNDLE -u _OVM_PATH -u _OVM_RESOURCE_ROOT "$reference/bin/$language" -c help \
+    > "$output/packaging-$language-builtin.reference" 2> "$output/packaging-$language-builtin.reference.err"
+  env -u _OVM_IS_BUNDLE -u _OVM_PATH -u _OVM_RESOURCE_ROOT "$output/relocated/$language-d" -c help \
+    > "$output/packaging-$language-builtin.native" 2> "$output/packaging-$language-builtin.native.err"
+  cmp "$output/packaging-$language-builtin.reference" "$output/packaging-$language-builtin.native"
+  test ! -s "$output/packaging-$language-builtin.reference.err"
+  test ! -s "$output/packaging-$language-builtin.native.err"
+done
+file "$output/relocated/osh-d" > "$output/packaging-file.txt"
+sha256sum "$root/ysh/d/.build/ysh-d" "$output/relocated/osh-d" "$output/relocated/ysh-d" \
+  > "$output/packaging-sha256.txt"
+printf 'case\tresult\nosh-main-relocated-unrelated-cwd\tPASS\nosh-builtin-relocated-unrelated-cwd\tPASS\nysh-main-relocated-unrelated-cwd\tPASS\nysh-builtin-relocated-unrelated-cwd\tPASS\n' > "$output/packaging.tsv"

@@ -1,0 +1,5 @@
+Global Shell Options
+
+  [Optimize]     rewrite_extern  ysh_rewrite_extern
+  [Groups]       strict:all      ysh:upgrade     ysh:all
+  [YSH Details]  opts-redefine   opts-internal

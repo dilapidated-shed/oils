@@ -1,0 +1,14 @@
+Command Language
+
+  [Commands]      simple-command
+                  command-lookup-order
+                  ysh-prefix-binding
+                  semicolon ;
+  [Redirects]     ysh-here-str    read <<< '''
+  [YSH Simple]    typed-arg       json write (x)
+                  lazy-expr-arg   assert [42 === x]
+                  block-arg       cd /tmp { echo $PWD }; cd /tmp (; ; blockexpr)
+  [YSH Cond]      ysh-case        case (x) { *.py { echo 'python' } }
+                  ysh-if          if (x > 0) { echo }
+  [YSH Iter]      ysh-for         for i, item in (mylist) { echo }
+                  ysh-while       while (x > 0) { echo }

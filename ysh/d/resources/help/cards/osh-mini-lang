@@ -1,0 +1,19 @@
+Other Mini Languages
+
+  [Arithmetic]    arith-context Where legacy arithmetic is allowed
+                  sh-numbers    0xFF  0755  etc.
+                  sh-arith      1 + 2*3   a *= 2
+                  sh-logical    !a && b
+                  sh-bitwise    ~a ^ b
+  [Boolean]       bool-expr     [[ ! $x && $y || $z ]]
+                                test ! $x -a $y -o $z
+                  bool-infix    $a -nt $b    $x == $y
+                  bool-path     -d /etc
+                  bool-str      -n foo   -z '' 
+                  bool-other    -o errexit   -v name[index]
+  [Patterns]      glob-pat      *.py
+                  extglob       ,(*.py|*.sh)
+                  regex         [[ foo =~ [a-z]+ ]]
+  [Other Sublang] braces        {alice,bob}@example.com
+                  histsub       !$  !!  !n
+                  char-escapes  \t  \c  \x00  \u03bc
