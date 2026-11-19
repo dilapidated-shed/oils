@@ -1,0 +1,13 @@
+case	shell	result
+0	native-ysh	pass
+0	ysh	pass
+1	native-ysh	FAIL
+1	ysh	pass
+2	native-ysh	pass
+2	ysh	pass
+3	native-ysh	pass
+3	ysh	pass
+4	native-ysh	FAIL
+4	ysh	pass
+5	native-ysh	pass
+5	ysh	pass

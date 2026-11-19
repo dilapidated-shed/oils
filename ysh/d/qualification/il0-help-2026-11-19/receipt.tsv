@@ -1,0 +1,79 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease/package admission;canonical native help and CLI usage slice PASS
+observed_date	2026-11-19 America/Detroit
+owner_repository	dilapidated-shed/oils;Grease issue58
+branch	d/ysh-first-slice
+starting_head	7d30ce2edbe8f82e636b2776f322c8477ef29130
+implementation_commit	d4a983b167c0d60be4909ebbb8d4ae9a3ad886d2
+local_validation_commit	fdd93fe237ae133ad75cc387f72287bfea2b034a
+identical_full_tree	04ad236d24f1d9a6e2ca09fab3101b688afc966b;API implementation and local validation have identical complete trees
+implementation_source_tree	0a7b60861140228e1077c449b82957128b0ffe6e
+source_state	Final native/resources/generator/stdlib/version inputs unchanged through accepted execution;later documentation/receipts separate
+host	Disposable container5135d1448df6;Debian GNU/Linux13.6 trixie;Linux6.18.57 x86_64
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	6b339321420eb05bf0930ca51064c4d8cc2b5121a26472c12dd38dd62274f783
+bootstrap	Pinned official LDC1.36.0 builds Icky DMD only;native target and D converter compiled by pinned Icky DMD
+binary_name	ysh-d;partial implementation artifact
+binary_bytes	3948048
+binary_sha256	31fe6380edc6a5077a0cf79d48c9edd3546adf93372dabeb45eed026aa1ce89e
+build	PASS final app/library/CLI unit builds;all compiler processes0;captured final native-build logs
+library_units	PASS60 modules;process0;logSHAa9cf25bbc1f817c6cb2f3c044624509124d61007d8555505d2ea9050448d2e24
+cli_units	PASS61 modules;process0;logSHAaf20b25d3c19f63e1fd226ec1c4f866b9f543ab77f0dadedbbcd20e93f9847c0
+unit_order	Library then CLI serially;no concurrent fixture collision
+contract_owners	builtin/misc_osh.py:Help;core/util.py:PrintTopicHeader/PrintEmbeddedHelp/HelpFlag;core/pyutil.py resource/version;cpp/core.cc native embedded boundary
+help_rendering	PASS exact plain/TTY headers,ANSI,blanklines,embeddedbytes,metadata priority,null/empty distinction,ASCII byte casefold,repr,first-topic-only
+argument_effects	PASS eager typed values execute before rejection;lazy arguments unforced;blocks unexecuted;redirect/reporting ownership retained
+startup_context	Applet language,resource route andfirstlineversion captured before shell evaluation;independent of $0/cwd/option changes
+native_default	Source-owned embedded version and canonical static metadata/cards;no runtime Python or external resource sidecar
+explicit_compatibility_routes	File _OVM_RESOURCE_ROOT and zip _OVM_IS_BUNDLE/_OVM_PATH;explicit missing roots never silently fallback
+loader_scope	Stored/deflated/appendedZIP and controlledfile-root protocols qualified;syntheticloaderdata notproductcards;no whole malformed/ZIP64/source-location/defaultarbitrarytraversal parity claim
+main_help	PASS --help exactversionline+languageusage+sharedflags;flagsvalidatedfirst;help before version/source;h remains hashall nothelp
+main_help_completion_io	PASS default small buffered final drain failure0(full/closed);large65536-byte bodywrite failure2;onlycompletiondrain error ignored+clearerr;ordinary builtin/version flush rules unchanged
+canonical_generation	PASS actual unchanged build/doc.sh all-ref inisolated genuinefull-reference source7d30ce2;mainminimalreferenceuntouched
+canonical_input_counts	23Markdown->23HTML;17chapters;524topicentries(7None);34cards(27indices+7embedded)
+cmark	Exact commonmark/cmark0.29.0 source8daa6b1495124f0b67e6034130e12d7be83e38bd
+cmark_binary_sha256	b6777363bab09007cdab3ce0e5b6e936e8c4e671c5c24169b60b6d2d74e7b8d6;local Icky C build;C++compiler disabled
+cmark_original_tests	PASS649spec+16smart+12regression;zero errors/failures/skips
+original_metadata_sha256	af8ae5256968fab9f2c2d49251b50cfcd2fde07847a4ad702545b60125fc413d
+original_resource_manifest_sha256	ac377a63e607bb05cf2abe08c4c6e8cdad077ad6c15f0f328661c2f2ac4b7313
+data_translation	D-only tools/help_data_gen.d parses original TOPICS byte-string/None data without executing Python;deterministic generated help_data.d
+data_verification	PASS50originalsource-input hashes+36canonical-output hashes;Dconverterbuild0;regenerationcmp0
+resource_whitespace	Canonical output copiedbyte-exact including padding/final blanks;scoped.gitattributes generateddata exemption;nativecode/fixtures diff--checkPASS
+ci_reference_plan	Originalfullreference generation after minimal matrix;source+resourcecmp independentofDconverter;host-only C renderer vs pinnedDMD target
+strict_help_pairs	PASS4 original+72additional;76cases eachnative/reference;152PASSrecords;0FAIL/0TIME
+original_full_table	6unchangedoriginalcases:native4PASS2FAIL,genuinefullreference6PASS;harness1 preserved
+original_parser_limits	Cases1 and4 reach existingbrace-expansion andcommand-position@ARGV gaps;no original fixture/label/allowance change
+minimal_reference_evidence	Mainminimal original6 has2PASS4FAIL;five additionalminimal-only cases PASS separate;not claimednativefull tests
+additional_inventory	topics11;arguments10;typed7;io11;resource-routing12;defaults-osh7;defaults-ysh4;cli10
+packaging	PASS4exactbytecontrols:OSH/YSHmain--help andbuiltinhelp fromcopiedELF inunrelatedcwd;no sidecar
+independent_catalogue	PASS14freshfinal-runtimepairs;all524metadata+34resource names oneexhaustiveprogram:both0,73763identicalstdoutbytes
+negative_controls	PASS4freshfinalsource mutants;compile0/baseline0/faulty1 each;metadata,casefold,bodybytes,startupversion tests
+superseded	Initial generator path bug and2cc8 flag-teardown candidate failures preserved separately;prefinal FP/control/rebuild PASS notpromoted
+inherited	903matches216FAIL;1119unchangedcases81fixtures;zero native regressions;zeroTIME/TIMEOUT
+inherited_reference	1045matches74FAIL;mainminimalreference unchanged fromhashcheckpoint
+inherited_delta	Onlynativehelp0,2,3,5 FAIL->pass;allothernative/reference verdicts unchanged
+inherited_schema	Originaldriver retains oct27/oct31 headers;oct31fields containthisfinalNov19run
+shared_read	62matches2FAILnative;63matches1FAILreference;64cases;byte-identicaltohashcheckpoint;zeroTIME/TIMEOUT
+preceding_gates	PASSversion,ENV,negation,exec,ulimit,time,times,umask,shift,reporter,getopts,hash,Kitchen
+outcome_guard	PASS actualfinal inherited/sharedread;original3sec limits/labels/baselines/allowances unchanged
+reference_runtime	Actualminimal+genuinefull source7d30ce2 viaCPython2.7.13UCS4 SHA256f58305a0d5d4f9e9e3cc4263048015659875469ddda566eba76d2ceb1effc4b2;private retainedsinpirename only
+gawk	ActualGNUgawk5.2.1 SHA2566f67ab710f348f1263b778764e5cb940bc3e9a05030c90dd81a8a66ead717dac
+clean_rebuild	PASS separatecleanfdd93fe sourceworktree;cmp0 byte-identical31fe6380;actualnative-link.map retained
+second_host_byte_reproducibility	NOT_RUN
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;Lua87306483cec50f8c750a22dda1d0742246fad756;stock0b29f408433e92953cc72b1d3e06c7ac8139e439
+producer_execution	PASS fresh actualoriginalproducer0 on31fe6380;all155inputs andbothhelp manifests unchanged
+producer_controls	PASS fresh actualoriginal13control program0;exactly13PASS+header
+producer_support	Exact pinnedIckyCclosure andverifiedprivateGCC13 namespace;no targetcompiler substitution/system install
+dynamic_dependencies	ActualELF resolveslibgcc_s,libc,loader;noC++runtime dependency inboundedinspection
+symbol_findings	Doptional__cxa_demangle pointer/lookup+weakglibc__cxa_finalize retained;notzero-markerorstaticproof
+independent_cpp_closure	NOT_RUN independentstatic/transitive acceptance;wholeGrease/packageadmissionBLOCKED
+hosted_ci_scope	Actions bindsfinalpublishingcommit separately;this localreceiptmakesnohostedCIclaim
+physical_acceptance	NOT_RUN;noAndroid/NetBSD/devicecompile/install/physicalacceptance
+first_ordinary_gap	compgen -W 'first second' '';native3untranslated;full/minimaloriginal0:first then second
+next_owner	builtin/completion_osh.py:CompGen.Run;SpecBuilder
+archive_scope	Acceptedrawlogs/tables/checksums/map andlabelednegatives;noexecutables/fullsourceclones/producerarchives/temporarysignedURLs
+output_paths	receipt.tsv;paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;help-oracle.tsv;help-original-full.tsv;help-strict-summary.tsv;packaging.tsv;negative-controls.tsv;producer-receipt.tsv;producer-controls.tsv;execution-logs.zip;artifacts.tsv

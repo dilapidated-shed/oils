@@ -1,0 +1,13 @@
+fixture	paired_records	pass_records
+original-unknown	2	2
+original-urls-default	4	4
+original-errors	2	2
+topics	22	22
+arguments	20	20
+typed-effects	14	14
+io-environment	22	22
+resource-routing	24	24
+defaults-osh	14	14
+defaults-ysh	8	8
+cli-edges	20	20
+total	152	152

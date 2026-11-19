@@ -1,0 +1,5 @@
+case	result
+osh-main-relocated-unrelated-cwd	PASS
+osh-builtin-relocated-unrelated-cwd	PASS
+ysh-main-relocated-unrelated-cwd	PASS
+ysh-builtin-relocated-unrelated-cwd	PASS
