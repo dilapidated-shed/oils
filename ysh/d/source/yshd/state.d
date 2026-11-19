@@ -374,6 +374,9 @@ class Memory {
     // Suppress recursive re-expansion while reparsing an alias's source.
     // This permits the ordinary `alias echo='echo prefix'` pattern.
     string[] aliasExpansionStack;
+    // builtin/pure_osh.py:GetOptsState belongs to the interpreter, not a
+    // variable or positional frame. Assigning OPTIND does not reset it.
+    size_t getoptsFlagPosition = 1;
     private File inputStream, outputStream, errorStream;
 
     @property File inputFile() {
@@ -505,6 +508,7 @@ class Memory {
         globalFrame.cells.set("ARGV", new Cell(Value.list([])));
         // InitDefaultVars sets IFS even when no_init_globals is enabled.
         globalFrame.cells.set("IFS", new Cell(Value.str(" \t\n")));
+        globalFrame.cells.set("OPTIND", new Cell(Value.str("1")));
         globalFrame.cells.set("PS4", new Cell(Value.str("${SHX_indent}${SHX_punct}${SHX_pid_str} ")));
         globalFrame.cells.set("_error", new Cell(Value.dict()));
         globalFrame.cells.set("NAN", new Cell(Value.floating(double.nan)));

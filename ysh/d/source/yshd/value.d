@@ -218,6 +218,13 @@ class RegexMatch {
     }
 }
 
+/// An uncaught failure inside the retained interpreter is not a shell-level
+/// user error. It bypasses language try/EXIT handling, but still unwinds D
+/// scopes so descriptors and signal dispositions can be restored.
+class InterpreterFailure : Exception {
+    this(string message) { super(message); }
+}
+
 class YshError : Exception {
     int status;
     this(string message, int status = 3) {

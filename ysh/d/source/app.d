@@ -13,7 +13,7 @@ import yshd.program : ShellExit, executeProgram, parseProgram;
 import yshd.func_proc : ProcReturn;
 import yshd.state : Memory, ReturnMode;
 import yshd.options : ShellOptions;
-import yshd.value : UsageError, YshError, repr;
+import yshd.value : InterpreterFailure, UsageError, YshError, repr;
 
 private string versionDescription() {
     // core/pyutil.py:GetVersion ignores everything after the first line.
@@ -53,6 +53,10 @@ private int runBatchSource(string source, Memory mem) {
     catch (ShellExit control) { status = control.status; }
     catch (ProcReturn control) { status = control.status; }
     catch (LexError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 2; }
+    catch (InterpreterFailure error) {
+        mem.diagnostic("ysh-d: internal interpreter failure: " ~ error.msg);
+        return 1;
+    }
     catch (YshError error) { mem.diagnostic("ysh-d: " ~ error.msg); status = error.status; }
     catch (FileException error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 1; }
     // bin/oils_for_unix.py:main treats raw, unhandled I/O failures as2.
@@ -192,6 +196,9 @@ int main(string[] args) {
     } catch (UsageError error) {
         stderr.writeln("ysh-d: ", error.msg);
         return 2;
+    } catch (InterpreterFailure error) {
+        stderr.writeln("ysh-d: internal interpreter failure: ", error.msg);
+        return 1;
     } catch (YshError error) {
         stderr.writeln("ysh-d: ", error.msg);
         return parseOnly ? 2 : error.status;
@@ -247,4 +254,49 @@ version (linux) unittest {
     failedScript.flush();
     auto failedPath = "/proc/self/fd/" ~ to!string(failedScript.fileno());
     assert(main(["ysh-d", failedPath]) == 1);
+}
+
+version (Posix) unittest {
+    import core.sys.posix.signal : sigaction, sigaction_t, SIGINT;
+    import std.stdio : File;
+    import yshd.value : Value;
+
+    string contents(File file) {
+        file.flush();
+        file.rewind();
+        string result, line;
+        while ((line = file.readln()).length) result ~= line;
+        return result;
+    }
+
+    auto output = File.tmpfile(), errors = File.tmpfile();
+    auto mem = shellMemory("internal-failure.grease", []);
+    mem.outputFile = output;
+    mem.errorFile = errors;
+    sigaction_t before, after;
+    assert(sigaction(SIGINT, null, &before) == 0);
+    assert(runBatchSource(`
+        trap --add EXIT { echo EXIT }
+        getopts abc opt -abc
+        getopts x opt -x
+        echo resumed
+    `, mem) == 1);
+    assert(contents(output) == "", "an internal interpreter failure ran the EXIT trap");
+    assert(contents(errors) == "ysh-d: internal interpreter failure: getopts: option byte index out of range\n");
+    assert(sigaction(SIGINT, null, &after) == 0);
+    assert(before.sa_handler == after.sa_handler, "internal failure skipped signal restoration");
+
+    output = File.tmpfile();
+    errors = File.tmpfile();
+    mem = shellMemory("ordinary-failure.grease", []);
+    mem.outputFile = output;
+    mem.errorFile = errors;
+    mem.declareLocal("opt", Value.str("readonly"), true);
+    assert(runBatchSource(`
+        trap --add EXIT { echo EXIT }
+        getopts a opt -a
+        echo resumed
+    `, mem) == 1);
+    assert(contents(output) == "EXIT\n", "an ordinary fatal runtime error skipped the EXIT trap");
+    assert(contents(errors).indexOf("Can't assign to readonly value 'opt'") >= 0);
 }

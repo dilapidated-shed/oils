@@ -8,7 +8,7 @@ import std.conv : to;
 
 import yshd.state : Memory, ReturnMode;
 import yshd.func_proc : ProcReturn;
-import yshd.value : YshError;
+import yshd.value : InterpreterFailure, YshError;
 import yshd.program : ShellExit, Errexit;
 import yshd.trace : TraceScope, TraceProcessKind;
 
@@ -80,6 +80,7 @@ private int evaluateChild(string source, Memory mem,
     try { status = executeStage(source, mem); }
     catch (ShellExit control) { status = control.status; }
     catch (ProcReturn control) { status = control.status; }
+    catch (InterpreterFailure error) { mem.errorFile.writeln("ysh-d: internal interpreter failure: ", error.msg); status = 1; }
     catch (YshError error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = error.status; }
     catch (Throwable error) { mem.errorFile.writeln("ysh-d: ", error.msg); status = 3; }
     mem.outputFile.flush();
@@ -188,6 +189,9 @@ int runSourcePipeline(string[] stages, Memory mem,
                     status = control.status;
                 } catch (ProcReturn control) {
                     status = control.status;
+                } catch (InterpreterFailure error) {
+                    mem.errorFile.writeln("ysh-d: internal interpreter failure: ", error.msg);
+                    status = 1;
                 } catch (YshError error) {
                     mem.errorFile.writeln("ysh-d: ", error.msg);
                     status = error.status;
@@ -270,6 +274,9 @@ SourceCapture captureSource(string source, Memory mem,
                 status = control.status;
             } catch (ProcReturn control) {
                 status = control.status;
+            } catch (InterpreterFailure error) {
+                mem.errorFile.writeln("ysh-d: internal interpreter failure: ", error.msg);
+                status = 1;
             } catch (YshError error) {
                 mem.errorFile.writeln("ysh-d: ", error.msg);
                 status = error.status;

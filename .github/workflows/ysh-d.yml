@@ -14,6 +14,8 @@ on:
       - 'spec/builtin-times.test.sh'
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
+      - 'spec/builtin-getopts.test.sh'
+      - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
@@ -22,6 +24,7 @@ on:
       - 'builtin/misc_osh.py'
       - 'builtin/umask_osh.py'
       - 'builtin/assign_osh.py'
+      - 'builtin/pure_osh.py'
       - 'builtin/error_ysh.py'
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
@@ -50,6 +53,8 @@ on:
       - 'spec/builtin-times.test.sh'
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
+      - 'spec/builtin-getopts.test.sh'
+      - 'spec/testdata/getopts-1523.sh'
       - 'spec/errexit.test.sh'
       - 'spec/bin/builtins-exec-here-doc-helper.sh'
       - 'test/sh_spec.py'
@@ -58,6 +63,7 @@ on:
       - 'builtin/misc_osh.py'
       - 'builtin/umask_osh.py'
       - 'builtin/assign_osh.py'
+      - 'builtin/pure_osh.py'
       - 'builtin/error_ysh.py'
       - 'bin/oils_for_unix.py'
       - 'core/state.py'
@@ -409,6 +415,9 @@ jobs:
 
       - name: Qualify paired reporter I/O boundaries through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-reporter-io.grease
+
+      - name: Qualify retained getopts and argument-effect boundaries through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-getopts.grease
 
       - name: Check out the retained Kitchen consumer fixture
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

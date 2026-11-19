@@ -15,7 +15,7 @@ import yshd.command_lookup : BuiltinKind, builtinKind, hasProcedure,
 import yshd.arith : ShellArithmetic, shellArithmeticEnd, parseShellArithmetic,
     parseShellArithmeticFor, parseShellArithmeticSlice, evaluateShellArithmetic, evaluateShellIndex;
 import yshd.expr : AssignmentScope, ParseError, evaluate, validateExpression,
-    validateAssignmentTarget, parseTypedArguments, expressionAtomEnd, ParsedArguments;
+    validateAssignmentTarget, parseTypedArguments, expressionAtomEnd, ParsedArguments, EvaluatedArguments;
 import yshd.func_proc : FunctionParameter, FunctionReturn, ProcReturn, YshFunction, YshProc, ProcSignature;
 import yshd.io_ysh : WriteEncoding, encodeDataValue, renderEcho,
     renderWrite, spliceArray, DataEncodeError, dataOptions;
@@ -856,6 +856,14 @@ class ProgramParser {
         if (command.length == 0) throw new YshError("! requires a command");
         parseProgram(command);
         if (syntaxOnly_) return;
+        if (mem.errexit && mem.options.get("strict_errexit")) {
+            auto conditional = new ProgramParser(command, true, returnMode_, false,
+                parserOptions_, null, attributeScope_, multiline_);
+            auto kind = conditional.manyStatusCommandKind();
+            if (kind.length)
+                throw new FatalRuntimeError("Command conditionals should only have one status, not " ~
+                    kind ~ " (strict_errexit, OILS-ERR-300)");
+        }
         ++mem.errexitSuppression;
         scope (exit) --mem.errexitSuppression;
         executeProgram(command, mem);
@@ -883,13 +891,100 @@ class ProgramParser {
         return command;
     }
 
+    /// osh/cmd_eval.py:_HasManyStatuses unwraps redirects and singleton
+    /// pipelines, and accepts Simple, DBracket and DParen commands. Reuse
+    /// structural command scanning so pipes in words, substitutions and
+    /// compound bodies do not become pipeline stages here.
+    private string manyStatusCommandKind() {
+        auto start = current_.offset;
+        auto scanner = commandScannerAt(start);
+        Token[] andOr;
+        bool pipeline;
+        int depth;
+        size_t end;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof || (!depth && isEndStatement(token.kind))) {
+                end = token.offset;
+                break;
+            }
+            if (!depth && token.kind == TokenKind.pipe) pipeline = true;
+            if (!depth && (token.kind == TokenKind.andIf || token.kind == TokenKind.orIf)) andOr ~= token;
+            adjustDepth(depth, token);
+        }
+        if (andOr.length) {
+            size_t begin;
+            foreach (index; 0 .. andOr.length + 1) {
+                auto finish = index < andOr.length ? andOr[index].offset : end;
+                auto child = new ProgramParser(commandFragment(start, begin, finish, scanner),
+                    true, returnMode_, false, parserOptions_, null, attributeScope_, multiline_);
+                auto kind = child.manyStatusCommandKind();
+                if (kind.length) return kind;
+                if (index < andOr.length) begin = finish + andOr[index].text.length;
+            }
+            return "";
+        }
+        if (timeKeywordEnd(source_, current_)) return "TimeBlock";
+        if (pipeline) return "Pipeline";
+
+        string childSource;
+        if (tryExecuteTopLevelRedirect(null, &childSource)) {
+            if (!childSource.strip().length) return "ShAssignment";
+            auto child = new ProgramParser(childSource, true, returnMode_, false,
+                parserOptions_, null, attributeScope_, multiline_);
+            return child.manyStatusCommandKind();
+        }
+        switch (current_.kind) {
+        case TokenKind.bang:
+            advance();
+            return manyStatusCommandKind();
+        case TokenKind.leftBrace: return "BraceGroup";
+        case TokenKind.leftParen:
+            return current_.offset + 1 < source_.length && source_[current_.offset + 1] == '('
+                ? "" : "Subshell";
+        case TokenKind.ifKeyword: return "If";
+        case TokenKind.whileKeyword: return "WhileUntil";
+        case TokenKind.forKeyword: return "ForEach";
+        case TokenKind.caseKeyword: return "Case";
+        case TokenKind.returnKeyword:
+        case TokenKind.breakKeyword:
+        case TokenKind.continueKeyword: return "ControlFlow";
+        case TokenKind.varKeyword:
+        case TokenKind.constKeyword: return "VarDecl";
+        case TokenKind.setvarKeyword:
+        case TokenKind.setglobalKeyword: return "Mutation";
+        case TokenKind.funcKeyword: return "YshFunc";
+        case TokenKind.procKeyword: return "Proc";
+        case TokenKind.equal: return "Expr";
+        default: break;
+        }
+        if (current_.kind == TokenKind.name && completeCommandWord(source_, current_)) {
+            if (current_.text == "until") return "WhileUntil";
+            if (current_.text == "exit") return "ControlFlow";
+            ShellFunctionDefinition definition;
+            auto functionParser = new ProgramParser(source_[current_.offset .. $], true,
+                returnMode_, false, parserOptions_, null, attributeScope_, multiline_);
+            if (functionParser.scanShellFunction(definition)) return "ShFunction";
+            if (tryRetainedAssignment(null)) return "ShAssignment";
+            // A pure assignment has its own AST variant; environment bindings
+            // followed by a command still form command.Simple.
+            while (!isEndStatement(current_.kind)) {
+                auto words = readCommandWord(null, true);
+                string name, value;
+                if (words.length != 1 || !lastWordStatic_ || !splitTempBinding(words[0], name, value)) return "";
+            }
+            return "ShAssignment";
+        }
+        return "";
+    }
+
     /// Expand a command-position, unquoted alias using the same D parser
     /// that executes ordinary source. Do not expand argument words or typed
     /// declaration names. Cycles are bounded by the active alias stack.
     ///
     /// This is a first alias slice. The more general upstream trailing-space
     /// and compound-language alias expansion remains untranslated.
-    private bool tryExpandCommandAlias(Memory mem) {
+    private bool tryExpandCommandAlias(Memory mem, void delegate()* prepared = null) {
         if (!mem.options.get("expand_aliases")) return false;
         if (current_.kind != TokenKind.name) {
             return false;
@@ -931,6 +1026,15 @@ class ProgramParser {
 
         // Preserve the original, *unexpanded* argument source. In particular,
         // single quotes and later variable reads must not be evaluated twice.
+        auto invocation = new ProgramParser(source_[statementStart .. statementEnd], true,
+            returnMode_, false, parserOptions_, null, attributeScope_, multiline_);
+        invocation.readCommandWord(null, true);
+        while (!isEndStatement(invocation.current_.kind)) {
+            // The original parser expands aliases only when the invocation
+            // has neither typed arguments nor a literal block argument.
+            if (invocation.atTypedArguments() || invocation.current_.kind == TokenKind.leftBrace) return false;
+            invocation.readCommandWord(null);
+        }
         auto expandedSource = *value ~
             source_[statementStart + aliasName.length .. statementEnd];
         mem.aliasExpansionStack ~= aliasName;
@@ -938,7 +1042,21 @@ class ProgramParser {
             mem.aliasExpansionStack.length =
                 mem.aliasExpansionStack.length - 1;
         }
-        .executeProgram(expandedSource, mem, attributeScope_, multiline_, redirectionOwner_);
+        if (prepared is null) {
+            .executeProgram(expandedSource, mem, attributeScope_, multiline_, redirectionOwner_);
+        } else {
+            auto child = new ProgramParser(expandedSource, false, returnMode_, false,
+                parserOptions_, null, attributeScope_, multiline_);
+            child.visibleAliases_ = visibleAliases_.dup;
+            child.redirectionOwner_ = redirectionOwner_;
+            auto dispatch = child.prepareRedirectedSimple(mem);
+            *prepared = () {
+                mem.aliasExpansionStack ~= aliasName;
+                scope (exit) --mem.aliasExpansionStack.length;
+                if (dispatch !is null) dispatch();
+                else .executeProgram(expandedSource, mem, attributeScope_, multiline_, redirectionOwner_);
+            };
+        }
 
         while (current_.kind != TokenKind.eof &&
                 current_.offset < statementEnd) {
@@ -1253,7 +1371,9 @@ class ProgramParser {
             kind == TokenKind.caseKeyword ||
             kind == TokenKind.ifKeyword ||
             kind == TokenKind.whileKeyword ||
-            kind == TokenKind.forKeyword;
+            kind == TokenKind.forKeyword ||
+            kind == TokenKind.returnKeyword || kind == TokenKind.breakKeyword ||
+            kind == TokenKind.continueKeyword;
     }
 
     private string decodeRedirectPath(string raw, Memory mem) {
@@ -1265,7 +1385,67 @@ class ProgramParser {
         return parts[0];
     }
 
-    private bool tryExecuteTopLevelRedirect(Memory mem) {
+    private bool atControlFlowCommand() {
+        return current_.kind == TokenKind.returnKeyword || current_.kind == TokenKind.breakKeyword ||
+            current_.kind == TokenKind.continueKeyword ||
+            (current_.kind == TokenKind.name && current_.text == "exit" && completeCommandWord(source_, current_));
+    }
+
+    /// Only a simple command evaluates its argv and typed packet before its
+    /// redirects. Compound bodies remain with their structural parser owner.
+    private void delegate() prepareRedirectedSimple(Memory mem) {
+        auto scanner = commandScannerAt(current_.offset);
+        int depth;
+        while (true) {
+            auto token = scanner.next();
+            if (token.kind == TokenKind.eof) break;
+            if (!depth && (token.kind == TokenKind.pipe || token.kind == TokenKind.andIf ||
+                    token.kind == TokenKind.orIf || token.kind == TokenKind.amp ||
+                    token.kind == TokenKind.greater || token.kind == TokenKind.less ||
+                    token.kind == TokenKind.shiftRight || token.kind == TokenKind.shiftLeft ||
+                    token.kind == TokenKind.tripleLess)) return null;
+            if (!depth && isEndStatement(token.kind)) {
+                auto remaining = source_[current_.offset + token.offset .. $].strip();
+                if (remaining.length && remaining != ";") return null;
+            }
+            adjustDepth(depth, token);
+        }
+        if (current_.kind == TokenKind.name && completeCommandWord(source_, current_)) {
+            void delegate() aliasDispatch;
+            if (tryExpandCommandAlias(mem, &aliasDispatch)) return aliasDispatch;
+            ShellFunctionDefinition definition;
+            auto functionParser = new ProgramParser(source_[current_.offset .. $], true,
+                returnMode_, false, parserOptions_, null, attributeScope_, multiline_);
+            if (functionParser.scanShellFunction(definition)) return null;
+            auto retained = new ProgramParser(source_[current_.offset .. $], true,
+                returnMode_, false, parserOptions_, null, attributeScope_, multiline_);
+            if (retained.tryRetainedAssignment(null)) return null;
+            switch (current_.text) {
+            case "json": case "json8":
+                mem.traps.runDebug(mem);
+                return prepareJson(mem);
+            case "pp":
+                mem.traps.runDebug(mem);
+                return preparePrettyPrint(mem);
+            case "until": case "declare": case "typeset": case "local": case "typed":
+            case "try": case "error": case "failed": case "assert": case "call":
+                return null;
+            default: break;
+            }
+        } else if (current_.kind == TokenKind.leftBracket) {
+            if (current_.offset + 1 < source_.length && source_[current_.offset + 1] == '[') return null;
+        } else if (current_.kind != TokenKind.trueKeyword && current_.kind != TokenKind.falseKeyword &&
+                current_.kind != TokenKind.colon && !isCommandWordToken(current_.kind)) return null;
+        if (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.leftParen ||
+                current_.kind == TokenKind.ifKeyword || current_.kind == TokenKind.caseKeyword ||
+                current_.kind == TokenKind.whileKeyword || current_.kind == TokenKind.forKeyword ||
+                current_.kind == TokenKind.returnKeyword || current_.kind == TokenKind.breakKeyword ||
+                current_.kind == TokenKind.continueKeyword) return null;
+        mem.traps.runDebug(mem);
+        return prepareCommandInvocation(mem);
+    }
+
+    private bool tryExecuteTopLevelRedirect(Memory mem, string* redirectedCommand = null) {
         redirectStatusChecked_ = false;
         if (!redirectableStatementStart(current_.kind)) {
             return false;
@@ -1336,18 +1516,27 @@ class ProgramParser {
             auto operandStart = token.offset + token.text.length;
             // Keep the following source available to the command lexer: its
             // lookahead may encounter a later here-document on this header.
-            auto operandParser = new ProgramParser(source_[statementStart + operandStart .. $], syntaxOnly_, returnMode_, false, parserOptions_, null, false, multiline_);
+            auto operandParser = new ProgramParser(source_[statementStart + operandStart .. $], true, returnMode_, false, parserOptions_, null, false, multiline_);
             bool duplicate = operandParser.current_.kind == TokenKind.amp;
             if (duplicate) operandParser.advance();
-            auto parts = operandParser.readCommandWord(mem);
+            auto rawStart = operandStart + operandParser.current_.offset;
+            auto parts = operandParser.readCommandWord(null);
             if (parts.length != 1) throw new YshError("redirect requires exactly one operand");
             commandSource ~= source_[statementStart + copiedThrough .. statementStart + begin] ~ " ";
             copiedThrough = operandStart + operandParser.current_.offset;
-            redirects ~= Redirection(descriptor, kind, duplicate, parts[0], false, false,
+            redirects ~= Redirection(descriptor, kind, duplicate,
+                source_[statementStart + rawStart .. statementStart + copiedThrough], false, false,
                 kind == TokenKind.tripleLess && operandParser.lastWordTriple_);
         }
         if (redirects.length == 0) return false;
         commandSource ~= source_[statementStart + copiedThrough .. statementStart + statementEnd];
+        if (parserOptions_ !is null && parserOptions_.get("no_parse_ignored")) {
+            auto command = new ProgramParser(commandSource, true, returnMode_, false,
+                parserOptions_, null, attributeScope_, multiline_);
+            if (command.atControlFlowCommand())
+                throw new ParseError("Control flow shouldn't have redirects");
+        }
+        if (redirectedCommand !is null) *redirectedCommand = commandSource;
 
         if (syntaxOnly_) {
             if (strip(commandSource).length)
@@ -1358,6 +1547,28 @@ class ProgramParser {
 
         auto frame = new DescriptorScope(mem);
         scope (exit) frame.finish();
+        auto command = new ProgramParser(commandSource, false, returnMode_, false,
+            parserOptions_, null, attributeScope_, multiline_);
+        command.visibleAliases_ = visibleAliases_.dup;
+        command.redirectionOwner_ = frame;
+        if (command.atControlFlowCommand()) {
+            // OSH accepts these redirects but drops them without expansion.
+            executeProgram(commandSource, mem);
+            redirectStatusChecked_ = true;
+            consumeStatement();
+            return true;
+        }
+        mem.registerDerivedSource(commandSource, source_, statementStart);
+        auto dispatch = commandSource.strip().length ? command.prepareRedirectedSimple(mem) : null;
+        // Evaluation precedes all descriptor changes, including here-document
+        // expansion. A failed eager argument therefore creates no files.
+        foreach (ref redirect; redirects) {
+            if (redirect.hereDocument) {
+                if (redirect.expandHereDocument)
+                    redirect.operand = evaluateDoubleQuoted(redirect.operand, mem, true);
+                redirect.expandHereDocument = false;
+            } else redirect.operand = decodeRedirectPath(redirect.operand, mem);
+        }
         foreach (redirect; redirects) {
             frame.save(redirect.descriptor);
             import core.sys.posix.sys.resource : rlimit, getrlimit, RLIMIT_NOFILE;
@@ -1441,8 +1652,10 @@ class ProgramParser {
             mem.bindDescriptor(redirect.descriptor, selected);
         }
         if (strip(commandSource).length) {
-            mem.registerDerivedSource(commandSource, source_, statementStart);
-            .executeProgram(commandSource, mem, attributeScope_, multiline_, frame, leadingRedirect);
+            if (dispatch !is null) {
+                dispatch();
+                checkErrexit(mem);
+            } else .executeProgram(commandSource, mem, attributeScope_, multiline_, frame, leadingRedirect);
             redirectStatusChecked_ = true;
         }
         else mem.lastStatus = 0;
@@ -2250,36 +2463,68 @@ class ProgramParser {
     }
 
     private void parseCommandInvocation(Memory mem) {
+        prepareCommandInvocation(mem)();
+    }
+
+    private string[] collectTempBindingSources() {
+        string[] bindings;
+        while (current_.kind == TokenKind.name) {
+            auto endName = current_.offset + current_.text.length;
+            if (endName >= source_.length || source_[endName] != '=') break;
+            string name, value;
+            if (!splitTempBinding(current_.text ~ "=", name, value)) break;
+            auto begin = current_.offset;
+            auto syntax = new ProgramParser(source_[begin .. $], true, returnMode_, true,
+                parserOptions_, null, attributeScope_, multiline_);
+            syntax.readCommandWord(null, true);
+            auto end = begin + syntax.current_.offset;
+            bindings ~= source_[begin .. end];
+            moveTo(end);
+        }
+        return bindings;
+    }
+
+    private string[string] evaluateTempBinding(string source, Memory mem) {
+        auto parser = new ProgramParser(source, false, returnMode_, true,
+            parserOptions_, null, attributeScope_, multiline_);
+        auto words = parser.readCommandWord(mem, true);
+        string name, value;
+        if (words.length != 1 || !splitTempBinding(words[0], name, value))
+            throw new FatalRuntimeError("environment binding must expand to one assignment word");
+        return [name : value];
+    }
+
+    private void delegate() prepareAssignmentOnly(string[] bindingSources, Memory mem) {
+        return () {
+            auto subEpoch = mem.commandSubEpoch;
+            foreach (source; bindingSources) foreach (name, text; evaluateTempBinding(source, mem)) {
+                mem.setShellVar(name, Value.str(text));
+                mem.trace.assignment(name, "=", Value.str(text), mem);
+            }
+            mem.lastStatus = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
+        };
+    }
+
+    /// A simple command owns one expanded argv and one typed-value packet.
+    /// Its caller may install redirects between preparation and dispatch.
+    private void delegate() prepareCommandInvocation(Memory mem) {
         auto subEpoch = mem.commandSubEpoch;
+        auto firstWord = new ProgramParser(source_[current_.offset .. $], true,
+            returnMode_, true, parserOptions_, null, attributeScope_, multiline_);
+        auto staticParts = firstWord.readCommandWord(null, true);
+        bool attributeBlock = firstWord.lastWordStatic_ && staticParts.length == 1 &&
+            attributeCommandName(staticParts[0]);
+        auto bindingSources = collectTempBindingSources();
+        if (isEndStatement(current_.kind)) return prepareAssignmentOnly(bindingSources, mem);
         auto commandNameParts = readCommandWord(mem, true);
         while (!commandNameParts.length && !isEndStatement(current_.kind))
             commandNameParts = readCommandWord(mem, true);
         if (!commandNameParts.length) {
-            mem.lastStatus = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
-            return;
+            if (bindingSources.length) return prepareAssignmentOnly(bindingSources, mem);
+            auto status = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
+            return () { mem.lastStatus = status; };
         }
-        bool attributeBlock = lastWordStatic_ && commandNameParts.length == 1 && attributeCommandName(commandNameParts[0]);
-
-        string[string] tempBindings;
         auto commandName = commandNameParts[0];
-        string bindingName;
-        string bindingValue;
-        while (splitTempBinding(commandName, bindingName, bindingValue)) {
-            tempBindings[bindingName] = bindingValue;
-            if (isEndStatement(current_.kind)) {
-                foreach (name, text; tempBindings) {
-                    mem.setShellVar(name, Value.str(text));
-                    mem.trace.assignment(name, "=", Value.str(text), mem);
-                }
-                mem.lastStatus = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
-                return;
-            }
-            commandNameParts = readCommandWord(mem, true);
-            while (!commandNameParts.length && !isEndStatement(current_.kind))
-                commandNameParts = readCommandWord(mem, true);
-            if (!commandNameParts.length) { mem.lastStatus = 0; return; }
-            commandName = commandNameParts[0];
-        }
 
         string[][] pipeline;
         string[] argv = commandNameParts;
@@ -2323,19 +2568,54 @@ class ProgramParser {
             argv ~= readCommandWord(mem);
         }
 
-        auto saved = applyTempBindings(tempBindings, mem);
-        scope (exit) restoreTempBindings(saved, mem);
-
-        EvaluatedArguments evalArguments() {
-            auto arguments = typedArguments is null ? EvaluatedArguments.init : typedArguments.eval(mem);
-            if (hasBlock) {
-                if (arguments.hasBlock) throw new FatalRuntimeError("Can't accept both block expression and block literal");
-                arguments.hasBlock = true;
-                arguments.block = Value.closure(ValueKind.commandValue, new YshCommand(blockSource, mem, attributeBlock, multiline_));
-            }
-            return arguments;
+        auto arguments = typedArguments is null ? EvaluatedArguments.init : typedArguments.eval(mem);
+        if (hasBlock) {
+            if (arguments.hasBlock) throw new FatalRuntimeError("Can't accept both block expression and block literal");
+            arguments.hasBlock = true;
+            arguments.block = Value.closure(ValueKind.commandValue, new YshCommand(blockSource, mem, attributeBlock, multiline_));
         }
+        EvaluatedArguments evalArguments() { return arguments; }
 
+        return () {
+        SavedEnvBinding[] saved;
+        bool temporaryFrame;
+        scope (exit) {
+            if (temporaryFrame) mem.popFrame();
+            if (saved.length) restoreTempBindings(saved, mem);
+        }
+        if (bindingSources.length) {
+            if (mem.options.get("env_obj")) {
+                string[string] bindings;
+                // _EvalTempEnv evaluates sequential bindings in an enclosed
+                // frame, then exposes only their ENV overlay to the command.
+                {
+                    mem.pushEnclosed(mem.currentFrame);
+                    scope (exit) mem.popFrame();
+                    foreach (source; bindingSources) foreach (name, text; evaluateTempBinding(source, mem)) {
+                        mem.declareLocal(name, Value.str(text));
+                        bindings[name] = text;
+                    }
+                }
+                saved = applyTempBindings(bindings, mem);
+            } else {
+                auto kind = builtinKind(argv[0]);
+                bool persists = kind == BuiltinKind.assignment ||
+                    (kind == BuiltinKind.special && argv[0] != "exec");
+                if (persists && mem.options.get("strict_env_binding"))
+                    throw new FatalRuntimeError("Special builtins can't have prefix bindings (OILS-ERR-302)");
+                if (!persists) {
+                    mem.pushFrame(new Frame());
+                    temporaryFrame = true;
+                }
+                foreach (source; bindingSources) foreach (name, text; evaluateTempBinding(source, mem)) {
+                    if (persists) mem.setVar(name, Value.str(text));
+                    else {
+                        mem.declareLocal(name, Value.str(text));
+                        mem.findLocal(name).exported = true;
+                    }
+                }
+            }
+        }
         if (pipeline.length == 0) {
             mem.trace.simpleCommand(argv, mem);
             bool builtinOnly, skipProcedures, useDefaultPath;
@@ -2461,6 +2741,13 @@ class ProgramParser {
             try {
                 auto words = argv[1 .. $];
                 switch (commandName) {
+                case "getopts":
+                    // GetOpts.Run ignores supplied typed values and blocks
+                    // after their normal eager/lazy argument evaluation.
+                    evalArguments();
+                    import yshd.getopts : runGetOpts;
+                    mem.lastStatus = runGetOpts(words, mem);
+                    return;
                 case "shift":
                     // The retained special builtin ignores supplied typed
                     // arguments and blocks after normal argument evaluation.
@@ -2512,7 +2799,7 @@ class ProgramParser {
                     }
                     execExternal(words[start .. $], mem, hasArgumentZero, argumentZero);
                     assert(0);
-                case "read": runRead(words, typedArguments, hasBlock, mem); return;
+                case "read": runRead(words, arguments, typedArguments !is null, hasBlock, mem); return;
                 case "mapfile": case "readarray":
                     if (typedArguments !is null || hasBlock) throw new UsageError(commandName ~ " does not accept typed arguments");
                     import yshd.read_builtin : runMapfileBuiltin;
@@ -2801,6 +3088,7 @@ class ProgramParser {
 
         pipeline ~= argv;
         mem.lastStatus = runPipeline(pipeline, mem);
+        };
     }
 
     private void flushBuiltinOutput(Memory mem, string builtinName, bool reportErrors) {
@@ -3990,6 +4278,10 @@ class ProgramParser {
     }
 
     private void parseJson(Memory mem) {
+        prepareJson(mem)();
+    }
+
+    private void delegate() prepareJson(Memory mem) {
         auto builtinName = current_.text;
         auto encoding = builtinName == "json8" ? WriteEncoding.j8 : WriteEncoding.json;
         bool hasTyped;
@@ -4004,6 +4296,7 @@ class ProgramParser {
             : parseTypedArguments("()", true);
         if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after JSON typed arguments");
         auto values = arguments.eval(mem);
+        return () {
         runParsedBuiltin(mem, builtinName, {
             if (!((words.length == 1 || (words.length == 2 && words[1] == "--")) &&
                     (words[0] == "write" || words[0] == "read")))
@@ -4053,9 +4346,14 @@ class ProgramParser {
             }
             mem.lastStatus = 0;
         });
+        };
     }
 
     private void parsePrettyPrint(Memory mem) {
+        preparePrettyPrint(mem)();
+    }
+
+    private void delegate() preparePrettyPrint(Memory mem) {
         advance(); // pp
         string[] words;
         while (!isEndStatement(current_.kind) && current_.kind != TokenKind.leftParen)
@@ -4065,6 +4363,7 @@ class ProgramParser {
             : parseTypedArguments("()", true);
         if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after pp typed arguments");
         auto values = parsed.eval(mem);
+        return () {
         runParsedBuiltin(mem, "pp", {
             if (!words.length) throw new UsageError("pp: expected an action");
             auto action = words[0];
@@ -4101,11 +4400,12 @@ class ProgramParser {
             }
             mem.lastStatus = 0;
         });
+        };
     }
 
-    private void runRead(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
+    private void runRead(string[] words, EvaluatedArguments arguments, bool hasTyped, bool hasBlock, Memory mem) {
         import yshd.read_builtin : runReadBuiltin;
-        runReadBuiltin(words, parsed, hasBlock, mem);
+        runReadBuiltin(words, arguments, hasTyped, hasBlock, mem);
     }
 
     private void parseTry(Memory mem) {

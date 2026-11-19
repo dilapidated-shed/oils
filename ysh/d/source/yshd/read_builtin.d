@@ -9,7 +9,7 @@ import core.stdc.errno : errno, EINTR, EBADF;
 import core.sys.posix.unistd : isatty;
 import core.sys.posix.termios : termios, tcflag_t, tcgetattr, tcsetattr, ICANON, ECHO, TCSANOW;
 import core.sys.posix.poll : poll, pollfd, POLLIN, POLLHUP, POLLERR, POLLNVAL;
-import yshd.expr : ParsedArguments;
+import yshd.expr : ParsedArguments, EvaluatedArguments;
 import yshd.io_stream : readRawLine, readInputBytes, readInputFd, readDelimitedFd, StreamReadError;
 import yshd.split : IfsSplitter;
 import yshd.state : Memory, FramePlace;
@@ -29,6 +29,13 @@ private Value readLines(string bytes, bool withEol) {
 }
 
 void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memory mem) {
+    auto arguments = parsed is null ? EvaluatedArguments.init : parsed.eval(mem);
+    runReadBuiltin(words, arguments, parsed !is null, hasBlock, mem);
+}
+
+/// The command owner evaluates typed values before redirection and temporary
+/// environment effects. read consumes that packet without evaluating again.
+void runReadBuiltin(string[] words, EvaluatedArguments arguments, bool hasTyped, bool hasBlock, Memory mem) {
     bool all, line, rawLine, allLines, withEol;
     bool raw, nulDelimited, hasDelimiter, optionsDone;
     bool silent, hasTimeout;
@@ -143,8 +150,8 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
 
     if (yshMode) {
         Value place = Value.place(new FramePlace(mem.currentFrame, "_reply"));
-        if (parsed !is null) {
-            auto args = parsed.eval(mem);
+        if (hasTyped) {
+            auto args = arguments;
             if (args.positional.length != 1 || args.named.length || args.hasBlock ||
                     args.positional[0].kind != ValueKind.placeValue)
                 throw new YshTypeError("read expects one Place argument");
@@ -154,7 +161,7 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
         // has no such flag.  The proposed :name syntax is deliberately scoped
         // to this mode, not generalized to the existing read --all contract.
         if (allLines && names.length == 1 && names[0].length > 1 &&
-                names[0][0] == ':' && parsed is null)
+                names[0][0] == ':' && !hasTyped)
             place = Value.place(new FramePlace(mem.currentFrame, names[0][1 .. $]));
         else if (names.length)
             throw new UsageError("read: got extra argument");
@@ -189,7 +196,7 @@ void runReadBuiltin(string[] words, ParsedArguments parsed, bool hasBlock, Memor
     }
 
     // OSH read rejects a typed Place without a YSH input mode.
-    if (parsed !is null) throw new UsageError("read needs --all, --raw-line, or --num-bytes for typed args");
+    if (hasTyped) throw new UsageError("read needs --all, --raw-line, or --num-bytes for typed args");
     inputFd = mem.physicalDescriptor(inputFd);
 
     if (hasTimeout && timeout >= 0) {
