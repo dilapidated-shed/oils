@@ -2,18 +2,22 @@
 
 This directory is an independent D translation of YSH. The translation target is the language and its tests, not the generated C++ emitted by `mycpp`.
 
-The translation remains incomplete. The November 15 reporter/`shift`
-continuation passes **55 CLI/module suites and 54 library suites**. Nine paired
-reporter I/O cases pass in native D and the actual Oils reference. Four unchanged
-original `shift` cases and a separate literal wide-index probe also pass in both.
-The final runtime preserves **896/1,119 inherited matches and 223 failures**,
-versus **1,046 matches and 73 failures** in the actual reference. Its shared-read
-selection retains 62/64 matches, and the preceding exec/time/times/ulimit/umask
-gates pass. All three verdict tables match the previous checkpoint byte for byte.
-A new Grease guard rejects both original timeout labels before qualification;
-the accepted rerun contains no timeout records.
-Exact identities and bounded results are recorded in
-[PORTING.md](PORTING.md) and [the current host receipt](qualification/il0-reporter-shift-2026-11-15/receipt.tsv).
+The translation remains incomplete. The November 19 `getopts` continuation
+passes **58 CLI/module suites and 57 library suites**. Its strict paired gate
+passes 28 unchanged original cases and 59 additional contracts in native D and
+the actual minimal Oils reference. Three original reset expectations fail in
+both implementations and remain visible in the full 31-case table. The new
+contracts cover byte-oriented option clusters, arbitrary-precision option
+indices, partial writes, readonly variables, typed arguments, temporary bindings,
+redirection effects and child failure boundaries. The retained version,
+environment, Kitchen consumer and repaired negation gates also pass.
+The full local matrix records **898/1,119 native matches and 221 failures**,
+two more matches than the preceding checkpoint, with no native regressions or
+timeouts. The reference records 1,045 matches and 74 failures on this host;
+one prompt fixture assumes its temporary path is below `/home`, which this
+workspace does not satisfy. Shared read remains 62/64 native and 63/64 reference.
+Exact source identities and compatibility results are recorded in
+[PORTING.md](PORTING.md) and [the current host receipt](qualification/il0-getopts-2026-11-19/receipt.tsv).
 
 Scoped extra descriptors now reach native builtins and external processes with
 ordered duplication, nested restoration and closed-fd handling. Terminal read
@@ -59,13 +63,25 @@ unchanged typed `ARGV`. Shell functions, source, eval and regex replacement save
 or share the complete positional frame according to their reference scopes.
 Braced indices stay arbitrary precision until cursor cancellation and actual
 array bounds are checked, including indices beyond 2^64 and leading zeroes.
-The next measured ordinary builtin gap is `getopts`: D exits 3 for the
-untranslated builtin while the reference parses the selected option and value.
+Native `getopts` now retains the original interpreter's global byte cursor,
+including its non-resetting behavior when OPTIND or argv changes. It preserves
+the reference's diagnostic, silent-mode, stale OPTARG and partial-write order.
+The actual minimal reference accepts one trailing LF in a destination name
+through its Python regex fallback; this scoped quirk is retained. A stale
+cluster cursor's internal failure exits 1 without running EXIT traps, while an
+ordinary readonly failure still runs them.
+
+Simple commands now prepare expanded words and eager typed arguments once,
+then evaluate redirect operands and install descriptors, then evaluate prefix
+bindings and dispatch. Lazy arguments remain unforced. OSH temporary variable
+frames and YSH ENV overlays follow their separate retained scope rules.
+The next measured ordinary builtin gap is `hash -r`: D exits 3 for the
+untranslated builtin while the actual reference returns 0.
 
 The October 27 checkpoint's 39 CLI/module suites, 38 library suites, original
 owner smoke and producer controls remain historical evidence. The final
-reporter/shift runtime's actual Icky Lua producer and all thirteen controls pass.
-The preceding umask controls remain historical evidence. The
+November 19 runtime's actual Icky Lua producer and all thirteen controls pass.
+The preceding reporter/shift and umask controls remain historical evidence. The
 producer uses the exact pinned compiler and private verified GCC13 support
 mounted at the original path inside a namespace with a read-only root. A clean
 same-host rebuild reproduces the current executable bytes. Interactive

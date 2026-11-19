@@ -4,6 +4,101 @@ The target is the complete YSH implementation in D.
 
 The native D implementation is incomplete. The checkpoints and ledger below track progress toward the whole reachable language and runtime.
 
+## Retained getopts and command effects, 2026-11-19
+
+This continues SUN IL0-CFREE-01 from the live retained branch head
+`2c152a3370bcb2e5788656aa8da7405c8eac7757`, preserving its intervening version,
+environment and negated-command changes. Implementation commit
+`34492f6a702b4deb76465bf72058cc3eb70dc0a1` and local validation commit
+`a3f76c1335898404df2126144ba8ff7ac69ba42c` have the same complete tree
+`ef1f94f0982424d9be3f0cd3dc67675e406153db`. Their translated source subtree is
+`e8277fa726a2e54bc1a8ac05b09b4e6b7f2e9ad0`. The native executable is 3,333,560
+bytes, SHA-256 `c9946aa46147bad0dc043818562ac4a7d7efcfab71ad5cd9afc98ea02d166b50`.
+Pinned Icky DMD compilation passes; sequential execution passes 57 library
+module suites and 58 CLI/module suites. A separate clean worktree reproduces
+the exact production bytes on this host. This is not second-host reproducibility.
+
+`builtin/pure_osh.py:GetOpts/GetOptsState` and `core/state.py` own this slice.
+The D port parses option specs as bytes, retains the interpreter-global cluster
+cursor, and uses string-only signed arbitrary-precision decimal OPTIND/OPTERR.
+It retains clustered and attached arguments, explicit/current positional argv,
+silent errors, status and diagnostic boundaries, non-resetting cursor behavior,
+stale OPTARG after `--`, destination validation after partial state writes and
+the original readonly write order. The actual minimal Python reference's
+variable-name regex accepts one final LF; the native destination validator
+retains that behavior and stores the unchanged key. No fastlex predicate parity
+is claimed. A stale byte cursor's uncaught interpreter failure bypasses EXIT
+traps and returns 1 through CLI and child boundaries; ordinary fatal shell errors
+retain their EXIT handling.
+
+Actual reference probes exposed shared command-effect defects during this work.
+The simple-command owner now prepares expanded argv and an evaluated typed-value
+packet once before evaluating redirect operands or opening descriptors. Literal
+blocks remain unexecuted and lazy arguments remain unforced. Dispatch evaluates
+prefix RHS expressions afterward. OSH ordinary builtins use a temporary exported
+variable frame; YSH env_obj uses an enclosed sequential binding evaluation and
+temporary ENV overlay. Special-builtin prefix persistence uses the retained
+local-only write scope. Read reuses the evaluated packet, JSON/pp retain dedicated
+preparation owners, and compound bodies remain under their structural redirects.
+Existing attribute-block classification is preserved before prefix collection.
+
+The strict [`qualify-getopts.grease`](qualification/qualify-getopts.grease) gate
+passes 28 unchanged original cases and 59 additional cases in both interpreters:
+174 passing records. The separate full original 31-case table retains exactly
+cases 13, 14 and 15 failing in both implementations because their reset
+expectations disagree with this retained reference. No original fixture,
+baseline, timeout, label or allowance was changed. Seven new fixtures exercise
+the algorithm, typed/lazy arguments, word/redirect/prefix ordering, failure side
+effects, child isolation and temporary bindings. Four isolated compiled mutants
+all build successfully but fail their real expectation probes with status 1;
+the final runtime passes those same probes. Six additional independent review
+pairs match status and literal stdout, including the previously failing LF case.
+
+The idle full 81-fixture run records 898/1,119 native matches and 221 failures,
+with zero native regressions and no TIME/TIMEOUT records. The two new passes
+are `spec/ysh-scope.test.sh` cases 16 and 18, following the repaired temporary
+variable scopes. The reference records 1,045 matches and 74 failures here.
+Relative to the previous checkpoint, its sole changed verdict is
+`spec/ysh-prompt.test.sh` case 2: the fixture sets ENV.HOME to `/home` and expects
+the current directory to abbreviate with `~`, but the actual temporary path is
+under `/workspace`. A direct reference replay preserves both unabridged paths.
+The fixture and harness remain unchanged. Shared read is byte-identical to the
+previous checkpoint: native 62/64 and reference 63/64. All preceding selected
+exec/time/times/ulimit/umask/shift/reporter gates pass. The existing Grease
+outcome guard passes both final full tables with their original three-second
+limits and labels unchanged.
+
+The starting branch's workflow 43797960390 failed three required negation
+results. Source repairs now enforce strict_errexit single-status conditions and
+no_parse_ignored control-flow redirect rejection before effects; accepted OSH
+control-flow redirects remain discarded without expansion. All 28 paired
+negation controls and both unchanged Cat Food updater parse executions pass.
+The source-bound partial version gate, child ENV filtering gate and unchanged
+Kitchen transfer fixture also pass. Kitchen's GitHub responses are fixtures;
+no live repository transfer was performed.
+
+The actual unchanged Icky Lua producer and all thirteen original producer
+controls pass on these final bytes, using the exact pinned compiler closure
+and verified private GCC13 support namespace. Earlier candidate runs are not
+promoted. Actual ELF dependency inspection resolves libgcc_s, libc and the
+loader, with no C++ runtime dependency. A broad symbol scan also records the D
+runtime's optional __cxa_demangle function-pointer lookup and glibc's weak
+__cxa_finalize; these findings are preserved rather than described as zero
+C++ markers. This bounded inspection is not independent static/transitive
+closure proof. Complete Grease/package admission remains BLOCKED.
+
+The next measured ordinary gap is `hash -r`: final native D returns 3 with
+`Untranslated builtin: hash`; the actual OSH reference returns 0 with empty
+output. Its owner is `builtin/pure_osh.py:Hash.Run` and the retained hash cases
+in `spec/command_.test.sh`. Interactive semantics, remaining shared-shell
+failures, independent whole-closure acceptance and conditional managed delivery
+remain incomplete. The artifact remains `ysh-d-partial`, with no merge, release,
+package activation or physical-device claim.
+
+Full verdict tables, negative controls, source identities and raw execution
+records are in [the November 19 receipt](qualification/il0-getopts-2026-11-19/receipt.tsv)
+and its checked archive.
+
 ## Reporter I/O boundaries and retained positional frames, 2026-11-15
 
 This continues SUN IL0-CFREE-01 from checkpoint

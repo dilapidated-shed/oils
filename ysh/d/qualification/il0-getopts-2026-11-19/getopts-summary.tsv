@@ -1,0 +1,11 @@
+fixture	cases	native_pass	reference_pass	paired_fail	harness_exit
+contract	28	28	28	0	0
+typed-order	6	6	6	0	0
+stage-order	6	6	6	0	0
+child-failure	4	4	4	0	0
+invocation-generic	9	9	9	0	0
+temp-bindings	5	5	5	0	0
+prefix-order	1	1	1	0	0
+additional_total	59	59	59	0	0
+original	31	28	28	6	1
+original_failures	13,14,15	identical_stdout	identical_stdout	retained_reset_expectations	unchanged_allowance

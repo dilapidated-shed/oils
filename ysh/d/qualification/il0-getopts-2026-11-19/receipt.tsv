@@ -1,0 +1,73 @@
+field	value
+job_id	SUN IL0-CFREE-01
+status	BLOCKED for complete Grease/package admission;scoped retained getopts, command effects and negation repair PASS
+owner_repository	dilapidated-shed/oils;Grease issue58
+observed_date	2026-11-19 America/Detroit
+branch	d/ysh-first-slice
+starting_head	2c152a3370bcb2e5788656aa8da7405c8eac7757
+implementation_commit	34492f6a702b4deb76465bf72058cc3eb70dc0a1
+local_validation_commit	a3f76c1335898404df2126144ba8ff7ac69ba42c
+identical_implementation_tree	ef1f94f0982424d9be3f0cd3dc67675e406153db;API implementation and local validation commits have identical full trees
+implementation_source_tree	e8277fa726a2e54bc1a8ac05b09b4e6b7f2e9ad0;HEAD:ysh/d/source
+native_source_state	Frozen source/reference inputs unchanged during qualification;subsequent documentation/receipts separate
+host	Disposable container5135d1448df6;Debian GNU/Linux13.6 trixie;Linux6.18.57 x86_64
+compiler	Icky DMD ccf61ab82659b9eadee2d05b489fb195956cef88;DMD64 v2.113.0
+compiler_sha256	f34538a36eeffd8a7ae930e32bdbef4f62d87eeebe4ec9c42d1fa1c0c39937e3
+druntime	74917954b53f7f35b13e61b4438c7253834929ed
+phobos	7b158eba80b97dfcdd8931bcaea1ad0ca35ceb95
+phobos_archive_sha256	6b339321420eb05bf0930ca51064c4d8cc2b5121a26472c12dd38dd62274f783;fresh build
+bootstrap	Official LDC1.36.0 builds pinned Icky DMD only;not translated runtime compiler
+binary_name	ysh-d;partial artifact only
+binary_bytes	3333560
+binary_sha256	c9946aa46147bad0dc043818562ac4a7d7efcfab71ad5cd9afc98ea02d166b50
+build	PASS all three pinned compiler invocations exit0,empty diagnostics;exact argv canonical/final-build-commands.txt in archive
+cli_module_tests	PASS58 modules;process0
+library_module_tests	PASS57 modules;process0
+unit_execution_order	Library then CLI serially;earlier concurrent fixture collision excluded
+contract_owner	builtin/pure_osh.py:GetOpts/GetOptsState;core/state.py;osh/cmd_eval.py:_DoSimple/_EvalTempEnv
+getopts_algorithm	PASS byte specs/clusters;attached/separate arguments;explicit/current argv;signed arbitrary-precision string-only OPTIND/OPTERR;silent/diagnostic and status boundaries
+getopts_state	PASS interpreter-global byte cursor;OPTIND/argv replacement does not reset it;-- retains stale OPTARG;destination validation follows partial state writes;readonly write order retained
+getopts_name_scope	PASS one final LF accepted and unchanged destination key stored;qualified actual minimal reference Python regex fallback only;no fastlex predicate equivalence claim
+internal_failure	PASS stale cursor exits1 bypassing EXIT traps at CLI and three child boundaries;ordinary fatal readonly error retains EXIT handling;descriptor/signal scopes still unwind
+command_preparation	PASS expanded argv and typed eager values once before redirect operand evaluation/open;lazy args unforced;literal blocks unexecuted;prefix RHS evaluated after redirects
+prefix_scopes	PASS OSH exported temporary variable frame;YSH enclosed sequential evaluation plus ENV overlay;special prefix persistence uses retained local-only scope
+dispatch_preservation	PASS read reuses evaluated packet;JSON/pp dedicated preparation;compound body redirect ownership and original attribute classification retained
+strict_getopts_gate	PASS28 unchanged original plus59 new cases in each implementation;174 passing records;seven new fixtures
+original_getopts_full	31 original cases;28pass3FAIL per interpreter;only cases13,14,15 fail in both;full62-record table retained;no new fixture allowance
+negative_controls	PASS4 final-source isolated mutants;compile0/baseline0/mutant1 each;exact patches/manifests/raw logs in archive
+independent_review	PASS6 final-runtime paired probes;matching status/literal stdout;readonly stderr present rather than byte-parity claim
+starting_ci_failure	Run43797960390/job133071018124 failed three required negation results;all30 raw starting records preserved as negative provenance
+negation_repair	PASS strict_errexit single-status classification;no_parse_ignored control-flow redirect rejection before effects;accepted OSH control-flow redirects discarded without expansion
+paired_negation	PASS28 CLI records and2 unchanged Cat Food updater parse records;30 total;no oracle weakening
+cli_version	PASS source-bound partial identity plus6 CLI controls
+environment	PASS actual native/reference child ENV string filtering
+kitchen_consumer	PASS unchanged retained native transfer fixture;GitHub responses are fixtures;no live transfer
+kitchen_revision	32c3bf2d7c6268b50f1e48395dc972cfbafec7a9
+catfood_revision	d85832da32e5b0e1905003b62737f54129f192de;updater SHA256 a426b3b8d2aebd4318c054715033457bebe00a09bd4bf04ece5a325e34655b45
+inherited	898matches221FAIL;1119 unchanged cases;81 fixtures;zero native regressions;no TIME or TIMEOUT
+inherited_reference	1045matches74FAIL;no TIME or TIMEOUT;actual retained minimal reference
+native_verdict_changes	Two new native passes vs Nov15 checkpoint:spec/ysh-scope.test.sh cases16,18;all earlier native matches retained
+reference_verdict_change	Only ysh-prompt case2 differs from Nov15;fixture assumes cwd below /home but actual temporary cwd below /workspace;raw failure and direct path replay preserved
+shared_read	62matches2FAIL native;63matches1FAIL reference;64 cases;byte-identical to Nov15 table;no TIME or TIMEOUT
+preceding_selected_gates	PASS exec,ulimit,time,times,umask,shift,reporter-io on final executable
+outcome_guard	PASS actual final inherited/shared-read tables;both original TIME and TIMEOUT labels rejected;original timeout3 unchanged
+baseline_integrity	Original spec,reference,harness,baseline and allowance files unchanged
+reference_runtime	Actual CPython2.7.13 UCS4;SHA256 f58305a0d5d4f9e9e3cc4263048015659875469ddda566eba76d2ceb1effc4b2
+reference_host_patch	Private retained sinpi-to-python2_sinpi compatibility rename;tracked reference source/build paths unchanged
+gawk	Actual GNU gawk5.2.1;SHA256 6f67ab710f348f1263b778764e5cb940bc3e9a05030c90dd81a8a66ead717dac;no awk substitution
+clean_rebuild	PASS separate clean detached worktree at local validation commit;cmp0;identical c9946aa4 executable
+independent_rebuild	NOT_RUN second-host byte reproducibility
+producer_source	FP68c53d0daa64ec998701060abaaf225752ea1e93;Lua87306483cec50f8c750a22dda1d0742246fad756;stock0b29f408433e92953cc72b1d3e06c7ac8139e439
+producer_execution	PASS actual unchanged producer exit0 on final executable;source/runtime hashes unchanged before/after
+producer_controls	PASS actual unchanged original13 controls;process0;all13 rowsPASS
+producer_host_support	Exact pinned Icky C closure and authenticated private GCC13 support at original absolute path inside read-only-root namespace;no compiler substitution/system installation
+dynamic_dependencies	Bounded actual ELF inspection resolves libgcc_s,libc,loader;no C++ runtime library dependency
+symbol_findings	D runtime optional __cxa_demangle B function-pointer symbol/dlsym lookup and glibc weak __cxa_finalize observed;raw findings/source excerpt retained;not zero-marker claim
+independent_cpp_closure	NOT_RUN independent static/transitive whole-closure acceptance;not established by dependency scan or producer PASS
+hosted_ci_scope	Actions binds checks/artifact to final publishing commit;this local receipt makes no hosted CI claim
+physical_acceptance	NOT_RUN;no Android/NetBSD build/install or physical-device acceptance
+managed_admission	BLOCKED;remaining language/runtime failures and independent C++ closure acceptance required
+first_ordinary_gap	hash -r;final native3 with Untranslated builtin:hash;actual OSH reference0 with empty stdout/stderr
+next_owner	builtin/pure_osh.py:Hash.Run;spec/command_.test.sh
+archive_scope	Raw receipts/logs/hashes/maps and mutation patches;no executable binaries/full source clones/producer archives/temporary signed URLs
+output_paths	receipt.tsv;paired-cases.tsv;fixture-totals.tsv;shared-read.tsv;getopts-summary.tsv;getopts-original.tsv;negative-controls.tsv;producer-receipt.tsv;producer-controls.tsv;execution-logs.zip;artifacts.tsv
