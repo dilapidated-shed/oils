@@ -29,6 +29,7 @@ import yshd.var_check : VariableChecker, DefinitionKind;
 import yshd.eval_scope : EvalOptions, withEvalBindings;
 import yshd.dirs : setDirectory, popDirectory, physicalDirectory, runDirectoryBuiltin;
 import yshd.pattern : ScalarWord, matchesShellPattern;
+import yshd.braces : BraceWord, BraceWordPart, detectBraceWord;
 import yshd.eggex : Eggex, parseEggex, EreError;
 import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
     StructuredError, YshError, YshTypeError, ClosedDescriptorError, kindName, stringify, toBool, exactlyEqual;
@@ -81,7 +82,7 @@ private struct WhileCommand {
 
 private bool completeCommandWord(string source, Token token) {
     auto end = token.offset + token.text.length;
-    return end == source.length || " \t\r\n;|&()<>{}".indexOf(source[end]) >= 0;
+    return end == source.length || " \t\r\n;|&()<>".indexOf(source[end]) >= 0;
 }
 
 private size_t timeKeywordEnd(string source, Token token) {
@@ -388,6 +389,10 @@ private class LoopControl : Exception {
         this.shouldBreak = shouldBreak;
         this.levels = levels;
     }
+}
+
+private class BraceRedirectError : Exception {
+    this() { super("Brace expansion not allowed (try adding quotes)"); }
 }
 
 /// First command-language parser layer for the D translation.
@@ -1379,9 +1384,11 @@ class ProgramParser {
             kind == TokenKind.continueKeyword;
     }
 
-    private string decodeRedirectPath(string raw, Memory mem) {
+    private string decodeRedirectOperand(string raw, Memory mem, bool path) {
         auto pathParser = new ProgramParser(raw, false, ReturnMode.shell, false, parserOptions_);
-        auto parts = pathParser.readCommandWord(mem);
+        size_t end;
+        if (path && pathParser.readBraceWordSyntax(end).present) throw new BraceRedirectError();
+        auto parts = pathParser.readCommandWord(mem, false, false, false);
         if (parts.length != 1 || pathParser.current_.kind != TokenKind.eof) {
             throw new YshError("redirect path must expand to exactly one word");
         }
@@ -1572,7 +1579,17 @@ class ProgramParser {
                 if (redirect.expandHereDocument)
                     redirect.operand = evaluateDoubleQuoted(redirect.operand, mem, QuoteContext.hereDocument);
                 redirect.expandHereDocument = false;
-            } else redirect.operand = decodeRedirectPath(redirect.operand, mem);
+            } else {
+                try {
+                    redirect.operand = decodeRedirectOperand(redirect.operand, mem,
+                        !redirect.duplicate && redirect.kind != TokenKind.tripleLess);
+                } catch (BraceRedirectError error) {
+                    mem.diagnostic(error.msg);
+                    mem.lastStatus = 1;
+                    consumeStatement();
+                    return true;
+                }
+            }
         }
         foreach (redirect; redirects) {
             frame.save(redirect.descriptor);
@@ -4818,7 +4835,8 @@ class ProgramParser {
         mem.lastStatus = 0;
     }
 
-    private string[] readCommandWord(Memory mem, bool assignmentPosition = false, bool commandPosition = false) {
+    private string[] readCommandWord(Memory mem, bool assignmentPosition = false, bool commandPosition = false,
+            bool braceExpansion = true) {
         lastWordTriple_ = false;
         lastWordStatic_ = true;
         if (current_.kind == TokenKind.doubleQuoted && current_.text == "$@") {
@@ -4865,19 +4883,83 @@ class ProgramParser {
             while (end < source_.length && asciiIdentifierContinue(source_[end])) ++end;
             assignment = end < source_.length && source_[end] == '=';
         }
+        import yshd.pattern : expandShellWord;
+        string[] expanded;
+        if (!syntaxOnly_ && !assignment && braceExpansion && readBraceWord(mem, expanded, literalAt)) return expanded;
         auto word = readScalarWord(mem, false, false, assignmentPosition, literalAt);
         if (syntaxOnly_ || assignment) return [word.text()];
-        import yshd.pattern : expandShellWord;
         return expandShellWord(word, mem, lastWordStatic_);
     }
 
+    private BraceWord readBraceWordSyntax(out size_t end, bool literalAt = false) {
+        auto start = current_.offset;
+        if (!wordMayContainBrace(start)) return BraceWord.init;
+        auto parser = new ProgramParser(source_[start .. $], true, returnMode_, true,
+            parserOptions_, null, attributeScope_, multiline_);
+        BraceWordPart[] parts;
+        parser.readScalarWord(null, false, false, false, literalAt, &parts);
+        end = start + parser.current_.offset;
+        return detectBraceWord(parts);
+    }
+
+    private bool wordMayContainBrace(size_t start) const {
+        // An ordinary literal word stops at its first shell delimiter. Do
+        // not restart the lexer on every argument when a later word has `{`.
+        foreach (index, char ch; source_[start .. $]) {
+            if (ch == '{') return true;
+            if ("\"'$\\".indexOf(ch) >= 0) return source_[start + index .. $].indexOf('{') >= 0;
+            if (" \t\r\n;|&()<>".indexOf(ch) >= 0) return false;
+        }
+        return false;
+    }
+
+    private bool readBraceWord(Memory mem, out string[] result, bool literalAt) {
+        import yshd.pattern : expandShellWord;
+        size_t end;
+        auto brace = readBraceWordSyntax(end, literalAt);
+        if (!brace.present) return false;
+        while (current_.offset < end) advance();
+        foreach (alternative; brace.expand()) {
+            if (!alternative.length) continue;
+            ScalarWord word;
+            bool staticWord = true;
+            foreach (part; alternative) {
+                switch (part.token.kind) {
+                case TokenKind.dollar:
+                    auto substitution = new ProgramParser(part.source, false, returnMode_, true,
+                        parserOptions_, null, attributeScope_, multiline_);
+                    size_t substitutionEnd;
+                    auto text = substitution.parseScalarSubstitution(mem, substitutionEnd);
+                    bool quoted = part.source.length > 1 && "\"[".indexOf(part.source[1]) >= 0;
+                    word.append(text, quoted, !quoted);
+                    staticWord = false;
+                    break;
+                case TokenKind.doubleQuoted:
+                    word.append(evaluateDoubleQuoted(part.token.text, mem), true);
+                    break;
+                case TokenKind.charValue: case TokenKind.stringValue:
+                    word.append(part.token.text, true);
+                    break;
+                default:
+                    word.append(part.source, false);
+                    break;
+                }
+            }
+            lastWordStatic_ = lastWordStatic_ && staticWord;
+            result ~= expandShellWord(word, mem, staticWord);
+        }
+        return true;
+    }
+
     private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false,
-            bool literalBraces = false, bool literalAt = false) {
+            bool literalBraces = false, bool literalAt = false, BraceWordPart[]* sourceParts = null) {
         auto end = current_.offset;
         ScalarWord result;
         bool consumed;
         size_t parts;
         bool tripleQuoted;
+        bool hasBrace, hasQuote, allowQuotedJoin;
+        ptrdiff_t braceBalance;
         while (true) {
             // The lexer removes a backslash-newline, including in a word.
             while (end + 1 < source_.length && source_[end .. end + 2] == "\\\n") end += 2;
@@ -4891,6 +4973,14 @@ class ProgramParser {
             if (current_.offset != end || !(isCommandWordToken(current_.kind) || patternToken ||
                     attachedBrace || (literalAt && current_.kind == TokenKind.at) ||
                     (regex && !isEndStatement(current_.kind)))) break;
+            auto part = current_;
+            if (!parts) allowQuotedJoin = part.kind == TokenKind.tilde ||
+                (part.kind == TokenKind.stringValue && part.text.length == 0 && source_[part.offset] == '\'');
+            if (part.kind == TokenKind.name && (part.text == "{" || part.text == "}")) {
+                hasBrace = true;
+                braceBalance += part.text == "{" ? 1 : -1;
+            }
+            hasQuote = hasQuote || part.kind == TokenKind.stringValue || part.kind == TokenKind.doubleQuoted;
             ++parts;
             if ((current_.kind == TokenKind.stringValue || current_.kind == TokenKind.doubleQuoted) &&
                     lexer_.offset - current_.offset >= 6) {
@@ -4930,12 +5020,19 @@ class ProgramParser {
                 consumed = true;
                 advance();
             }
+            if (sourceParts !is null) *sourceParts ~= BraceWordPart(part, source_[part.offset .. end]);
         }
         if (!consumed) {
             throw new YshError(format("untranslated command word '%s' at byte %s",
                 current_.text, current_.offset));
         }
         if (tripleQuoted && parts > 1) throw new ParseError("Unexpected parts after triple quoted string");
+        if (hasBrace && parts > 1 && parserOptions_ !is null) {
+            if (braceBalance && parserOptions_.get("parse_brace"))
+                throw new ParseError("Word has unbalanced { }.  Maybe add a space or quote it like \\{");
+            if (hasQuote && !allowQuotedJoin && parserOptions_.get("no_parse_word_join"))
+                throw new ParseError("Invalid quoted word part in YSH (OILS-ERR-17)");
+        }
         lastWordTriple_ = tripleQuoted;
         return result;
     }

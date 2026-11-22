@@ -134,6 +134,10 @@ private bool identifierContinue(char c) {
     return identifierStart(c) || asciiDigit(c);
 }
 
+private bool shellWordBoundary(char c) {
+    return " \t\r\n;|&()<>".indexOf(c) >= 0;
+}
+
 /// Shared lexer foundation for the D YSH frontend.
 ///
 /// Expression parsing currently asks it to treat newlines as whitespace.
@@ -154,6 +158,8 @@ class Lexer {
     private bool commandStart_ = true;
     private bool expressionCommand_;
     private bool bracketArguments_;
+    private bool declarationHeader_;
+    private bool typedDeclaration_;
     private size_t expressionDepth_;
     private struct Boundary {
         TokenKind close;
@@ -198,6 +204,8 @@ class Lexer {
         auto savedStart = commandStart_;
         auto savedExpression = expressionCommand_;
         auto savedBracketArguments = bracketArguments_;
+        auto savedDeclarationHeader = declarationHeader_;
+        auto savedTypedDeclaration = typedDeclaration_;
         auto savedDepth = expressionDepth_;
         auto savedBoundaries = boundaries_.dup;
         auto savedPrevious = previousToken_;
@@ -210,6 +218,8 @@ class Lexer {
             commandStart_ = savedStart;
             expressionCommand_ = savedExpression;
             bracketArguments_ = savedBracketArguments;
+            declarationHeader_ = savedDeclarationHeader;
+            typedDeclaration_ = savedTypedDeclaration;
             expressionDepth_ = savedDepth;
             boundaries_ = savedBoundaries;
             previousToken_ = savedPrevious;
@@ -239,6 +249,25 @@ class Lexer {
         return boundaries_.length ? boundaries_[$ - 1].multiline : multiline;
     }
 
+    private bool braceInWord(size_t offset) const {
+        // Keep the grammar's compact empty block, e.g. `proc p () {}`.
+        auto groupStart = input_[offset] == '{' ? offset : offset ? offset - 1 : 0;
+        auto groupEnd = groupStart + 2;
+        if (groupEnd <= input_.length && input_[groupStart .. groupEnd] == "{}" &&
+                (!groupStart || shellWordBoundary(input_[groupStart - 1])) &&
+                (groupEnd == input_.length || shellWordBoundary(input_[groupEnd]))) return false;
+        auto before = offset;
+        while (before >= 2 && input_[before - 2 .. before] == "\\\n") before -= 2;
+        if (before && !shellWordBoundary(input_[before - 1])) return true;
+        // A delimiter escaped in the previous word part does not end it.
+        auto backslashes = before ? before - 1 : 0;
+        while (backslashes && input_[backslashes - 1] == '\\') --backslashes;
+        if (before && (before - 1 - backslashes) % 2) return true;
+        auto after = offset + 1;
+        while (after + 1 < input_.length && input_[after .. after + 2] == "\\\n") after += 2;
+        return after < input_.length && !shellWordBoundary(input_[after]);
+    }
+
     private Token nextRaw() {
         auto token = nextToken();
         auto boundary = boundaries_.length ? boundaries_[$ - 1]
@@ -246,6 +275,10 @@ class Lexer {
         bool substitution = previousToken_.kind == TokenKind.dollar && previousToken_.offset + 1 == token.offset;
         bool conditional = boundary.conditional || (commandStart_ && token.kind == TokenKind.leftBracket &&
             token.offset + 1 < input_.length && input_[token.offset + 1] == '[');
+        bool declarationBody = declarationHeader_ && !expressionDepth_ && token.kind == TokenKind.leftBrace;
+        if (emitNewlines_ && !expressionCommand_ && !expressionDepth_ && !boundary.expression && !boundary.parameter &&
+                !substitution && !declarationBody && (token.kind == TokenKind.leftBrace || token.kind == TokenKind.rightBrace) &&
+                braceInWord(token.offset)) token.kind = TokenKind.name;
         token.wordBracket = emitNewlines_ && options_ !is null && !options_.get("parse_bracket") &&
             !expressionCommand_ && !bracketArguments_ && !boundary.expression && !substitution && !conditional &&
             (token.kind == TokenKind.leftBracket || token.kind == TokenKind.rightBracket);
@@ -267,12 +300,18 @@ class Lexer {
         previousToken_ = token;
         if (!emitNewlines_) return token;
         if (commandStart_) {
+            declarationHeader_ = token.kind == TokenKind.procKeyword || token.kind == TokenKind.funcKeyword;
+            typedDeclaration_ = token.kind == TokenKind.name && token.text == "typed";
             expressionCommand_ = token.kind == TokenKind.varKeyword || token.kind == TokenKind.constKeyword ||
                 token.kind == TokenKind.setvarKeyword || token.kind == TokenKind.setglobalKeyword ||
                 token.kind == TokenKind.equal || (token.kind == TokenKind.name && token.text == "call");
             bracketArguments_ = token.kind == TokenKind.name && token.text == "assert";
             commandStart_ = false;
+        } else if (typedDeclaration_) {
+            declarationHeader_ = token.kind == TokenKind.procKeyword;
+            typedDeclaration_ = false;
         }
+        if (declarationBody) declarationHeader_ = false;
         if (recognizeHereDocuments_ && token.kind == TokenKind.shiftLeft && !expressionCommand_ && expressionDepth_ == 0)
             registerHereDocument(token.offset);
         if (token.kind == TokenKind.leftParen || (token.kind == TokenKind.leftBracket && !token.wordBracket) ||
@@ -394,8 +433,7 @@ class Lexer {
             auto text = input_[start .. position_];
             bool expressionContext = !emitNewlines_ || expressionCommand_ ||
                 (boundaries_.length && boundaries_[$ - 1].expression);
-            if (!expressionContext && position_ < input_.length &&
-                    " \t\r\n;|&()<>{}".indexOf(input_[position_]) < 0)
+            if (!expressionContext && position_ < input_.length && !shellWordBoundary(input_[position_]))
                 return Token(TokenKind.name, text, start);
             switch (text) {
             case "null":
