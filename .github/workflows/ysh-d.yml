@@ -15,6 +15,7 @@ on:
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
+      - 'spec/builtin-completion.test.sh'
       - 'spec/command_.test.sh'
       - 'spec/ysh-builtin-help.test.sh'
       - 'doc/ref/**'
@@ -67,6 +68,7 @@ on:
       - 'spec/builtin-umask.test.sh'
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
+      - 'spec/builtin-completion.test.sh'
       - 'spec/command_.test.sh'
       - 'spec/ysh-builtin-help.test.sh'
       - 'doc/ref/**'
@@ -451,6 +453,9 @@ jobs:
 
       - name: Qualify retained getopts and argument-effect boundaries through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-getopts.grease
+
+      - name: Qualify word-list completion through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-compgen.grease
 
       - name: Qualify retained hash and shared executable cache through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-hash.grease

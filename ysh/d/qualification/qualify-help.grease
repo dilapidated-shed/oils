@@ -29,12 +29,10 @@ proc qualify (fixture, name, language, range, records, matches) {
   var actualMatches = $(cut -f 3 "$output/paired-$name.tsv" | grep -c '^pass$')
   test "$actualMatches" -eq "$matches"
 }
-# Two original cases currently hit pre-existing brace-expansion and
-# command-position @ARGV parser gaps. Preserve the entire original table
-# separately; these selected cases receive no new failure allowance.
+# Brace expansion still blocks case 1. Preserve that case in the original
+# full table and require the other five unchanged cases here.
 qualify spec/ysh-builtin-help.test.sh original-unknown ysh 0-0 3 2
-qualify spec/ysh-builtin-help.test.sh original-urls-default ysh 2-3 5 4
-qualify spec/ysh-builtin-help.test.sh original-errors ysh 5-5 3 2
+qualify spec/ysh-builtin-help.test.sh original-urls-default-splice-errors ysh 2-5 9 8
 qualify ysh/d/qualification/help/topics.test.sh topics osh 0-10 23 22
 qualify ysh/d/qualification/help/arguments.test.sh arguments osh 0-9 21 20
 qualify ysh/d/qualification/help/typed-effects.test.sh typed-effects osh 0-6 15 14
@@ -48,4 +46,4 @@ var runtimeShaAfter = $(cut -d ' ' -f 1 "$output/paired-runtime-sha256.txt")
 var sourceRevisionAfter = $(git rev-parse HEAD)
 test "$runtimeShaBefore" = "$runtimeShaAfter"
 test "$sourceRevision" = "$sourceRevisionAfter"
-echo 'PASS four unchanged original help cases and 72 additional contracts in native D and genuine full Oils'
+echo 'PASS five unchanged original help cases and 72 additional contracts in native D and genuine full Oils'

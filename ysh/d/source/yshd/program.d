@@ -129,6 +129,7 @@ class YshCommand {
 }
 
 private enum ConditionKind { word, unary, binary, negate, conjunction, disjunction }
+private enum QuoteContext { doubleQuoted, hereDocument, plugin }
 
 /// Retained shell conditions are command ASTs. Their words stay unevaluated
 /// until the selected logical operand runs, including substitutions.
@@ -527,6 +528,7 @@ class ProgramParser {
             case TokenKind.doubleQuoted:
             case TokenKind.dollar:
             case TokenKind.slash:
+            case TokenKind.at:
                 parseCommandWords();
                 break;
             default:
@@ -555,7 +557,7 @@ class ProgramParser {
                 break;
             } else {
                 if (hasTyped) throw new ParseError("Unexpected words after typed arguments");
-                auto parts = readCommandWord(null, firstWord);
+                auto parts = readCommandWord(null, firstWord, firstWord);
                 if (firstWord) {
                     attributeBlock = lastWordStatic_ && parts.length == 1 && attributeCommandName(parts[0]);
                     firstWord = false;
@@ -776,6 +778,7 @@ class ProgramParser {
             case TokenKind.doubleQuoted:
             case TokenKind.dollar:
             case TokenKind.slash:
+            case TokenKind.at:
                 parseCommandInvocation(mem);
                 break;
             default:
@@ -1220,7 +1223,7 @@ class ProgramParser {
             kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
             kind == TokenKind.colon ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
-            kind == TokenKind.dollar || kind == TokenKind.slash ||
+            kind == TokenKind.dollar || kind == TokenKind.slash || kind == TokenKind.at ||
             kind == TokenKind.caseKeyword ||
             kind == TokenKind.whileKeyword ||
             kind == TokenKind.forKeyword;
@@ -1367,7 +1370,7 @@ class ProgramParser {
             kind == TokenKind.trueKeyword || kind == TokenKind.falseKeyword ||
             kind == TokenKind.colon ||
             kind == TokenKind.stringValue || kind == TokenKind.doubleQuoted ||
-            kind == TokenKind.dollar || kind == TokenKind.slash ||
+            kind == TokenKind.dollar || kind == TokenKind.slash || kind == TokenKind.at ||
             kind == TokenKind.caseKeyword ||
             kind == TokenKind.ifKeyword ||
             kind == TokenKind.whileKeyword ||
@@ -1435,7 +1438,8 @@ class ProgramParser {
         } else if (current_.kind == TokenKind.leftBracket) {
             if (current_.offset + 1 < source_.length && source_[current_.offset + 1] == '[') return null;
         } else if (current_.kind != TokenKind.trueKeyword && current_.kind != TokenKind.falseKeyword &&
-                current_.kind != TokenKind.colon && !isCommandWordToken(current_.kind)) return null;
+                current_.kind != TokenKind.colon && current_.kind != TokenKind.at &&
+                !isCommandWordToken(current_.kind)) return null;
         if (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.leftParen ||
                 current_.kind == TokenKind.ifKeyword || current_.kind == TokenKind.caseKeyword ||
                 current_.kind == TokenKind.whileKeyword || current_.kind == TokenKind.forKeyword ||
@@ -1509,7 +1513,8 @@ class ProgramParser {
                 if (document is null) throw new ParseError("expected here document");
                 commandSource ~= source_[statementStart + copiedThrough .. statementStart + begin] ~ " ";
                 copiedThrough = document.wordEnd;
-                if (syntaxOnly_ && !document.quoted) evaluateDoubleQuoted(document.body, null, true);
+                if (syntaxOnly_ && !document.quoted)
+                    evaluateDoubleQuoted(document.body, null, QuoteContext.hereDocument);
                 redirects ~= Redirection(descriptor, kind, false, document.body, true, !document.quoted);
                 continue;
             }
@@ -1565,7 +1570,7 @@ class ProgramParser {
         foreach (ref redirect; redirects) {
             if (redirect.hereDocument) {
                 if (redirect.expandHereDocument)
-                    redirect.operand = evaluateDoubleQuoted(redirect.operand, mem, true);
+                    redirect.operand = evaluateDoubleQuoted(redirect.operand, mem, QuoteContext.hereDocument);
                 redirect.expandHereDocument = false;
             } else redirect.operand = decodeRedirectPath(redirect.operand, mem);
         }
@@ -1633,7 +1638,8 @@ class ProgramParser {
             } else {
                 if (redirect.kind == TokenKind.tripleLess || redirect.hereDocument) {
                     selected = File.tmpfile();
-                    selected.write(redirect.expandHereDocument ? evaluateDoubleQuoted(redirect.operand, mem, true) : redirect.operand);
+                    selected.write(redirect.expandHereDocument
+                        ? evaluateDoubleQuoted(redirect.operand, mem, QuoteContext.hereDocument) : redirect.operand);
                     if (!redirect.hereDocument && !redirect.omitHereStringNewline) selected.write("\n");
                     selected.flush();
                     selected.rewind();
@@ -2511,14 +2517,14 @@ class ProgramParser {
         auto subEpoch = mem.commandSubEpoch;
         auto firstWord = new ProgramParser(source_[current_.offset .. $], true,
             returnMode_, true, parserOptions_, null, attributeScope_, multiline_);
-        auto staticParts = firstWord.readCommandWord(null, true);
+        auto staticParts = firstWord.readCommandWord(null, true, true);
         bool attributeBlock = firstWord.lastWordStatic_ && staticParts.length == 1 &&
             attributeCommandName(staticParts[0]);
         auto bindingSources = collectTempBindingSources();
         if (isEndStatement(current_.kind)) return prepareAssignmentOnly(bindingSources, mem);
-        auto commandNameParts = readCommandWord(mem, true);
+        auto commandNameParts = readCommandWord(mem, true, true);
         while (!commandNameParts.length && !isEndStatement(current_.kind))
-            commandNameParts = readCommandWord(mem, true);
+            commandNameParts = readCommandWord(mem, true, true);
         if (!commandNameParts.length) {
             if (bindingSources.length) return prepareAssignmentOnly(bindingSources, mem);
             auto status = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
@@ -2758,6 +2764,10 @@ class ProgramParser {
                     evalArguments();
                     import yshd.getopts : runGetOpts;
                     mem.lastStatus = runGetOpts(words, mem);
+                    return;
+                case "compgen":
+                    evalArguments();
+                    mem.lastStatus = runCompgen(words, mem);
                     return;
                 case "shift":
                     // The retained special builtin ignores supplied typed
@@ -3101,6 +3111,82 @@ class ProgramParser {
         pipeline ~= argv;
         mem.lastStatus = runPipeline(pipeline, mem);
         };
+    }
+
+    // builtin/completion_osh.py:CompGen and core/completion.py:DynamicWordsAction.
+    private int runCompgen(string[] args, Memory mem) {
+        string wordSource, prefix, suffix;
+        bool hasWordSource;
+        size_t index;
+        for (; index < args.length; ++index) {
+            auto arg = args[index];
+            if (arg == "--" || arg == "-") { ++index; break; }
+            if (arg == "+") continue;
+            if (!arg.length || (arg[0] != '-' && arg[0] != '+')) break;
+            if (arg.startsWith("--")) throw new UsageError("compgen: invalid flag " ~ arg);
+            foreach (flag; arg[1 .. $]) {
+                switch (flag) {
+                case 'W', 'P', 'S':
+                    if (++index >= args.length)
+                        throw new UsageError("compgen: expected argument to -" ~ flag);
+                    if (flag == 'W') { wordSource = args[index]; hasWordSource = true; }
+                    else if (flag == 'P') prefix = args[index];
+                    else suffix = args[index];
+                    break;
+                case 'o':
+                    if (++index >= args.length) break;
+                    switch (args[index]) {
+                    case "bashdefault", "filenames", "nospace": break;
+                    case "default", "dirnames", "plusdirs":
+                        throw new YshError("Untranslated compgen option: " ~ args[index]);
+                    default: throw new UsageError("compgen: invalid option " ~ args[index]);
+                    }
+                    break;
+                case 'A', 'F', 'C', 'X', 'a', 'b', 'c', 'd', 'e', 'f', 'j', 'k', 'u', 'v':
+                    throw new YshError("Untranslated compgen flag: -" ~ flag);
+                default: throw new UsageError("compgen: invalid flag -" ~ flag);
+                }
+            }
+        }
+        if (!hasWordSource) throw new UsageError("compgen: no actions defined in completion");
+        auto toComplete = index < args.length ? args[index] : "";
+
+        // Parse the entire argument before evaluating any substitutions.
+        try {
+            auto syntax = new ProgramParser("", true, returnMode_, false, mem.options);
+            syntax.evaluateDoubleQuoted(wordSource, null, QuoteContext.plugin);
+        } catch (YshError error) {
+            throw new UsageError("compgen: " ~ error.msg);
+        }
+
+        string expanded;
+        try {
+            auto evaluator = new ProgramParser("", false, returnMode_, false, mem.options);
+            expanded = evaluator.evaluateDoubleQuoted(wordSource, mem, QuoteContext.plugin);
+        } catch (FatalRuntimeError error) {
+            mem.writeDiagnostic("ysh-d: compgen: " ~ error.msg);
+            return 1;
+        } catch (Errexit error) {
+            mem.writeDiagnostic("ysh-d: compgen: " ~ error.diagnostic);
+            return 1;
+        }
+
+        string ifs = " \t\n";
+        if (auto cell = mem.findDynamicCell("IFS")) {
+            if (cell.value.kind != ValueKind.stringValue) {
+                import yshd.value : InterpreterFailure;
+                throw new InterpreterFailure("IFS should be Str");
+            }
+            ifs = cell.value.stringValue;
+        }
+        import yshd.split : splitWords;
+        int status = 1;
+        foreach (candidate; splitWords(expanded, ifs)) {
+            if (!candidate.startsWith(toComplete)) continue;
+            mem.outputFile.writeln(prefix, candidate, suffix);
+            status = 0;
+        }
+        return status;
     }
 
     private void flushBuiltinOutput(Memory mem, string builtinName, bool reportErrors) {
@@ -4732,7 +4818,7 @@ class ProgramParser {
         mem.lastStatus = 0;
     }
 
-    private string[] readCommandWord(Memory mem, bool assignmentPosition = false) {
+    private string[] readCommandWord(Memory mem, bool assignmentPosition = false, bool commandPosition = false) {
         lastWordTriple_ = false;
         lastWordStatic_ = true;
         if (current_.kind == TokenKind.doubleQuoted && current_.text == "$@") {
@@ -4767,9 +4853,11 @@ class ProgramParser {
                 result ~= start < 0 ? "" : match.subject[start .. match.ends[index]];
             return result;
         }
-        if (current_.kind == TokenKind.at) {
+        bool literalAt = current_.kind == TokenKind.at && commandPosition &&
+            parserOptions_ !is null && !parserOptions_.get("parse_at");
+        if (current_.kind == TokenKind.at && !literalAt) {
             lastWordStatic_ = false;
-            return parseArraySplice(mem);
+            return parseArraySplice(mem, commandPosition);
         }
         bool assignment;
         if (assignmentPosition && current_.kind == TokenKind.name) {
@@ -4777,13 +4865,14 @@ class ProgramParser {
             while (end < source_.length && asciiIdentifierContinue(source_[end])) ++end;
             assignment = end < source_.length && source_[end] == '=';
         }
-        auto word = readScalarWord(mem, false, false, assignmentPosition);
+        auto word = readScalarWord(mem, false, false, assignmentPosition, literalAt);
         if (syntaxOnly_ || assignment) return [word.text()];
         import yshd.pattern : expandShellWord;
         return expandShellWord(word, mem, lastWordStatic_);
     }
 
-    private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false, bool literalBraces = false) {
+    private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false,
+            bool literalBraces = false, bool literalAt = false) {
         auto end = current_.offset;
         ScalarWord result;
         bool consumed;
@@ -4800,7 +4889,7 @@ class ProgramParser {
             bool attachedBrace = literalBraces && consumed &&
                 (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.rightBrace);
             if (current_.offset != end || !(isCommandWordToken(current_.kind) || patternToken ||
-                    attachedBrace ||
+                    attachedBrace || (literalAt && current_.kind == TokenKind.at) ||
                     (regex && !isEndStatement(current_.kind)))) break;
             ++parts;
             if ((current_.kind == TokenKind.stringValue || current_.kind == TokenKind.doubleQuoted) &&
@@ -4949,7 +5038,9 @@ class ProgramParser {
         throw new YshError("unterminated substitution in double-quoted word");
     }
 
-    private string evaluateDoubleQuoted(string content, Memory mem, bool hereDocument = false) {
+    private string evaluateDoubleQuoted(string content, Memory mem,
+            QuoteContext context = QuoteContext.doubleQuoted) {
+        bool plugin = context == QuoteContext.plugin;
         string result;
         size_t position;
         while (position < content.length) {
@@ -4957,12 +5048,34 @@ class ProgramParser {
             if (ch == '\\' && position + 1 < content.length) {
                 auto next = content[position + 1];
                 if (next == '\n') { position += 2; continue; }
-                if (next == '$' || next == '`' || (!hereDocument && next == '"') || next == '\\') {
+                if (next == '$' || next == '`' || next == '\\' ||
+                        (context == QuoteContext.doubleQuoted && next == '"')) {
                     result ~= next;
                     position += 2;
                     continue;
                 }
+                if (plugin && next != '"' && parserOptions_.get("no_parse_backslash"))
+                    throw new ParseError("Invalid char escape in double quoted string");
                 result ~= ch;
+                ++position;
+                continue;
+            }
+
+            if (plugin && ch == '`') {
+                if (parserOptions_.get("no_parse_backticks"))
+                    throw new ParseError("Backtick should be $(cmd) or \\`");
+                string command;
+                while (++position < content.length && content[position] != '`') {
+                    char next = content[position];
+                    if (next == '\\' && position + 1 < content.length &&
+                            "$`\\\"".indexOf(content[position + 1]) >= 0)
+                        next = content[++position];
+                    command ~= next;
+                }
+                if (position == content.length) throw new ParseError("Unterminated backtick substitution");
+                auto output = captureCommandOutput(command, mem);
+                while (output.length && output[$ - 1] == '\n') output = output[0 .. $ - 1];
+                result ~= output;
                 ++position;
                 continue;
             }
@@ -5030,6 +5143,10 @@ class ProgramParser {
                 continue;
             }
 
+            if (plugin && ch == '$' && parserOptions_.get("no_parse_dollar"))
+                throw new ParseError("Literal $ should be quoted like \\$");
+            if (plugin && ch == '\\' && parserOptions_.get("no_parse_backslash"))
+                throw new ParseError("Invalid char escape in double quoted string");
             result ~= ch;
             ++position;
         }
@@ -5233,7 +5350,13 @@ class ProgramParser {
             kind == TokenKind.question;
     }
 
-    private string[] parseArraySplice(Memory mem) {
+    private void requireSpliceWordEnd(size_t end) {
+        while (end + 1 < source_.length && source_[end .. end + 2] == "\\\n") end += 2;
+        if (end < source_.length && " \t\r\n;|&()<>".indexOf(source_[end]) < 0)
+            throw new ParseError("Unexpected token after array splice");
+    }
+
+    private string[] parseArraySplice(Memory mem, bool commandPosition) {
         auto atOffset = current_.offset;
         advance();
         if (current_.offset != atOffset + 1) {
@@ -5243,10 +5366,13 @@ class ProgramParser {
             size_t commandEnd;
             auto command = collectParenthesizedCommand("@ command substitution",
                 commandEnd);
+            if (commandPosition) requireSpliceWordEnd(commandEnd);
             return splitCommandOutput(captureCommandOutput(command, mem));
         }
         if (current_.kind == TokenKind.leftBracket) {
-            auto expression = collectBracketedExpression("@ splice");
+            size_t expressionEnd;
+            auto expression = collectBracketedExpression("@ splice", expressionEnd);
+            if (commandPosition) requireSpliceWordEnd(expressionEnd);
             if (syntaxOnly_) {
                 validateExpression(expression);
                 return [""];
@@ -5256,6 +5382,7 @@ class ProgramParser {
         if (current_.kind != TokenKind.name) {
             throw new YshError("@ splice expects a variable name or [expression]");
         }
+        if (commandPosition) requireSpliceWordEnd(current_.offset + current_.text.length);
         auto value = Value.nullValue();
         if (!syntaxOnly_) {
             auto cell = mem.getCell(current_.text);
