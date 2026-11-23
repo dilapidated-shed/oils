@@ -131,7 +131,7 @@ class YshCommand {
 
 private enum ConditionKind { word, unary, binary, negate, conjunction, disjunction }
 private enum QuoteContext { doubleQuoted, hereDocument, plugin }
-private enum WordUse { argument, command, initializer }
+private enum WordUse { argument, command }
 
 /// Retained shell conditions are command ASTs. Their words stay unevaluated
 /// until the selected logical operand runs, including substitutions.
@@ -2290,7 +2290,7 @@ class ProgramParser {
                     elements.set(key, Value.str(value));
                 } else {
                     if (isAssociative) throw new ParseError("Associative literal requires [key]=value entries");
-                    auto words = readCommandWord(mem, false, WordUse.initializer);
+                    auto words = readCommandWord(mem);
                     if (!syntaxOnly_) foreach (word; words) elements.set(to!string(nextIndex++), Value.str(word));
                 }
             }
@@ -4856,10 +4856,21 @@ class ProgramParser {
         lastWordTriple_ = false;
         lastWordStatic_ = true;
         bool commandPosition = use == WordUse.command;
-        bool literalAt = use != WordUse.argument && parserOptions_ !is null && !parserOptions_.get("parse_at");
-        if (current_.kind == TokenKind.at && !literalAt) {
-            lastWordStatic_ = false;
-            return parseArraySplice(mem, commandPosition);
+        if (current_.kind == TokenKind.at) {
+            auto after = current_.offset + 1;
+            char next = after < source_.length ? source_[after] : '\0';
+            bool spliceToken = asciiIdentifierStart(next) || next == '[' || next == '(';
+            bool spliceEnabled = parserOptions_ is null || parserOptions_.get("parse_at");
+            bool builtinSplice = source_[after .. $].startsWith("{.");
+            if (spliceToken && spliceEnabled) {
+                lastWordStatic_ = false;
+                return parseArraySplice(mem);
+            }
+            if (builtinSplice && spliceEnabled)
+                throw new ParseError("Builtin word splice @{. ...} is not translated");
+            if (!spliceToken && !builtinSplice &&
+                    parserOptions_ !is null && parserOptions_.get("parse_at_all"))
+                throw new ParseError("Literal @ starting a word must be quoted (parse_at_all)");
         }
         bool assignment;
         if (assignmentPosition && current_.kind == TokenKind.name) {
@@ -4869,20 +4880,20 @@ class ProgramParser {
         }
         import yshd.pattern : expandShellWord;
         string[] expanded;
-        if (!syntaxOnly_ && !assignment && braceExpansion && readBraceWord(mem, expanded, literalAt, commandPosition))
+        if (!syntaxOnly_ && !assignment && braceExpansion && readBraceWord(mem, expanded, commandPosition))
             return expanded;
-        auto word = readScalarWord(mem, false, false, assignmentPosition, literalAt, null, !assignment);
+        auto word = readScalarWord(mem, false, false, assignmentPosition, null, !assignment);
         if (syntaxOnly_ || assignment) return [word.text()];
         return expandShellWord(word, mem, commandPosition);
     }
 
-    private BraceWord readBraceWordSyntax(out size_t end, bool literalAt = false) {
+    private BraceWord readBraceWordSyntax(out size_t end) {
         auto start = current_.offset;
         if (!wordMayContainBrace(start)) return BraceWord.init;
         auto parser = new ProgramParser(source_[start .. $], true, returnMode_, true,
             parserOptions_, null, attributeScope_, multiline_);
         BraceWordPart[] parts;
-        parser.readScalarWord(null, false, false, false, literalAt, &parts, true);
+        parser.readScalarWord(null, false, false, false, &parts, true);
         end = start + parser.current_.offset;
         return detectBraceWord(parts);
     }
@@ -4898,10 +4909,10 @@ class ProgramParser {
         return false;
     }
 
-    private bool readBraceWord(Memory mem, out string[] result, bool literalAt, bool commandPosition) {
+    private bool readBraceWord(Memory mem, out string[] result, bool commandPosition) {
         import yshd.pattern : expandShellWord;
         size_t end;
-        auto brace = readBraceWordSyntax(end, literalAt);
+        auto brace = readBraceWordSyntax(end);
         if (!brace.present) return false;
         while (current_.offset < end) advance();
         foreach (alternative; brace.expand()) {
@@ -4935,7 +4946,7 @@ class ProgramParser {
     }
 
     private ShellWord readScalarWord(Memory mem, bool pattern = false, bool regex = false,
-            bool literalBraces = false, bool literalAt = false, BraceWordPart[]* sourceParts = null,
+            bool literalBraces = false, BraceWordPart[]* sourceParts = null,
             bool preserveArrays = false) {
         auto end = current_.offset;
         ShellWord result;
@@ -4955,9 +4966,11 @@ class ProgramParser {
             bool attachedBrace = literalBraces && consumed &&
                 (current_.kind == TokenKind.leftBrace || current_.kind == TokenKind.rightBrace);
             if (current_.offset != end || !(isCommandWordToken(current_.kind) || patternToken ||
-                    attachedBrace || (literalAt && current_.kind == TokenKind.at) ||
+                    attachedBrace || current_.kind == TokenKind.at ||
                     (regex && !isEndStatement(current_.kind)))) break;
             auto part = current_;
+            if (part.kind == TokenKind.at && part.offset + 1 < source_.length && source_[part.offset + 1] == '(')
+                throw new ParseError("Extended glob syntax @() is not translated");
             if (!parts) allowQuotedJoin = part.kind == TokenKind.tilde ||
                 (part.kind == TokenKind.stringValue && part.text.length == 0 && source_[part.offset] == '\'');
             if (part.kind == TokenKind.name && (part.text == "{" || part.text == "}")) {
@@ -5489,11 +5502,11 @@ class ProgramParser {
 
     private void requireSpliceWordEnd(size_t end) {
         while (end + 1 < source_.length && source_[end .. end + 2] == "\\\n") end += 2;
-        if (end < source_.length && " \t\r\n;|&()<>".indexOf(source_[end]) < 0)
+        if (end < source_.length && " \t\r\n;|&)<>".indexOf(source_[end]) < 0)
             throw new ParseError("Unexpected token after array splice");
     }
 
-    private string[] parseArraySplice(Memory mem, bool commandPosition) {
+    private string[] parseArraySplice(Memory mem) {
         auto atOffset = current_.offset;
         advance();
         if (current_.offset != atOffset + 1) {
@@ -5503,23 +5516,25 @@ class ProgramParser {
             size_t commandEnd;
             auto command = collectParenthesizedCommand("@ command substitution",
                 commandEnd);
-            if (commandPosition) requireSpliceWordEnd(commandEnd);
+            requireSpliceWordEnd(commandEnd);
             return splitCommandOutput(captureCommandOutput(command, mem));
         }
         if (current_.kind == TokenKind.leftBracket) {
             size_t expressionEnd;
-            auto expression = collectBracketedExpression("@ splice", expressionEnd);
-            if (commandPosition) requireSpliceWordEnd(expressionEnd);
+            // ysh_expr_sub accepts a testlist. Parentheses select the same
+            // expression grammar in the D evaluator, including comma lists.
+            auto contents = collectBracketedExpression("@ splice", expressionEnd, true);
+            if (!contents.length) throw new ParseError("@ splice cannot be empty");
+            if (contents.endsWith(",")) throw new ParseError("Invalid trailing comma in @ splice");
+            auto expression = "(" ~ contents ~ ")";
+            requireSpliceWordEnd(expressionEnd);
             if (syntaxOnly_) {
                 validateExpression(expression);
                 return [""];
             }
             return spliceArray(evaluate(expression, mem));
         }
-        if (current_.kind != TokenKind.name) {
-            throw new YshError("@ splice expects a variable name or [expression]");
-        }
-        if (commandPosition) requireSpliceWordEnd(current_.offset + current_.text.length);
+        requireSpliceWordEnd(current_.offset + current_.text.length);
         auto value = Value.nullValue();
         if (!syntaxOnly_) {
             auto cell = mem.getCell(current_.text);
@@ -6066,6 +6081,7 @@ unittest {
     auto output = File.tmpfile();
     auto errors = File.tmpfile();
     auto mem = new Memory(output, errors);
+    mem.options.set("parse_at", true);
     mem.initializeArguments("directory/script with spaces.grease", ["one word", "two"]);
     executeProgram("echo $0; echo \"$0\"; write @ARGV", mem);
     output.rewind();

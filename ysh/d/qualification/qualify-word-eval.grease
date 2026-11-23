@@ -17,3 +17,6 @@ proc compare (fixture, range, name, count) {
 
 compare spec/ysh-options.test.sh 0-2 word-eval-original 6
 compare ysh/d/qualification/word-eval.test.sh 0-12 word-eval-parts 26
+compare spec/ysh-options.test.sh 3-3 parse-at-original-toggle 2
+compare spec/ysh-options.test.sh 5-7 parse-at-original-entrypoints 6
+compare ysh/d/qualification/parse-at.test.sh 0-8 parse-at-words 18

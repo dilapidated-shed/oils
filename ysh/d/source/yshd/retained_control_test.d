@@ -125,6 +125,7 @@ version (unittest) {
     unittest {
         auto output = File.tmpfile();
         auto mem = new Memory(output, File.tmpfile());
+        mem.options.set("parse_at", true);
         mem.initializeArguments("script", ["original"]);
         executeProgram(`
             proc observe { echo incoming=$? }
