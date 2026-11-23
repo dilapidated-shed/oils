@@ -4,6 +4,11 @@ import std.algorithm : sort;
 import yshd.option_data : OptionSpec, optionSpecs;
 import yshd.value : UsageError;
 
+struct SpliceSyntax {
+    bool enabled = true;
+    bool reserveLiteral;
+}
+
 /// Option cells and scoped overlays follow core/state.py:MutableOpts. Metadata
 /// is generated from frontend/option_def.py, including default-true inversion
 /// in permanent option groups. A scoped group pushes the requested value.
@@ -48,6 +53,12 @@ class ShellOptions {
 
     bool get(string name) const {
         return get(number(name, true));
+    }
+
+    SpliceSyntax spliceSyntax() const {
+        enum parseAt = number("parse_at");
+        enum parseAtAll = number("parse_at_all");
+        return SpliceSyntax(get(parseAt), get(parseAtAll));
     }
 
     size_t[] expand(string name) const {

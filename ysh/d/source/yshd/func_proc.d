@@ -3,6 +3,7 @@ module yshd.func_proc;
 import std.format : format;
 
 import yshd.expr : evaluate, EvaluatedArguments;
+import yshd.options : SpliceSyntax;
 import yshd.program : executeProcedureBody;
 import yshd.trace : TraceScope;
 import yshd.state : Frame, Memory, ReturnMode, BuiltinRegistry;
@@ -97,6 +98,7 @@ class YshFunction {
     string bodySource;
     bool attributeScope;
     bool multiline;
+    private SpliceSyntax spliceSyntax_;
     Frame closure;
     Frame moduleFrame;
     BuiltinRegistry builtins;
@@ -104,7 +106,8 @@ class YshFunction {
     this(string name, FunctionParameter[] parameters, string bodySource,
             Memory definitionMemory, string restPositionalName = "",
             FunctionParameter[] namedParameters = [],
-            string restNamedName = "", bool attributeScope = false, bool multiline = false) {
+            string restNamedName = "", bool attributeScope = false, bool multiline = false,
+            const SpliceSyntax* spliceSyntax = null) {
         this.name = name;
         this.parameters = parameters;
         this.restPositionalName = restPositionalName;
@@ -113,6 +116,7 @@ class YshFunction {
         this.bodySource = bodySource;
         this.attributeScope = attributeScope;
         this.multiline = multiline;
+        spliceSyntax_ = spliceSyntax is null ? definitionMemory.options.spliceSyntax() : *spliceSyntax;
         closure = definitionMemory.currentFrame;
         moduleFrame = definitionMemory.globalFrame;
         builtins = definitionMemory.builtins;
@@ -231,7 +235,7 @@ class YshFunction {
         }
 
         try {
-            executeProcedureBody(bodySource, memory, attributeScope, multiline);
+            executeProcedureBody(bodySource, memory, attributeScope, multiline, &spliceSyntax_);
         } catch (FunctionReturn returned) {
             return returned.value;
         }
@@ -257,6 +261,7 @@ class YshProc {
     string bodySource;
     bool attributeScope;
     bool multiline;
+    private SpliceSyntax spliceSyntax_;
     Frame closure;
     BuiltinRegistry builtins;
     ProcSignature signature;
@@ -271,7 +276,8 @@ class YshProc {
             bool openSignature = true,
             FunctionParameter[] wordParameters = [],
             string restWordName = "", ProcSignature signature = ProcSignature.init,
-            bool shellCompatible = false, bool attributeScope = false, bool multiline = false) {
+            bool shellCompatible = false, bool attributeScope = false, bool multiline = false,
+            const SpliceSyntax* spliceSyntax = null) {
         this.name = name;
         this.shellCompatible = shellCompatible;
         moduleFrame = definitionMemory.globalFrame;
@@ -281,6 +287,7 @@ class YshProc {
         this.bodySource = bodySource;
         this.attributeScope = attributeScope;
         this.multiline = multiline;
+        spliceSyntax_ = spliceSyntax is null ? definitionMemory.options.spliceSyntax() : *spliceSyntax;
         this.signature = signature;
         closure = shellCompatible ? null : definitionMemory.currentFrame;
         builtins = definitionMemory.builtins;
@@ -428,7 +435,7 @@ class YshProc {
         }
 
         try {
-            executeProcedureBody(bodySource, memory, attributeScope, multiline);
+            executeProcedureBody(bodySource, memory, attributeScope, multiline, &spliceSyntax_);
         } catch (ProcReturn returned) {
             memory.lastStatus = returned.status;
             return Value.integer(returned.status);
@@ -458,7 +465,7 @@ class YshProc {
             memory.shellArgumentFrame = previousArguments;
             memory.returnMode = previousMode;
         }
-        try { executeProcedureBody(bodySource, memory, attributeScope, multiline); }
+        try { executeProcedureBody(bodySource, memory, attributeScope, multiline, &spliceSyntax_); }
         catch (ProcReturn returned) { memory.lastStatus = returned.status; }
         return Value.integer(memory.lastStatus);
     }
