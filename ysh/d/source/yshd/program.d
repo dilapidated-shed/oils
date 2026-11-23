@@ -28,7 +28,7 @@ import yshd.trace : TraceScope;
 import yshd.var_check : VariableChecker, DefinitionKind;
 import yshd.eval_scope : EvalOptions, withEvalBindings;
 import yshd.dirs : setDirectory, popDirectory, physicalDirectory, runDirectoryBuiltin;
-import yshd.pattern : ScalarWord, matchesShellPattern;
+import yshd.pattern : ShellWord, matchesShellPattern;
 import yshd.braces : BraceWord, BraceWordPart, detectBraceWord;
 import yshd.eggex : Eggex, parseEggex, EreError;
 import yshd.value : Value, ValueKind, YshDict, UsageError, FatalRuntimeError,
@@ -131,6 +131,7 @@ class YshCommand {
 
 private enum ConditionKind { word, unary, binary, negate, conjunction, disjunction }
 private enum QuoteContext { doubleQuoted, hereDocument, plugin }
+private enum WordUse { argument, command, initializer }
 
 /// Retained shell conditions are command ASTs. Their words stay unevaluated
 /// until the selected logical operand runs, including substitutions.
@@ -202,7 +203,7 @@ private class ShellCondition {
     }
 }
 
-private ScalarWord conditionWord(string source, Memory mem, bool regex = false) {
+private ShellWord conditionWord(string source, Memory mem, bool regex = false) {
     auto parser = new ProgramParser(source, false, ReturnMode.shell, true, mem.options);
     auto result = parser.readScalarWord(mem, true, regex);
     if (parser.current_.kind != TokenKind.eof) throw new ParseError("Unexpected conditional word input");
@@ -562,7 +563,7 @@ class ProgramParser {
                 break;
             } else {
                 if (hasTyped) throw new ParseError("Unexpected words after typed arguments");
-                auto parts = readCommandWord(null, firstWord, firstWord);
+                auto parts = readCommandWord(null, firstWord, firstWord ? WordUse.command : WordUse.argument);
                 if (firstWord) {
                     attributeBlock = lastWordStatic_ && parts.length == 1 && attributeCommandName(parts[0]);
                     firstWord = false;
@@ -1388,7 +1389,7 @@ class ProgramParser {
         auto pathParser = new ProgramParser(raw, false, ReturnMode.shell, false, parserOptions_);
         size_t end;
         if (path && pathParser.readBraceWordSyntax(end).present) throw new BraceRedirectError();
-        auto parts = pathParser.readCommandWord(mem, false, false, false);
+        auto parts = pathParser.readCommandWord(mem, false, WordUse.argument, false);
         if (parts.length != 1 || pathParser.current_.kind != TokenKind.eof) {
             throw new YshError("redirect path must expand to exactly one word");
         }
@@ -2266,8 +2267,9 @@ class ProgramParser {
                 if (current_.kind == TokenKind.eof) throw new ParseError("Unterminated shell array literal");
                 if (current_.kind == TokenKind.newline) { advance(); continue; }
                 string key;
-                if (current_.kind == TokenKind.leftBracket) {
+                if (atInitializerKey()) {
                     auto keySource = collectBracketedExpression("shell array index");
+                    auto valueOffset = current_.offset + 1;
                     require(TokenKind.equal, "=");
                     if (isAssociative) {
                         auto keyParser = new ProgramParser(keySource, syntaxOnly_, returnMode_, true, parserOptions_);
@@ -2280,11 +2282,17 @@ class ProgramParser {
                             if (nextIndex < 0) throw new FatalRuntimeError("Invalid shell array index");
                         }
                     }
-                } else if (isAssociative) throw new ParseError("Associative literal requires [key]=value entries");
-                if (!isAssociative) key = to!string(nextIndex++);
-                string value;
-                if (current_.kind != TokenKind.rightParen && !isEndStatement(current_.kind)) value = readScalarWord(mem).text();
-                elements.set(key, Value.str(value));
+                    if (!isAssociative) key = to!string(nextIndex++);
+                    string value;
+                    if (valueOffset < source_.length && !isCommandWhitespace(source_[valueOffset]) &&
+                            current_.kind != TokenKind.rightParen && !isEndStatement(current_.kind))
+                        value = readScalarWord(mem).text();
+                    elements.set(key, Value.str(value));
+                } else {
+                    if (isAssociative) throw new ParseError("Associative literal requires [key]=value entries");
+                    auto words = readCommandWord(mem, false, WordUse.initializer);
+                    if (!syntaxOnly_) foreach (word; words) elements.set(to!string(nextIndex++), Value.str(word));
+                }
             }
             advance(); // )
             if (!isEndStatement(current_.kind)) throw new ParseError("Unexpected words after array literal");
@@ -2321,6 +2329,14 @@ class ProgramParser {
         }
         if (!syntaxOnly_) mem.lastStatus = !declaration && mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
         return true;
+    }
+
+    private bool atInitializerKey() {
+        if (current_.kind != TokenKind.leftBracket) return false;
+        size_t end;
+        try { end = substitutionClose(source_, current_.offset, '[', ']') + 1; }
+        catch (YshError) { return false; }
+        return end < source_.length && source_[end] == '=';
     }
 
     private static bool splitTempBinding(string word,
@@ -2534,14 +2550,14 @@ class ProgramParser {
         auto subEpoch = mem.commandSubEpoch;
         auto firstWord = new ProgramParser(source_[current_.offset .. $], true,
             returnMode_, true, parserOptions_, null, attributeScope_, multiline_);
-        auto staticParts = firstWord.readCommandWord(null, true, true);
+        auto staticParts = firstWord.readCommandWord(null, true, WordUse.command);
         bool attributeBlock = firstWord.lastWordStatic_ && staticParts.length == 1 &&
             attributeCommandName(staticParts[0]);
         auto bindingSources = collectTempBindingSources();
         if (isEndStatement(current_.kind)) return prepareAssignmentOnly(bindingSources, mem);
-        auto commandNameParts = readCommandWord(mem, true, true);
+        auto commandNameParts = readCommandWord(mem, true, WordUse.command);
         while (!commandNameParts.length && !isEndStatement(current_.kind))
-            commandNameParts = readCommandWord(mem, true, true);
+            commandNameParts = readCommandWord(mem, true, WordUse.command);
         if (!commandNameParts.length) {
             if (bindingSources.length) return prepareAssignmentOnly(bindingSources, mem);
             auto status = mem.commandSubEpoch != subEpoch ? mem.commandSubLastStatus : 0;
@@ -2580,7 +2596,7 @@ class ProgramParser {
                         current_.kind == TokenKind.pipe) {
                     throw new YshError("expected command after '|'");
                 }
-                auto nextName = readCommandWord(mem);
+                auto nextName = readCommandWord(mem, false, WordUse.command);
                 if (nextName.length != 1) {
                     throw new YshError(
                         "pipeline command name cannot be a list splice");
@@ -4835,44 +4851,12 @@ class ProgramParser {
         mem.lastStatus = 0;
     }
 
-    private string[] readCommandWord(Memory mem, bool assignmentPosition = false, bool commandPosition = false,
+    private string[] readCommandWord(Memory mem, bool assignmentPosition = false, WordUse use = WordUse.argument,
             bool braceExpansion = true) {
         lastWordTriple_ = false;
         lastWordStatic_ = true;
-        if (current_.kind == TokenKind.doubleQuoted && current_.text == "$@") {
-            lastWordStatic_ = false;
-            advance();
-            return syntaxOnly_ ? [] : mem.shellArguments.dup;
-        }
-        if (current_.kind == TokenKind.doubleQuoted && current_.text.length > 6 &&
-                current_.text[0 .. 2] == "${" && current_.text[$ - 4 .. $] == "[@]}" &&
-                current_.text != "${BASH_REMATCH[@]}") {
-            lastWordStatic_ = false;
-            auto name = current_.text[2 .. $ - 4];
-            advance();
-            if (syntaxOnly_) return [];
-            // _ProcessUndef yields an empty shell array when nounset is off.
-            // This includes ignored extra names after read -a. PIPESTATUS is
-            // a synthesized register rather than an ordinary frame cell.
-            if (name != "PIPESTATUS" && mem.getCell(name) is null && !mem.nounset) return [];
-            auto value = mem.get(name);
-            if (value.kind != ValueKind.bashArrayValue && value.kind != ValueKind.bashAssocValue)
-                throw new YshTypeError("Shell array expansion expects BashArray or BashAssoc");
-            import yshd.value : shellArrayValues;
-            return shellArrayValues(value);
-        }
-        if (current_.kind == TokenKind.doubleQuoted && current_.text == "${BASH_REMATCH[@]}") {
-            lastWordStatic_ = false;
-            advance();
-            if (syntaxOnly_) return [""];
-            string[] result;
-            auto match = mem.regexMatch;
-            if (match !is null) foreach (index, start; match.starts)
-                result ~= start < 0 ? "" : match.subject[start .. match.ends[index]];
-            return result;
-        }
-        bool literalAt = current_.kind == TokenKind.at && commandPosition &&
-            parserOptions_ !is null && !parserOptions_.get("parse_at");
+        bool commandPosition = use == WordUse.command;
+        bool literalAt = use != WordUse.argument && parserOptions_ !is null && !parserOptions_.get("parse_at");
         if (current_.kind == TokenKind.at && !literalAt) {
             lastWordStatic_ = false;
             return parseArraySplice(mem, commandPosition);
@@ -4885,10 +4869,11 @@ class ProgramParser {
         }
         import yshd.pattern : expandShellWord;
         string[] expanded;
-        if (!syntaxOnly_ && !assignment && braceExpansion && readBraceWord(mem, expanded, literalAt)) return expanded;
-        auto word = readScalarWord(mem, false, false, assignmentPosition, literalAt);
+        if (!syntaxOnly_ && !assignment && braceExpansion && readBraceWord(mem, expanded, literalAt, commandPosition))
+            return expanded;
+        auto word = readScalarWord(mem, false, false, assignmentPosition, literalAt, null, !assignment);
         if (syntaxOnly_ || assignment) return [word.text()];
-        return expandShellWord(word, mem, lastWordStatic_);
+        return expandShellWord(word, mem, commandPosition);
     }
 
     private BraceWord readBraceWordSyntax(out size_t end, bool literalAt = false) {
@@ -4897,7 +4882,7 @@ class ProgramParser {
         auto parser = new ProgramParser(source_[start .. $], true, returnMode_, true,
             parserOptions_, null, attributeScope_, multiline_);
         BraceWordPart[] parts;
-        parser.readScalarWord(null, false, false, false, literalAt, &parts);
+        parser.readScalarWord(null, false, false, false, literalAt, &parts, true);
         end = start + parser.current_.offset;
         return detectBraceWord(parts);
     }
@@ -4913,7 +4898,7 @@ class ProgramParser {
         return false;
     }
 
-    private bool readBraceWord(Memory mem, out string[] result, bool literalAt) {
+    private bool readBraceWord(Memory mem, out string[] result, bool literalAt, bool commandPosition) {
         import yshd.pattern : expandShellWord;
         size_t end;
         auto brace = readBraceWordSyntax(end, literalAt);
@@ -4921,8 +4906,7 @@ class ProgramParser {
         while (current_.offset < end) advance();
         foreach (alternative; brace.expand()) {
             if (!alternative.length) continue;
-            ScalarWord word;
-            bool staticWord = true;
+            ShellWord word;
             foreach (part; alternative) {
                 switch (part.token.kind) {
                 case TokenKind.dollar:
@@ -4932,10 +4916,10 @@ class ProgramParser {
                     auto text = substitution.parseScalarSubstitution(mem, substitutionEnd);
                     bool quoted = part.source.length > 1 && "\"[".indexOf(part.source[1]) >= 0;
                     word.append(text, quoted, !quoted);
-                    staticWord = false;
+                    lastWordStatic_ = false;
                     break;
                 case TokenKind.doubleQuoted:
-                    word.append(evaluateDoubleQuoted(part.token.text, mem), true);
+                    evaluateDoubleQuoted(part.token.text, mem, QuoteContext.doubleQuoted, &word);
                     break;
                 case TokenKind.charValue: case TokenKind.stringValue:
                     word.append(part.token.text, true);
@@ -4945,16 +4929,16 @@ class ProgramParser {
                     break;
                 }
             }
-            lastWordStatic_ = lastWordStatic_ && staticWord;
-            result ~= expandShellWord(word, mem, staticWord);
+            result ~= expandShellWord(word, mem, commandPosition);
         }
         return true;
     }
 
-    private ScalarWord readScalarWord(Memory mem, bool pattern = false, bool regex = false,
-            bool literalBraces = false, bool literalAt = false, BraceWordPart[]* sourceParts = null) {
+    private ShellWord readScalarWord(Memory mem, bool pattern = false, bool regex = false,
+            bool literalBraces = false, bool literalAt = false, BraceWordPart[]* sourceParts = null,
+            bool preserveArrays = false) {
         auto end = current_.offset;
-        ScalarWord result;
+        ShellWord result;
         bool consumed;
         size_t parts;
         bool tripleQuoted;
@@ -4999,7 +4983,8 @@ class ProgramParser {
                 consumed = true;
                 advance();
             } else if (current_.kind == TokenKind.doubleQuoted) {
-                result.append(evaluateDoubleQuoted(current_.text, mem), true);
+                if (preserveArrays) evaluateDoubleQuoted(current_.text, mem, QuoteContext.doubleQuoted, &result);
+                else result.append(evaluateDoubleQuoted(current_.text, mem), true);
                 end = lexer_.offset;
                 consumed = true;
                 advance();
@@ -5136,15 +5121,24 @@ class ProgramParser {
     }
 
     private string evaluateDoubleQuoted(string content, Memory mem,
-            QuoteContext context = QuoteContext.doubleQuoted) {
+            QuoteContext context = QuoteContext.doubleQuoted, ShellWord* word = null) {
         bool plugin = context == QuoteContext.plugin;
         string result;
+        bool scalarPart, arrayPart;
+        void appendArray(string[] elements) {
+            if (scalarPart) word.append(result, true);
+            word.appendArray(elements);
+            result = "";
+            scalarPart = false;
+            arrayPart = true;
+        }
         size_t position;
         while (position < content.length) {
             auto ch = content[position];
             if (ch == '\\' && position + 1 < content.length) {
                 auto next = content[position + 1];
                 if (next == '\n') { position += 2; continue; }
+                scalarPart = true;
                 if (next == '$' || next == '`' || next == '\\' ||
                         (context == QuoteContext.doubleQuoted && next == '"')) {
                     result ~= next;
@@ -5181,14 +5175,27 @@ class ProgramParser {
                     (asciiIdentifierStart(content[position + 1]) || "{[(0123456789?@!$#*-".indexOf(content[position + 1]) >= 0))
                 lastWordStatic_ = false;
 
+            if (word !is null && content[position .. $].startsWith("$@")) {
+                appendArray(syntaxOnly_ ? [] : mem.shellArguments.dup);
+                position += 2;
+                continue;
+            }
+
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '{') {
                 auto close = substitutionClose(content, position + 1, '{', '}');
-                result ~= evaluateBracedParameter(content[position + 2 .. close], mem, true);
+                auto parameter = content[position + 2 .. close];
+                if (word !is null && isQuotedArrayParameter(parameter)) {
+                    appendArray(syntaxOnly_ ? [] : quotedArray(parameter, mem));
+                } else {
+                    scalarPart = true;
+                    result ~= evaluateBracedParameter(parameter, mem, true);
+                }
                 position = close + 1;
                 continue;
             }
 
+            scalarPart = true;
             if (ch == '$' && position + 1 < content.length &&
                     content[position + 1] == '[') {
                 auto close = substitutionClose(content, position + 1, '[', ']');
@@ -5247,7 +5254,40 @@ class ProgramParser {
             result ~= ch;
             ++position;
         }
+        if (word !is null && (scalarPart || !arrayPart)) word.append(result, true);
         return result;
+    }
+
+    private static bool isQuotedArrayParameter(string parameter) {
+        if (parameter == "@") return true;
+        if (parameter.length <= 3 || !parameter.endsWith("[@]") || !asciiIdentifierStart(parameter[0]))
+            return false;
+        foreach (ch; parameter[1 .. $ - 3]) if (!asciiIdentifierContinue(ch)) return false;
+        return true;
+    }
+
+    private static string[] quotedArray(string parameter, Memory mem) {
+        if (parameter == "@") return mem.shellArguments.dup;
+        auto name = parameter[0 .. $ - 3];
+        if (name == "BASH_REMATCH") {
+            string[] result;
+            auto match = mem.regexMatch;
+            if (match !is null) foreach (index, start; match.starts)
+                result ~= start < 0 ? "" : match.subject[start .. match.ends[index]];
+            return result;
+        }
+        // PIPESTATUS is synthesized and undefined arrays have zero elements
+        // when nounset is off.
+        if (name != "PIPESTATUS" && mem.getCell(name) is null && !mem.nounset) return [];
+        auto value = mem.get(name);
+        if (value.kind == ValueKind.stringValue) {
+            if (mem.options.get("strict_array")) throw new FatalRuntimeError("Can't index string with @");
+            return [value.stringValue];
+        }
+        if (value.kind != ValueKind.bashArrayValue && value.kind != ValueKind.bashAssocValue)
+            throw new YshTypeError("Shell array expansion expects BashArray or BashAssoc");
+        import yshd.value : shellArrayValues;
+        return shellArrayValues(value);
     }
 
     private string evaluateBracedParameter(string parameter, Memory mem, bool quoted = false) {

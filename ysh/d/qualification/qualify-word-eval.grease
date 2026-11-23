@@ -1,0 +1,19 @@
+#!/usr/bin/env grease
+set -eu -o pipefail
+var root = $(realpath "$(dirname "$0")/../../..")
+cd "$root"
+var output = "$root/ysh/d/.build/inherited-spec"
+
+proc compare (fixture, range, name, count) {
+  env "PYTHONPATH=$root:$root/vendor" python2.7 "$root/test/sh_spec.py" --details --range "$range" --timeout=3 \
+    --tmp-env "$output/tmp/$name" \
+    --path-env "$root/spec/bin:$[ENV.PATH]" \
+    --env-pair LC_ALL=C.UTF-8 --env-pair "REPO_ROOT=$root" \
+    --tsv-output "$output/$name.tsv" \
+    "$root/$fixture" "$output/native-osh" "$root/bin/osh"
+  var actual = $(grep -Ec '	(native-osh|osh)	pass$' "$output/$name.tsv")
+  test "$actual" -eq "$count"
+}
+
+compare spec/ysh-options.test.sh 0-2 word-eval-original 6
+compare ysh/d/qualification/word-eval.test.sh 0-12 word-eval-parts 26

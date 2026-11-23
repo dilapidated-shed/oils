@@ -16,6 +16,7 @@ on:
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
       - 'spec/builtin-completion.test.sh'
+      - 'spec/ysh-options.test.sh'
       - 'spec/command_.test.sh'
       - 'spec/ysh-builtin-help.test.sh'
       - 'doc/ref/**'
@@ -69,6 +70,7 @@ on:
       - 'spec/arg-parse.test.sh'
       - 'spec/builtin-getopts.test.sh'
       - 'spec/builtin-completion.test.sh'
+      - 'spec/ysh-options.test.sh'
       - 'spec/command_.test.sh'
       - 'spec/ysh-builtin-help.test.sh'
       - 'doc/ref/**'
@@ -456,6 +458,9 @@ jobs:
 
       - name: Qualify word-list completion through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-compgen.grease
+
+      - name: Qualify shell word framing and globbing through native D
+        run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-word-eval.grease
 
       - name: Qualify retained hash and shared executable cache through native D
         run: ysh/d/.build/ysh-d ysh/d/qualification/qualify-hash.grease

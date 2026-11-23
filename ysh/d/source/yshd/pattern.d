@@ -1,6 +1,7 @@
 module yshd.pattern;
 
-import std.string : toStringz;
+import std.array : join;
+import std.string : indexOf, toStringz;
 import yshd.libc_patterns : fnmatch;
 version (linux) import yshd.libc_patterns : FNM_CASEFOLD;
 import yshd.value : YshError;
@@ -12,19 +13,56 @@ struct WordFragment {
     string text;
     bool quoted;
     bool splitEligible;
+    bool arrayPart;
+    string[] elements;
 }
 
-struct ScalarWord {
+struct ShellWord {
     WordFragment[] fragments;
+    bool hasArray;
 
     void append(string text, bool quoted, bool splitEligible = false) {
         fragments ~= WordFragment(text, quoted, splitEligible);
     }
 
+    void appendArray(string[] elements) {
+        fragments ~= WordFragment("", true, false, true, elements);
+        hasArray = true;
+    }
+
     string text() const {
         string result;
-        foreach (fragment; fragments) result ~= fragment.text;
+        foreach (fragment; fragments)
+            result ~= fragment.arrayPart ? fragment.elements.join(" ") : fragment.text;
         return result;
+    }
+
+    private ShellWord[] argumentFrames() {
+        ShellWord[] frames = [ShellWord.init];
+        foreach (fragment; fragments) {
+            if (!fragment.arrayPart) {
+                frames[$ - 1].fragments ~= fragment;
+                continue;
+            }
+            foreach (index, element; fragment.elements) {
+                if (index) frames ~= ShellWord.init;
+                frames[$ - 1].append(element, true);
+            }
+        }
+        return frames;
+    }
+
+    private bool hasGlob(bool literalOnly = false) const {
+        bool leftBracket;
+        foreach (fragment; fragments) {
+            if (fragment.quoted || (literalOnly && fragment.splitEligible)) continue;
+            foreach (ch; fragment.text) {
+                if (ch == '*' || ch == '?') return true;
+                if (ch == '[') leftBracket = true;
+                else if (ch == ']' && leftBracket) return true;
+            }
+        }
+        return false;
     }
 
     string fnmatchPattern() const {
@@ -33,7 +71,6 @@ struct ScalarWord {
             foreach (char ch; fragment.text) {
                 // QUOTE_FNMATCH escapes only quoted fragments. Unquoted
                 // expansion bytes retain libc fnmatch's pattern meaning.
-                import std.string : indexOf;
                 if (fragment.quoted && "\\*?[]-:!()|".indexOf(ch) >= 0)
                     result ~= '\\';
                 result ~= ch;
@@ -43,7 +80,6 @@ struct ScalarWord {
     }
 
     string erePattern() const {
-        import std.string : indexOf;
         string result;
         foreach (fragment; fragments) foreach (char ch; fragment.text) {
             if (fragment.quoted && ".^$*+?{}[]\\|()".indexOf(ch) >= 0) result ~= '\\';
@@ -55,12 +91,11 @@ struct ScalarWord {
 
 /// osh/split.py:IFS splitting applies to unquoted expansion bytes, never to
 /// literal text or quoted fragments. Preserve fragment quoting for globbing.
-ScalarWord[] splitShellWord(ScalarWord word, string ifs) {
-    import std.string : indexOf;
-    ScalarWord[] fields;
-    ScalarWord field;
+ShellWord[] splitShellWord(ShellWord word, string ifs) {
+    ShellWord[] fields;
+    ShellWord field;
     bool present, whitespace;
-    void emit() { fields ~= field; field = ScalarWord.init; present = false; whitespace = false; }
+    void emit() { fields ~= field; field = ShellWord.init; present = false; whitespace = false; }
     foreach (fragment; word.fragments) {
         if (!fragment.text.length && fragment.quoted) {
             if (whitespace && present) emit();
@@ -84,44 +119,64 @@ ScalarWord[] splitShellWord(ScalarWord word, string ifs) {
     return fields;
 }
 
-string[] expandShellWord(ScalarWord word, Memory mem, bool staticWord = true) {
+string[] expandShellWord(ShellWord word, Memory mem, bool commandPosition = false) {
     import yshd.glob : globPaths;
-    import yshd.value : ValueKind, FatalRuntimeError;
-    import std.string : indexOf;
-    ScalarWord[] fields;
-    if (mem.options.get("simple_word_eval")) {
-        // Simple word evaluation implicitly quotes scalar substitutions;
-        // literal glob operators still expand.
-        foreach (ref fragment; word.fragments) if (fragment.splitEligible) fragment.quoted = true;
-        fields = [word];
+    import yshd.value : FatalRuntimeError;
+    bool simple = mem.options.get("simple_word_eval");
+    bool noGlob = mem.options.get("noglob");
+    string[] result;
+
+    void expandPattern(string pattern, string literal) {
+        if (!noGlob) {
+            auto paths = globPaths(pattern, mem);
+            if (paths.length) { result ~= paths; return; }
+            if (mem.options.get("failglob")) throw new FatalRuntimeError("Pattern matched no files: " ~ literal);
+            if (mem.options.get("nullglob")) return;
+        }
+        result ~= simple ? unescapeGlob(literal) : literal;
     }
-    else {
+
+    // A literal glob operator opts the whole evaluated word into string
+    // evaluation. Substituted bytes alone never opt in. Strict array checks
+    // happen before glob options such as noglob, just as in Oils.
+    if (simple && !commandPosition && word.hasGlob(true)) {
+        if (word.hasArray && mem.options.get("strict_array"))
+            throw new FatalRuntimeError("This word should yield a string, but it contains an array");
+        auto text = word.text();
+        expandPattern(text, text);
+        return result;
+    }
+
+    foreach (frame; word.hasArray ? word.argumentFrames() : [word]) {
+        if (!frame.fragments.length) continue;
+        if (simple) { result ~= frame.text(); continue; }
         auto cell = mem.findDynamicCell("IFS");
         auto ifs = cell is null ? " \t\n" : cell.value.stringValue;
-        fields = splitShellWord(word, ifs);
-    }
-    string[] result;
-    foreach (field; fields) {
-        bool pattern;
-        bool leftBracket;
-        foreach (fragment; field.fragments) if (!fragment.quoted)
-            foreach (ch; fragment.text) {
-                if (ch == '*' || ch == '?') pattern = true;
-                else if (ch == '[') leftBracket = true;
-                else if (ch == ']' && leftBracket) pattern = true;
-            }
-        if (!pattern || mem.options.get("noglob") || (mem.options.get("simple_word_eval") && !staticWord)) {
-            result ~= field.text(); continue;
+        foreach (field; splitShellWord(frame, ifs)) {
+            if (field.hasGlob()) expandPattern(field.fnmatchPattern(), field.text());
+            else result ~= field.text();
         }
-        auto paths = globPaths(field.fnmatchPattern(), mem);
-        if (paths.length) result ~= paths;
-        else if (mem.options.get("failglob")) throw new FatalRuntimeError("Pattern matched no files: " ~ field.text());
-        else if (!mem.options.get("nullglob")) result ~= field.text();
     }
     return result;
 }
 
-bool matchesShellPattern(ScalarWord word, string subject, bool ignoreCase) {
+private string unescapeGlob(string pattern) {
+    import yshd.value : InterpreterFailure;
+    string result;
+    for (size_t index; index < pattern.length; ++index) {
+        char ch = pattern[index];
+        if (ch == '\\' && index + 1 < pattern.length) {
+            ch = pattern[++index];
+            if (ch == '@') ch = '\\';
+            else if ("\\*?[]-:!()|".indexOf(ch) < 0)
+                throw new InterpreterFailure("Unexpected escaped character in glob pattern");
+        }
+        result ~= ch;
+    }
+    return result;
+}
+
+bool matchesShellPattern(ShellWord word, string subject, bool ignoreCase) {
     auto pattern = word.fnmatchPattern();
     // Match libc's byte-string boundary explicitly rather than truncating.
     if (pattern.canFindNul() || subject.canFindNul())
@@ -140,17 +195,17 @@ private bool canFindNul(string value) {
 }
 
 unittest {
-    ScalarWord word;
+    ShellWord word;
     word.append("*", true);
     word.append(".h", false);
     assert(matchesShellPattern(word, "*.h", false));
     assert(!matchesShellPattern(word, "header.h", false));
-    ScalarWord mixed;
+    ShellWord mixed;
     mixed.append("prefix[", true);
     mixed.append("*", false);
     mixed.append("]", true);
     assert(matchesShellPattern(mixed, "prefix[abc]", false));
-    ScalarWord slash;
+    ShellWord slash;
     slash.append("a\\*", false);
     assert(!matchesShellPattern(slash, "a\\tail", false));
     assert(matchesShellPattern(slash, "a*", false));
