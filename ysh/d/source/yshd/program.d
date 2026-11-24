@@ -442,6 +442,7 @@ class ProgramParser {
     private bool fixedSpliceSyntax_;
     private bool spliceSearchInitialized_;
     private ptrdiff_t lastAtOffset_;
+    private size_t checkedSpliceEnd_;
     private bool lastWordTriple_;
     private bool lastWordStatic_;
     private bool attributeScope_;
@@ -475,87 +476,115 @@ class ProgramParser {
         assert(syntaxOnly_);
         skipEndStatements();
         while (current_.kind != TokenKind.eof) {
-            ++parsedCommands_;
-            parsedSimple_ = false;
-            simpleOffset_ = current_.offset;
-            if (tryMultiline(null) || tryExecuteAsync(null) || tryExecuteAndOr(null) || tryTime(null) || tryExecuteTopLevelPipeline(null)) {
-                skipEndStatements();
-                continue;
-            }
-            if (tryParseShellFunction(null) || tryExecuteTopLevelRedirect(null)) {
-                skipEndStatements();
-                continue;
-            }
-            if (tryBareDeclaration(null) || tryRetainedAssignment(null)) { skipEndStatements(); continue; }
-            switch (current_.kind) {
-            case TokenKind.leftBrace: parseProgram(collectBlock()); break;
-            case TokenKind.leftParen: parseSubshell(null); break;
-            case TokenKind.leftBracket: parseDoubleBracket(null); break;
-            case TokenKind.varKeyword: parseDeclaration(null, false); break;
-            case TokenKind.constKeyword: parseDeclaration(null, true); break;
-            case TokenKind.setvarKeyword: parseMutation(null, AssignmentScope.local); break;
-            case TokenKind.setglobalKeyword: parseMutation(null, AssignmentScope.global); break;
-            case TokenKind.funcKeyword: parseFunction(null); break;
-            case TokenKind.procKeyword: parseProc(null); break;
-            case TokenKind.ifKeyword: parseIf(null); break;
-            case TokenKind.whileKeyword: parseWhile(null); break;
-            case TokenKind.forKeyword: parseFor(null); break;
-            case TokenKind.caseKeyword: parseCase(null); break;
-            case TokenKind.equal:
+            parseStatement();
+            skipEndStatements();
+        }
+    }
+
+    private void parseStatement() {
+        ++parsedCommands_;
+        parsedSimple_ = false;
+        simpleOffset_ = current_.offset;
+        if (tryMultiline(null) || tryExecuteAsync(null) || tryExecuteAndOr(null) || tryTime(null) || tryExecuteTopLevelPipeline(null)) {
+            return;
+        }
+        if (tryParseShellFunction(null) || tryExecuteTopLevelRedirect(null)) {
+            return;
+        }
+        if (tryBareDeclaration(null) || tryRetainedAssignment(null)) return;
+        switch (current_.kind) {
+        case TokenKind.leftBrace: parseProgram(collectBlock()); break;
+        case TokenKind.leftParen: parseSubshell(null); break;
+        case TokenKind.leftBracket: parseDoubleBracket(null); break;
+        case TokenKind.varKeyword: parseDeclaration(null, false); break;
+        case TokenKind.constKeyword: parseDeclaration(null, true); break;
+        case TokenKind.setvarKeyword: parseMutation(null, AssignmentScope.local); break;
+        case TokenKind.setglobalKeyword: parseMutation(null, AssignmentScope.global); break;
+        case TokenKind.funcKeyword: parseFunction(null); break;
+        case TokenKind.procKeyword: parseProc(null); break;
+        case TokenKind.ifKeyword: parseIf(null); break;
+        case TokenKind.whileKeyword: parseWhile(null); break;
+        case TokenKind.forKeyword: parseFor(null); break;
+        case TokenKind.caseKeyword: parseCase(null); break;
+        case TokenKind.equal:
+            advance();
+            validateExpression(collectRhs());
+            break;
+        case TokenKind.returnKeyword:
+            parseReturn(null);
+            break;
+        case TokenKind.bang:
+            parseNegatedCommand(null);
+            break;
+        case TokenKind.name:
+            if (!completeCommandWord(source_, current_)) { parseCommandWords(); break; }
+            if (current_.text == "until") {
+                parseWhile(null);
+            } else if (current_.text == "declare" || current_.text == "typeset" || current_.text == "local") {
+                parseShellDeclare(null);
+            } else if (current_.text == "typed") {
+                advance();
+                if (current_.kind != TokenKind.procKeyword) throw new ParseError("Expected proc after typed");
+                parseProc(null);
+            } else if (current_.text == "try") {
+                advance();
+                parseBlockArgument(collectBlock(), false);
+            } else if (current_.text == "call") {
                 advance();
                 validateExpression(collectRhs());
-                break;
-            case TokenKind.returnKeyword:
-                parseReturn(null);
-                break;
-            case TokenKind.bang:
-                parseNegatedCommand(null);
-                break;
-            case TokenKind.name:
-                if (!completeCommandWord(source_, current_)) { parseCommandWords(); break; }
-                if (current_.text == "until") {
-                    parseWhile(null);
-                } else if (current_.text == "declare" || current_.text == "typeset" || current_.text == "local") {
-                    parseShellDeclare(null);
-                } else if (current_.text == "typed") {
-                    advance();
-                    if (current_.kind != TokenKind.procKeyword) throw new ParseError("Expected proc after typed");
-                    parseProc(null);
-                } else if (current_.text == "try") {
-                    advance();
-                    parseBlockArgument(collectBlock(), false);
-                } else if (current_.text == "call") {
-                    advance();
-                    validateExpression(collectRhs());
-                } else if (current_.text == "assert") {
-                    advance();
-                    validateExpression(current_.kind == TokenKind.leftBracket
-                        ? collectBracketedExpression("assert") : collectRhs());
-                } else if (current_.text == "shopt") {
-                    parsedSimple_ = true;
-                    parseShopt(null);
-                } else {
-                    parseCommandWords();
-                }
-                break;
-            case TokenKind.trueKeyword:
-            case TokenKind.falseKeyword:
-            case TokenKind.breakKeyword:
-            case TokenKind.continueKeyword:
-            case TokenKind.colon:
-            case TokenKind.stringValue:
-            case TokenKind.doubleQuoted:
-            case TokenKind.dollar:
-            case TokenKind.slash:
-            case TokenKind.at:
+            } else if (current_.text == "assert") {
+                advance();
+                validateExpression(current_.kind == TokenKind.leftBracket
+                    ? collectBracketedExpression("assert") : collectRhs());
+            } else if (current_.text == "shopt") {
+                parsedSimple_ = true;
+                parseShopt(null);
+            } else {
                 parseCommandWords();
-                break;
-            default:
-                if (isCommandWordToken(current_.kind)) { parseCommandWords(); break; }
-                throw new YshError(format("unexpected command token '%s' at byte %s",
-                    current_.text, current_.offset));
             }
-            skipEndStatements();
+            break;
+        case TokenKind.trueKeyword:
+        case TokenKind.falseKeyword:
+        case TokenKind.breakKeyword:
+        case TokenKind.continueKeyword:
+        case TokenKind.colon:
+        case TokenKind.stringValue:
+        case TokenKind.doubleQuoted:
+        case TokenKind.dollar:
+        case TokenKind.slash:
+        case TokenKind.at:
+            parseCommandWords();
+            break;
+        default:
+            if (isCommandWordToken(current_.kind)) { parseCommandWords(); break; }
+            throw new YshError(format("unexpected command token '%s' at byte %s",
+                current_.text, current_.offset));
+        }
+    }
+
+    private size_t parseLogicalLine() {
+        do {
+            parseStatement();
+            while (current_.kind == TokenKind.semicolon) advance();
+        } while (current_.kind != TokenKind.newline && current_.kind != TokenKind.eof);
+        return current_.offset;
+    }
+
+    // A later splice syntax error belongs to the same parsed command list as
+    // earlier sibling commands. Check that syntax before expanding or dispatching
+    // any of them. Keep the source suffix intact for continued lines and here docs.
+    private void validateSpliceLine() {
+        auto start = current_.offset;
+        if (start < checkedSpliceEnd_ || !mayContainSplice(start)) return;
+        try {
+            auto syntax = new ProgramParser(source_[start .. $], true, returnMode_, false,
+                parserOptions_, null, attributeScope_, multiline_, &spliceSyntax_);
+            syntax.suppressInitialTimeKeyword_ = suppressInitialTimeKeyword_;
+            checkedSpliceEnd_ = start + syntax.parseLogicalLine();
+        } catch (ParseError error) {
+            throw error;
+        } catch (YshError error) {
+            throw new ParseError(error.msg);
         }
     }
 
@@ -638,6 +667,7 @@ class ProgramParser {
         skipEndStatements(true);
 
         while (current_.kind != TokenKind.eof) {
+            validateSpliceLine();
             mem.traps.runPending(mem);
             mem.setSourcePosition(source_, current_.offset);
             if (mem.options.get("noexec")) {
@@ -719,11 +749,6 @@ class ProgramParser {
                 break;
             case TokenKind.ifKeyword:
                 parseIf(mem);
-                // Brace if can consume the next newline while looking for an
-                // else. Its body still belongs to the previous parse context.
-                if (!fixedSpliceSyntax_ && lastCompoundEnd_ && lastCompoundEnd_ <= current_.offset &&
-                        source_[lastCompoundEnd_ .. current_.offset].indexOf('\n') >= 0)
-                    spliceSyntax_ = mem.options.spliceSyntax();
                 break;
             case TokenKind.whileKeyword:
                 parseWhile(mem);
@@ -2211,15 +2236,19 @@ class ProgramParser {
         if (!associative && !indexed) {
             bool any;
             while (!isEndStatement(current_.kind)) {
-                foreach (word; readCommandWord(mem, true)) {
+                auto words = readCommandWord(mem, true);
+                if (syntaxOnly_) continue;
+                foreach (word; words) {
                     string name, value;
                     if (!splitTempBinding(word, name, value)) throw new UsageError("Untranslated declaration without initializer or flags");
-                    if (!syntaxOnly_) mem.declareLocal(name, Value.str(value));
+                    mem.declareLocal(name, Value.str(value));
                     any = true;
                 }
             }
-            if (!any) throw new UsageError("Declaration requires an operand");
-            if (!syntaxOnly_) mem.lastStatus = 0;
+            if (!syntaxOnly_) {
+                if (!any) throw new UsageError("Declaration requires an operand");
+                mem.lastStatus = 0;
+            }
             return;
         }
         if (current_.kind != TokenKind.name) throw new UsageError("Expected a shell array name");
@@ -3895,8 +3924,7 @@ class ProgramParser {
         command.thenSource = collectBlock();
         lastCompoundEnd_ = lastBlockEnd_;
 
-        // `else` may follow the closing brace on the same or next line.
-        skipEndStatements();
+        // A newline or semicolon after } ends the brace-style if.
         if (current_.kind == TokenKind.elifKeyword) {
             command.hasElse = true;
             command.elseIf = parseIfCommand();
@@ -5537,15 +5565,19 @@ class ProgramParser {
             throw new ParseError("Unexpected token after array splice");
     }
 
-    private bool hasLeadingAtWord() {
+    private bool mayContainSplice(size_t start) {
         if (!spliceSyntax_.enabled && !spliceSyntax_.reserveLiteral) return false;
         if (!spliceSearchInitialized_) {
             import std.string : lastIndexOf;
             lastAtOffset_ = source_.lastIndexOf('@');
             spliceSearchInitialized_ = true;
         }
+        return cast(ptrdiff_t)start <= lastAtOffset_;
+    }
+
+    private bool hasLeadingAtWord() {
         auto start = current_.offset;
-        if (cast(ptrdiff_t)start > lastAtOffset_) return false;
+        if (!mayContainSplice(start)) return false;
         auto scanner = commandScannerAt(start);
         int depth;
         while (true) {
