@@ -126,7 +126,7 @@ class YshFunction {
             namedDefaults, namedHasDefaults);
     }
 
-    private static void evaluateDefaults(FunctionParameter[] source,
+    private void evaluateDefaults(FunctionParameter[] source,
             Memory definitionMemory, ref Value[] values,
             ref bool[] present) {
         bool sawDefault;
@@ -142,7 +142,7 @@ class YshFunction {
             }
 
             sawDefault = true;
-            auto value = evaluate(parameter.defaultSource, definitionMemory);
+            auto value = evaluate(parameter.defaultSource, definitionMemory, &spliceSyntax_);
             if (value.kind == ValueKind.list || value.kind == ValueKind.dict) {
                 throw new YshError("Default values can't be mutable");
             }
@@ -300,7 +300,7 @@ class YshProc {
                     continue;
                 }
 
-                auto value = evaluate(parameter.defaultSource, definitionMemory);
+                auto value = evaluate(parameter.defaultSource, definitionMemory, &spliceSyntax_);
                 if (value.kind != ValueKind.stringValue)
                     throw new YshTypeError("Default val for word param must be Str");
                 defaults ~= value;
@@ -311,7 +311,7 @@ class YshProc {
             evaluateProcDefaults(signature.named, definitionMemory,
                 namedDefaults, namedHasDefaults);
             if (signature.hasBlock && signature.block.defaultSource.length) {
-                blockDefault = evaluate(signature.block.defaultSource, definitionMemory);
+                blockDefault = evaluate(signature.block.defaultSource, definitionMemory, &spliceSyntax_);
                 hasBlockDefault = true;
                 if (blockDefault.kind != ValueKind.nullValue && blockDefault.kind != ValueKind.commandValue)
                     throw new YshTypeError("Default value for block should be Command or Null");
@@ -319,11 +319,11 @@ class YshProc {
         }
     }
 
-    private static void evaluateProcDefaults(FunctionParameter[] parameters,
+    private void evaluateProcDefaults(FunctionParameter[] parameters,
             Memory mem, ref Value[] values, ref bool[] present) {
         foreach (parameter; parameters) {
             bool supplied = parameter.defaultSource.length != 0;
-            auto value = supplied ? evaluate(parameter.defaultSource, mem) : Value.nullValue();
+            auto value = supplied ? evaluate(parameter.defaultSource, mem, &spliceSyntax_) : Value.nullValue();
             if (value.kind == ValueKind.list || value.kind == ValueKind.dict)
                 throw new YshError("Default values can't be mutable");
             values ~= value;

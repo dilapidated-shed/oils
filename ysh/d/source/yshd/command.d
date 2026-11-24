@@ -3,6 +3,7 @@ module yshd.command;
 import std.format : format;
 
 import yshd.expr : AssignmentScope, ResolvedPlace, evaluate, resolvePlace, augmentPlace;
+import yshd.options : SpliceSyntax;
 import yshd.state : Memory;
 import yshd.value : Value, ValueKind, YshError;
 
@@ -47,7 +48,7 @@ private Value[] destructure(Value right, size_t count, string description) {
 /// var x, y initializes both names to null. Multiple declarations destructure
 /// one List value, which is how the parsed YSH testlist reaches command
 /// evaluation upstream.
-void executeVarDecl(VarDecl declaration, Memory mem) {
+void executeVarDecl(VarDecl declaration, Memory mem, const SpliceSyntax* spliceSyntax = null) {
     if (declaration.names.length == 0) {
         throw new YshError("var/const declaration needs at least one name");
     }
@@ -59,7 +60,7 @@ void executeVarDecl(VarDecl declaration, Memory mem) {
         return;
     }
 
-    auto right = evaluate(declaration.rhsSource, mem);
+    auto right = evaluate(declaration.rhsSource, mem, spliceSyntax);
     auto values = destructure(
         right, declaration.names.length, "Destructuring assignment");
 
@@ -73,18 +74,18 @@ void executeVarDecl(VarDecl declaration, Memory mem) {
 /// All places and the complete RHS value are determined before mutation starts,
 /// so swaps like setvar x, y = y, x retain YSH's simultaneous-assignment
 /// behavior.
-void executeMutation(Mutation mutation, Memory mem) {
+void executeMutation(Mutation mutation, Memory mem, const SpliceSyntax* spliceSyntax = null) {
     if (mutation.targets.length == 0) {
         throw new YshError("mutation needs at least one target");
     }
     if (mutation.operation.length) {
         if (mutation.targets.length != 1) throw new YshError("augmented mutation needs one target");
         augmentPlace(mutation.targets[0], mutation.operation, mutation.rhsSource,
-            mem, mutation.assignmentScope);
+            mem, mutation.assignmentScope, spliceSyntax);
         return;
     }
 
-    auto right = evaluate(mutation.rhsSource, mem);
+    auto right = evaluate(mutation.rhsSource, mem, spliceSyntax);
     auto values = destructure(
         right, mutation.targets.length, "Destructuring assignment");
 
@@ -93,7 +94,7 @@ void executeMutation(Mutation mutation, Memory mem) {
     // assignments.
     ResolvedPlace[] places;
     foreach (target; mutation.targets) {
-        places ~= resolvePlace(target, mem, mutation.assignmentScope);
+        places ~= resolvePlace(target, mem, mutation.assignmentScope, spliceSyntax);
     }
 
     foreach (index, place; places) {

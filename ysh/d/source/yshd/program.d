@@ -601,9 +601,16 @@ class ProgramParser {
         return false;
     }
 
-    private void validateExpression(string source) { .validateExpression(source, parserOptions_); }
+    private Value evaluate(string source, Memory mem) {
+        return .evaluate(source, mem, &spliceSyntax_);
+    }
+
+    private void validateExpression(string source) {
+        .validateExpression(source, parserOptions_, &spliceSyntax_);
+    }
+
     private auto parseTypedArguments(string source, bool validateNested = false) {
-        return .parseTypedArguments(source, validateNested, parserOptions_);
+        return .parseTypedArguments(source, validateNested, parserOptions_, &spliceSyntax_);
     }
 
     private bool atTypedArguments() {
@@ -1754,7 +1761,7 @@ class ProgramParser {
                 validateExpression(rhs);
                 return;
             }
-            executeVarDecl(VarDecl(names, readOnly, true, rhs), mem);
+            executeVarDecl(VarDecl(names, readOnly, true, rhs), mem, &spliceSyntax_);
             return;
         }
 
@@ -1779,7 +1786,7 @@ class ProgramParser {
         require(TokenKind.equal, "=");
         auto rhs = collectRhs();
         if (syntaxOnly_) validateExpression(rhs);
-        else executeVarDecl(VarDecl([name], false, true, rhs), mem);
+        else executeVarDecl(VarDecl([name], false, true, rhs), mem, &spliceSyntax_);
         return true;
     }
 
@@ -1841,13 +1848,13 @@ class ProgramParser {
             throw new ParseError("augmented mutation needs one target");
         if (syntaxOnly_) {
             foreach (target; targets) {
-                auto name = validateAssignmentTarget(target, parserOptions_);
+                auto name = validateAssignmentTarget(target, parserOptions_, &spliceSyntax_);
                 if (assignmentScope == AssignmentScope.local) variableChecker_.mutate(name);
             }
             validateExpression(rhs);
             return;
         }
-        executeMutation(Mutation(targets, assignmentScope, rhs, operation), mem);
+        executeMutation(Mutation(targets, assignmentScope, rhs, operation), mem, &spliceSyntax_);
     }
 
     private bool scanShellFunction(out ShellFunctionDefinition definition) {
@@ -5978,7 +5985,7 @@ class ProgramParser {
     private bool consumeDelimitedAtom(ref bool atomExpected) {
         if (atomExpected && (current_.kind == TokenKind.slash ||
                 (current_.kind == TokenKind.colon && lexer_.peek().kind == TokenKind.pipe))) {
-            auto end = current_.offset + expressionAtomEnd(source_[current_.offset .. $], parserOptions_);
+            auto end = current_.offset + expressionAtomEnd(source_[current_.offset .. $], parserOptions_, &spliceSyntax_);
             while (current_.kind != TokenKind.eof && current_.offset < end) advance();
             atomExpected = false;
             return true;
@@ -6051,12 +6058,14 @@ class ProgramParser {
 }
 
 // Expressions and command words share interpolation and escape semantics.
-string evaluateDoubleQuotedExpression(string content, Memory mem) {
-    return (new ProgramParser("", false, ReturnMode.shell, false, mem.options)).evaluateDoubleQuoted(content, mem);
+string evaluateDoubleQuotedExpression(string content, Memory mem, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new ProgramParser("", false, ReturnMode.shell, false, mem.options, null, false, false, spliceSyntax);
+    return parser.evaluateDoubleQuoted(content, mem);
 }
 
-string evaluateCommandSubstitution(string command, Memory mem) {
-    auto output = (new ProgramParser("", false, ReturnMode.shell, false, mem.options)).captureCommandOutput(command, mem);
+string evaluateCommandSubstitution(string command, Memory mem, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new ProgramParser("", false, ReturnMode.shell, false, mem.options, null, false, false, spliceSyntax);
+    auto output = parser.captureCommandOutput(command, mem);
     while (output.length != 0 && output[$ - 1] == '\n') output = output[0 .. $ - 1];
     return output;
 }
@@ -6098,12 +6107,13 @@ void parseProgram(string source, ReturnMode returnMode = ReturnMode.shell, Shell
     }
 }
 
-void validateDoubleQuoted(string content, ShellOptions options = null) {
-    (new ProgramParser("", true, ReturnMode.shell, false, options)).evaluateDoubleQuoted(content, null);
+void validateDoubleQuoted(string content, ShellOptions options = null, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new ProgramParser("", true, ReturnMode.shell, false, options, null, false, false, spliceSyntax);
+    parser.evaluateDoubleQuoted(content, null);
 }
 
-string[] evaluateShellWords(string source, Memory mem) {
-    auto parser = new ProgramParser(source, false, ReturnMode.shell, true, mem.options);
+string[] evaluateShellWords(string source, Memory mem, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new ProgramParser(source, false, ReturnMode.shell, true, mem.options, null, false, false, spliceSyntax);
     string[] words;
     while (parser.current_.kind != TokenKind.eof) {
         if (parser.current_.kind == TokenKind.newline) { parser.advance(); continue; }
@@ -6113,8 +6123,8 @@ string[] evaluateShellWords(string source, Memory mem) {
     return words;
 }
 
-void validateShellWords(string source, ShellOptions options = null) {
-    auto parser = new ProgramParser(source, true, ReturnMode.shell, true, options);
+void validateShellWords(string source, ShellOptions options = null, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new ProgramParser(source, true, ReturnMode.shell, true, options, null, false, false, spliceSyntax);
     while (parser.current_.kind != TokenKind.eof) {
         if (parser.current_.kind == TokenKind.newline) { parser.advance(); continue; }
         if (parser.current_.kind == TokenKind.newline) parser.advance();

@@ -14,7 +14,7 @@ import yshd.lexer : Lexer, Token, TokenKind, asciiDigit;
 import yshd.func_proc : YshFunction;
 import yshd.type_objects : YshTypeIndexFunction;
 import yshd.state : Memory, ReturnMode, Frame;
-import yshd.options : ShellOptions;
+import yshd.options : ShellOptions, SpliceSyntax;
 import yshd.eval_scope : EvalOptions, parseEvalOptions, withEvalBindings;
 import yshd.io_ysh : encodeDataValue, WriteEncoding, DataEncodeError, dataOptions;
 import yshd.value : Value, ValueKind, YshDict, YshObject, YshError, YshTypeError, StructuredError, FatalRuntimeError,
@@ -413,11 +413,16 @@ private class ExpressionClosureExpr : Expr {
 }
 
 private class CommandClosureExpr : Expr {
-    string command;
-    this(string command) { this.command = command; }
+    private string command_;
+    private SpliceSyntax spliceSyntax_;
+
+    this(string command, SpliceSyntax spliceSyntax) {
+        command_ = command;
+        spliceSyntax_ = spliceSyntax;
+    }
     override Value eval(Memory mem) {
         import yshd.program : YshCommand;
-        return Value.closure(ValueKind.commandValue, new YshCommand(command, mem));
+        return Value.closure(ValueKind.commandValue, new YshCommand(command_, mem, false, false, &spliceSyntax_));
     }
 }
 
@@ -442,33 +447,45 @@ private class ShellParameterExpr : Expr {
 
 private class DoubleQuotedExpr : Expr {
     private string content_;
+    private SpliceSyntax spliceSyntax_;
 
-    this(string content) {
+    this(string content, SpliceSyntax spliceSyntax) {
         content_ = content;
+        spliceSyntax_ = spliceSyntax;
     }
 
     override Value eval(Memory mem) {
         import yshd.program : evaluateDoubleQuotedExpression;
-        return Value.str(evaluateDoubleQuotedExpression(content_, mem));
+        return Value.str(evaluateDoubleQuotedExpression(content_, mem, &spliceSyntax_));
     }
 }
 
 private class CommandSubstitutionExpr : Expr {
     private string command_;
-    this(string command) { command_ = command; }
+    private SpliceSyntax spliceSyntax_;
+
+    this(string command, SpliceSyntax spliceSyntax) {
+        command_ = command;
+        spliceSyntax_ = spliceSyntax;
+    }
     override Value eval(Memory mem) {
         import yshd.program : evaluateCommandSubstitution;
-        return Value.str(evaluateCommandSubstitution(command_, mem));
+        return Value.str(evaluateCommandSubstitution(command_, mem, &spliceSyntax_));
     }
 }
 
 private class ShellArrayExpr : Expr {
     private string words_;
-    this(string words) { words_ = words; }
+    private SpliceSyntax spliceSyntax_;
+
+    this(string words, SpliceSyntax spliceSyntax) {
+        words_ = words;
+        spliceSyntax_ = spliceSyntax;
+    }
     override Value eval(Memory mem) {
         import yshd.program : evaluateShellWords;
         Value[] values;
-        foreach (word; evaluateShellWords(words_, mem)) values ~= Value.str(word);
+        foreach (word; evaluateShellWords(words_, mem, &spliceSyntax_)) values ~= Value.str(word);
         return Value.list(values);
     }
 }
@@ -2330,10 +2347,14 @@ private class Parser {
     private size_t lastConsumedEnd_;
     private ShellOptions options_;
 
-    this(string input, bool validateNested = false, ShellOptions options = null) {
+    private SpliceSyntax spliceSyntax_;
+
+    this(string input, bool validateNested = false, ShellOptions options = null,
+            const SpliceSyntax* spliceSyntax = null) {
         source_ = input;
         validateNested_ = validateNested;
         options_ = options;
+        spliceSyntax_ = spliceSyntax !is null ? *spliceSyntax : options is null ? SpliceSyntax.init : options.spliceSyntax();
         lexer_ = new Lexer(input, false, 0, true, options);
         current_ = lexer_.next();
     }
@@ -2678,7 +2699,7 @@ private class Parser {
                 advance();
                 if (validateNested_) {
                     import yshd.program : parseProgram;
-                    parseProgram(command, ReturnMode.shell, options_);
+                    parseProgram(command, ReturnMode.shell, options_, null, false, false, false, &spliceSyntax_);
                 }
                 return command;
             }
@@ -2703,7 +2724,7 @@ private class Parser {
             if (current_.kind == TokenKind.doubleQuoted)
                 return new ExpressionClosureExpr(parseAtom());
             if (current_.kind == TokenKind.leftParen)
-                return new CommandClosureExpr(parseCommandFragment());
+                return new CommandClosureExpr(parseCommandFragment(), spliceSyntax_);
             throw new ParseError("Expected [, double quote, or ( after ^");
         case TokenKind.slash:
             import yshd.eggex : parseEggex;
@@ -2755,9 +2776,9 @@ private class Parser {
             advance();
             if (validateNested_) {
                 import yshd.program : validateDoubleQuoted;
-                validateDoubleQuoted(token.text, options_);
+                validateDoubleQuoted(token.text, options_, &spliceSyntax_);
             }
-            return new DoubleQuotedExpr(token.text);
+            return new DoubleQuotedExpr(token.text, spliceSyntax_);
         case TokenKind.stringValue:
         case TokenKind.charValue:
             advance();
@@ -2775,9 +2796,9 @@ private class Parser {
                 current_ = lexer_.next();
                 if (validateNested_) {
                     import yshd.program : validateDoubleQuoted;
-                    validateDoubleQuoted(word, options_);
+                    validateDoubleQuoted(word, options_, &spliceSyntax_);
                 }
-                return new DoubleQuotedExpr(word);
+                return new DoubleQuotedExpr(word, spliceSyntax_);
             }
             // Simple substitutions consume exactly two bytes. In particular,
             // $# must be recognized before the expression lexer sees a comment,
@@ -2806,18 +2827,18 @@ private class Parser {
                 advance();
                 if (validateNested_) {
                     import yshd.program : validateDoubleQuoted;
-                    validateDoubleQuoted(word, options_);
+                    validateDoubleQuoted(word, options_, &spliceSyntax_);
                 }
-                return new DoubleQuotedExpr(word);
+                return new DoubleQuotedExpr(word, spliceSyntax_);
             }
             if (current_.kind == TokenKind.doubleQuoted && current_.offset == token.offset + 1) {
                 auto content = current_.text;
                 advance();
                 if (validateNested_) {
                     import yshd.program : validateDoubleQuoted;
-                    validateDoubleQuoted(content, options_);
+                    validateDoubleQuoted(content, options_, &spliceSyntax_);
                 }
-                return new DoubleQuotedExpr(content);
+                return new DoubleQuotedExpr(content, spliceSyntax_);
             }
             if (current_.kind == TokenKind.leftParen) {
                 auto start = current_.offset + 1;
@@ -2832,9 +2853,9 @@ private class Parser {
                         advance();
                         if (validateNested_) {
                             import yshd.program : parseProgram;
-                            parseProgram(command, ReturnMode.shell, options_);
+                            parseProgram(command, ReturnMode.shell, options_, null, false, false, false, &spliceSyntax_);
                         }
-                        return new CommandSubstitutionExpr(command);
+                        return new CommandSubstitutionExpr(command, spliceSyntax_);
                     }
                     if (current_.kind == TokenKind.leftParen) ++depth;
                     else if (current_.kind == TokenKind.rightParen) --depth;
@@ -2886,7 +2907,7 @@ private class Parser {
             advance();
             if (current_.kind == TokenKind.orIf) {
                 advance();
-                return new ShellArrayExpr("");
+                return new ShellArrayExpr("", spliceSyntax_);
             }
             if (current_.kind != TokenKind.pipe) throw new ParseError("Expected | after :");
             return parseShellArray(TokenKind.pipe);
@@ -2913,9 +2934,9 @@ private class Parser {
                 advance();
                 if (validateNested_) {
                     import yshd.program : validateShellWords;
-                    validateShellWords(words, options_);
+                    validateShellWords(words, options_, &spliceSyntax_);
                 }
-                return new ShellArrayExpr(words);
+                return new ShellArrayExpr(words, spliceSyntax_);
             }
             if (depth == 0 && (current_.kind == TokenKind.semicolon || current_.kind == TokenKind.pipe ||
                     current_.kind == TokenKind.orIf || current_.kind == TokenKind.andIf ||
@@ -3112,10 +3133,11 @@ private class ContainerResolvedPlace : ResolvedPlace {
 }
 
 ResolvedPlace resolvePlace(string source, Memory mem,
-        AssignmentScope assignmentScope = AssignmentScope.local) {
+        AssignmentScope assignmentScope = AssignmentScope.local, const SpliceSyntax* spliceSyntax = null) {
     auto optionNumbers = mem.options.pushExpression();
     scope (exit) mem.options.pop(optionNumbers);
-    auto parser = new Parser(source);
+    auto syntax = spliceSyntax is null ? mem.options.spliceSyntax() : *spliceSyntax;
+    auto parser = new Parser(source, false, null, &syntax);
     auto target = parser.parse();
 
     if (auto variable = cast(VariableExpr)target) {
@@ -3150,38 +3172,39 @@ Value evaluate(string source) {
 }
 
 void augmentPlace(string target, string op, string rhs, Memory mem,
-        AssignmentScope assignmentScope) {
-    auto place = resolvePlace(target, mem, assignmentScope);
+        AssignmentScope assignmentScope, const SpliceSyntax* spliceSyntax = null) {
+    auto place = resolvePlace(target, mem, assignmentScope, spliceSyntax);
     auto left = place.read();
-    auto right = evaluate(rhs, mem);
+    auto right = evaluate(rhs, mem, spliceSyntax);
     auto result = (new BinaryExpr(op, new LiteralExpr(left), new LiteralExpr(right))).eval(mem);
     place.assign(result);
 }
 
 /// Build the expression tree without looking up names or evaluating it.
-void validateExpression(string source, ShellOptions options = null) {
-    (new Parser(source, true, options)).parse();
+void validateExpression(string source, ShellOptions options = null, const SpliceSyntax* spliceSyntax = null) {
+    (new Parser(source, true, options, spliceSyntax)).parse();
 }
 
 /// Command collectors use the actual expression atom parser for constructs
 /// with their own internal delimiters, rather than interpreting their tokens
 /// as command separators (notably Eggex flags and multiline word arrays).
-size_t expressionAtomEnd(string source, ShellOptions options = null) {
-    auto parser = new Parser(source, true, options);
+size_t expressionAtomEnd(string source, ShellOptions options = null, const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new Parser(source, true, options, spliceSyntax);
     parser.parseAtom();
     return parser.lastConsumedEnd_;
 }
 
-ParsedArguments parseTypedArguments(string source, bool validateNested = false, ShellOptions options = null) {
-    auto parser = new Parser(source, validateNested, options);
+ParsedArguments parseTypedArguments(string source, bool validateNested = false, ShellOptions options = null,
+        const SpliceSyntax* spliceSyntax = null) {
+    auto parser = new Parser(source, validateNested, options, spliceSyntax);
     bool deferEvaluation = parser.current_.kind == TokenKind.leftBracket;
     auto arguments = parser.parseArguments(!deferEvaluation, deferEvaluation);
     if (parser.current_.kind != TokenKind.eof) throw new ParseError("unexpected token after typed arguments");
     return arguments;
 }
 
-string validateAssignmentTarget(string source, ShellOptions options = null) {
-    auto target = (new Parser(source, true, options)).parse();
+string validateAssignmentTarget(string source, ShellOptions options = null, const SpliceSyntax* spliceSyntax = null) {
+    auto target = (new Parser(source, true, options, spliceSyntax)).parse();
     if (auto variable = cast(VariableExpr)target) return variable.name_;
     Expr object;
     if (auto subscript = cast(SubscriptExpr)target) object = subscript.object_;
@@ -3193,10 +3216,10 @@ string validateAssignmentTarget(string source, ShellOptions options = null) {
     return "";
 }
 
-Value evaluate(string source, Memory mem) {
+Value evaluate(string source, Memory mem, const SpliceSyntax* spliceSyntax = null) {
     auto optionNumbers = mem.options.pushExpression();
     scope (exit) mem.options.pop(optionNumbers);
-    auto parser = new Parser(source, false, mem.options);
+    auto parser = new Parser(source, false, mem.options, spliceSyntax);
     return parser.parse().eval(mem);
 }
 
